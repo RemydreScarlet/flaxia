@@ -34,3 +34,151 @@ h1 {
 p {
   color: var(--text-muted);
 }
+
+/* PostCard Styles */
+.post-card {
+  background: var(--surface);
+  border: 1px solid #334155;
+  margin-bottom: 1rem;
+  padding: 1rem;
+}
+
+.post-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.post-avatar {
+  width: 2rem;
+  height: 2rem;
+  background: var(--primary);
+  color: var(--background);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 0.875rem;
+}
+
+.post-username {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.post-timestamp {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  margin-left: auto;
+}
+
+.post-text {
+  margin-bottom: 1rem;
+  line-height: 1.5;
+  font-family: monospace;
+  color: var(--text);
+}
+
+.math-inline {
+  display: inline-block;
+  margin: 0 0.25rem;
+}
+
+.post-stage {
+  position: relative;
+  width: 100%;
+  padding-top: 56.25%; /* 16:9 aspect ratio */
+  background: #000;
+  border: 1px solid #334155;
+  margin-bottom: 1rem;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.gif-preview,
+.sandbox-frame-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gif-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.gif-fallback {
+  color: var(--text-muted);
+  font-family: monospace;
+  font-size: 0.875rem;
+}
+
+.stage-hint {
+  position: absolute;
+  bottom: 0.5rem;
+  right: 0.5rem;
+  background: rgba(0, 0, 0, 0.8);
+  color: var(--text);
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-family: monospace;
+}
+
+.sandbox-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+.post-actions {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.action-button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  border: 1px solid #334155;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: monospace;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+}
+
+.action-button:hover {
+  background: #334155;
+  color: var(--text);
+}
+
+.action-button--active {
+  background: var(--primary);
+  color: var(--background);
+  border-color: var(--primary);
+}
+
+.action-button--fresh.action-button--active {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.action-icon {
+  font-size: 1rem;
+}
+
+.action-count {
+  font-weight: 600;
+}
