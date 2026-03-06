@@ -183,6 +183,150 @@ p {
   font-weight: 600;
 }
 
+/* PostComposer Styles */
+.post-composer {
+  background: var(--surface);
+  border: 1px solid #334155;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+}
+
+.composer-header h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.composer-textarea {
+  width: 100%;
+  min-height: 4rem;
+  max-height: 8rem;
+  padding: 0.75rem;
+  background: var(--background);
+  border: 1px solid #334155;
+  border-radius: 0.25rem;
+  color: var(--text);
+  font-family: monospace;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.composer-textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.composer-textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.composer-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.75rem;
+}
+
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.composer-file-input {
+  display: none;
+}
+
+.composer-file-button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  border: 1px solid #334155;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: monospace;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+}
+
+.composer-file-button:hover {
+  background: #334155;
+  color: var(--text);
+}
+
+.composer-char-count {
+  font-family: monospace;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.composer-char-count.warning {
+  color: #ef4444;
+}
+
+.composer-submit {
+  padding: 0.5rem 1rem;
+  background: var(--primary);
+  color: var(--background);
+  border: none;
+  border-radius: 0.25rem;
+  font-family: monospace;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.composer-submit:hover:not(:disabled) {
+  background: #16a34a;
+}
+
+.composer-submit:disabled {
+  background: #334155;
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.composer-file-preview {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  background: var(--background);
+  border: 1px solid #334155;
+  border-radius: 0.25rem;
+}
+
+.file-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.file-name {
+  font-family: monospace;
+  font-size: 0.875rem;
+  color: var(--text);
+}
+
+.file-remove {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.875rem;
+  padding: 0.25rem;
+  border-radius: 0.25rem;
+  transition: all 0.2s ease;
+}
+
+.file-remove:hover {
+  background: #334155;
+  color: var(--text);
+}
+
 /* Timeline Styles */
 .timeline {
   width: 100%;

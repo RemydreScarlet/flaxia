@@ -1,11 +1,13 @@
 import { Post, TimelineProps, TimelineState } from '../types/post.js'
 import { createPostCard } from './PostCard.js'
+import { createPostComposer, PostComposer } from './PostComposer.js'
 
 export class Timeline {
   private element: HTMLElement
   private props: TimelineProps
   private state: TimelineState
   private postCards: Map<string, ReturnType<typeof createPostCard>> = new Map()
+  private composer!: PostComposer
 
   constructor(props: TimelineProps) {
     this.props = props
@@ -24,6 +26,12 @@ export class Timeline {
   private createElement(): HTMLElement {
     const container = document.createElement('section')
     container.className = 'timeline'
+
+    // Post composer
+    this.composer = createPostComposer({
+      onPostCreated: (post) => this.handleNewPost(post)
+    })
+    container.appendChild(this.composer.getElement())
 
     // Feed toggle
     const feedToggle = this.createFeedToggle()
@@ -161,6 +169,12 @@ export class Timeline {
     loadMoreBtn?.addEventListener('click', () => {
       this.loadMorePosts()
     })
+  }
+
+  private handleNewPost(post: any): void {
+    // Add the new post to the beginning of the timeline
+    this.state.posts = [post, ...this.state.posts]
+    this.renderPostList()
   }
 
   private switchMode(mode: 'following' | 'hashtag'): void {
@@ -346,6 +360,7 @@ export class Timeline {
   }
 
   public destroy(): void {
+    this.composer.destroy()
     this.postCards.forEach(card => card.destroy())
     this.postCards.clear()
     this.element.remove()
