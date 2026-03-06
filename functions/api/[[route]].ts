@@ -41,11 +41,11 @@ app.get('/api/posts', async (c) => {
       return c.json({ error: 'Database not available' }, 500)
     }
     
-    let query = 'SELECT * FROM posts ORDER BY created_at DESC LIMIT ?'
+    let query = 'SELECT * FROM posts WHERE status = \'published\' ORDER BY created_at DESC LIMIT ?'
     const params: any[] = [limit]
     
     if (cursor) {
-      query = 'SELECT * FROM posts WHERE created_at < ? ORDER BY created_at DESC LIMIT ?'
+      query = 'SELECT * FROM posts WHERE status = \'published\' AND created_at < ? ORDER BY created_at DESC LIMIT ?'
       params.unshift(cursor)
     }
     
@@ -63,30 +63,132 @@ app.get('/api/posts', async (c) => {
   }
 })
 
-// POST /api/upload/presigned - get presigned URL for file upload
-app.post('/api/upload/presigned', async (c) => {
-  const { filename, contentType, size } = await c.req.json()
-  
-  if (!filename || !contentType || !size) {
-    return c.json({ error: 'Missing required fields' }, 400)
+// Step 1 — POST /api/posts/prepare
+app.post('/api/posts/prepare', async (c) => {
+  try {
+    const { filename, contentType } = await c.req.json()
+    
+    if (!filename || !contentType) {
+      return c.json({ error: 'Missing filename or contentType' }, 400)
+    }
+    
+    if (contentType !== 'image/gif') {
+      return c.json({ error: 'Only GIF files are supported' }, 400)
+    }
+    
+    const postId = crypto.randomUUID()
+    const gifKey = `gif/${postId}.gif`
+    
+    // Store pending record in D1
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    const result = await c.env.DB.prepare(`
+      INSERT INTO posts (id, user_id, username, text, hashtags, gif_key, status)
+      VALUES (?, ?, ?, ?, ?, ?, 'pending')
+    `).bind(postId, c.get('user').sub, c.get('user').email?.split('@')[0] || 'anonymous', '', '[]', gifKey).run()
+    
+    if (!result.success) {
+      return c.json({ error: 'Failed to create pending post' }, 500)
+    }
+    
+    // Generate presigned URL for R2 upload (simplified for now)
+    const gifUploadUrl = `https://placeholder-upload-url.com/${gifKey}`
+    
+    return c.json({
+      postId,
+      gifUploadUrl,
+      gifKey
+    })
+  } catch (error: any) {
+    console.error('Prepare post error:', error)
+    return c.json({ error: 'Internal server error', details: error?.message || 'Unknown error' }, 500)
   }
-  
-  if (size > 10 * 1024 * 1024) { // 10MB limit
-    return c.json({ error: 'File too large' }, 400)
+})
+
+// Step 3 — POST /api/posts/commit
+app.post('/api/posts/commit', async (c) => {
+  try {
+    const { postId, gifKey, text, hashtags } = await c.req.json()
+    
+    // Validate text
+    if (!text || text.length < 1 || text.length > 200) {
+      return c.json({ error: 'Text must be 1-200 characters' }, 422)
+    }
+    
+    // Validate hashtags
+    if (!Array.isArray(hashtags) || hashtags.length > 5) {
+      return c.json({ error: 'Maximum 5 hashtags allowed' }, 422)
+    }
+    
+    for (const tag of hashtags) {
+      if (typeof tag !== 'string' || tag.length > 20 || !/^[a-zA-Z0-9_]+$/.test(tag)) {
+        return c.json({ error: 'Hashtags must be alphanumeric and ≤20 chars' }, 422)
+      }
+    }
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    let post: any
+    
+    if (gifKey) {
+      // Validate that this is a pending post and gifKey matches
+      const pendingPost = await c.env.DB.prepare(`
+        SELECT * FROM posts WHERE id = ? AND status = 'pending' AND gif_key = ?
+      `).bind(postId, gifKey).first()
+      
+      if (!pendingPost) {
+        return c.json({ error: 'Invalid or expired post preparation' }, 422)
+      }
+      
+      // Check if GIF exists in R2 (simplified check for now)
+      // In production, this would be: await c.env.BUCKET.head(gifKey)
+      const gifExists = true // Placeholder - implement actual R2 check
+      
+      if (!gifExists) {
+        return c.json({ error: 'GIF not uploaded' }, 422)
+      }
+      
+      // Update post to published status
+      const updateResult = await c.env.DB.prepare(`
+        UPDATE posts 
+        SET text = ?, hashtags = ?, status = 'published', created_at = datetime('now')
+        WHERE id = ?
+      `).bind(text, JSON.stringify(hashtags), postId).run()
+      
+      if (!updateResult.success) {
+        return c.json({ error: 'Failed to commit post' }, 500)
+      }
+      
+      // Return the updated post
+      post = await c.env.DB.prepare(`
+        SELECT * FROM posts WHERE id = ?
+      `).bind(postId).first()
+    } else {
+      // Create text-only post directly
+      const result = await c.env.DB.prepare(`
+        INSERT INTO posts (id, user_id, username, text, hashtags, status)
+        VALUES (?, ?, ?, ?, ?, 'published')
+      `).bind(postId, c.get('user').sub, c.get('user').email?.split('@')[0] || 'anonymous', text, JSON.stringify(hashtags)).run()
+      
+      if (!result.success) {
+        return c.json({ error: 'Failed to create post' }, 500)
+      }
+      
+      // Return the created post
+      post = await c.env.DB.prepare(`
+        SELECT * FROM posts WHERE id = ?
+      `).bind(postId).first()
+    }
+    
+    return c.json({ post })
+  } catch (error: any) {
+    console.error('Commit post error:', error)
+    return c.json({ error: 'Internal server error', details: error?.message || 'Unknown error' }, 500)
   }
-  
-  const postId = crypto.randomUUID()
-  const fileExtension = filename.split('.').pop()
-  const key = `payload/${postId}.${fileExtension}`
-  
-  // For now, return a simple upload URL - in production this would be a proper presigned URL
-  const uploadUrl = `/api/upload/direct`
-  
-  return c.json({
-    uploadUrl,
-    key,
-    postId
-  })
 })
 
 // POST /api/posts - create post

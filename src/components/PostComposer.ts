@@ -160,49 +160,41 @@ export class PostComposer {
     this.updateSubmitButton()
 
     try {
-      let payloadKey: string | undefined
       let gifKey: string | undefined
+      let postId: string | undefined
 
-      // Upload file if selected
+      // Step 1: Prepare post if file is selected
       if (this.selectedFile) {
-        const uploadResult = await this.uploadFile(this.selectedFile)
-        if (uploadResult) {
-          if (this.selectedFile.type.startsWith('image/')) {
-            gifKey = uploadResult.key
-          } else {
-            payloadKey = uploadResult.key
-          }
+        const prepareResult = await this.preparePost(this.selectedFile)
+        if (!prepareResult) {
+          throw new Error('Failed to prepare post')
+        }
+        
+        postId = prepareResult.postId
+        gifKey = prepareResult.gifKey
+
+        // Step 2: Upload file directly to R2
+        const uploadSuccess = await this.uploadFileDirect(this.selectedFile, prepareResult.gifUploadUrl)
+        if (!uploadSuccess) {
+          throw new Error('Failed to upload file')
         }
       }
 
-      // Create post
-      const response = await fetch('/api/posts', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          text,
-          payloadKey,
-          gifKey
-        })
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to create post')
+      // Step 3: Commit post
+      const commitResult = await this.commitPost(postId, gifKey, text)
+      
+      if (!commitResult) {
+        throw new Error('Failed to commit post')
       }
 
-      const result = await response.json() as { id: string }
-      
       // Clear form
       this.textarea.value = ''
       this.charCount.textContent = '0/200'
       this.clearFileSelection()
 
       // Notify parent
-      if (this.props.onPostCreated) {
-        this.props.onPostCreated({ id: result.id, text, created_at: new Date().toISOString() })
+      if (this.props.onPostCreated && commitResult.post) {
+        this.props.onPostCreated(commitResult.post)
       }
 
     } catch (error: any) {
@@ -212,6 +204,80 @@ export class PostComposer {
     } finally {
       this.isSubmitting = false
       this.updateSubmitButton()
+    }
+  }
+
+  private async preparePost(file: File): Promise<{ postId: string; gifUploadUrl: string; gifKey: string } | null> {
+    try {
+      const response = await fetch('/api/posts/prepare', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          filename: file.name,
+          contentType: file.type
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to prepare post')
+      }
+
+      return await response.json() as { postId: string; gifUploadUrl: string; gifKey: string }
+    } catch (error) {
+      console.error('Prepare post failed:', error)
+      return null
+    }
+  }
+
+  private async uploadFileDirect(file: File, uploadUrl: string): Promise<boolean> {
+    try {
+      const response = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: file,
+        headers: {
+          'Content-Type': file.type
+        }
+      })
+
+      return response.ok
+    } catch (error) {
+      console.error('File upload failed:', error)
+      return false
+    }
+  }
+
+  private async commitPost(postId: string | undefined, gifKey: string | undefined, text: string): Promise<{ post: any } | null> {
+    try {
+      // Extract hashtags from text
+      const hashtagRegex = /#(\w+)/g
+      const hashtags = Array.from(text.matchAll(hashtagRegex), (m: RegExpMatchArray) => m[1])
+
+      const response = await fetch('/api/posts/commit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          postId: postId || crypto.randomUUID(), // Generate ID for text-only posts
+          gifKey: gifKey,
+          text,
+          hashtags
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json() as any
+        throw new Error(error?.error || 'Failed to commit post')
+      }
+
+      return await response.json() as { post: any }
+    } catch (error) {
+      console.error('Commit post failed:', error)
+      return null
     }
   }
 
