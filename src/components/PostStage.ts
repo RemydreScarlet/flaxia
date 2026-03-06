@@ -24,6 +24,11 @@ function updateStageContent(container: HTMLElement, props: PostStageProps): void
   // Clear existing content
   container.innerHTML = ''
   
+  // Only show content if there are attachments
+  if (!props.post.gif_key && !props.post.payload_key) {
+    return
+  }
+  
   if (props.mode === PostCardMode.PREVIEW) {
     const gifPreview = createGifPreview({
       gifKey: props.post.gif_key,

@@ -41,14 +41,16 @@ export class PostCard {
     })
     container.appendChild(text)
 
-    // Post stage (16:9 container for GIF/iframe)
-    this.postStageElement = createPostStage({
-      post: this.props.post,
-      mode: this.mode,
-      sandboxOrigin: this.props.sandboxOrigin,
-      onModeChange: (newMode) => this.handleModeChange(newMode)
-    })
-    container.appendChild(this.postStageElement)
+    // Post stage (16:9 container for GIF/iframe) - only show if has attachments
+    if (this.props.post.gif_key || this.props.post.payload_key) {
+      this.postStageElement = createPostStage({
+        post: this.props.post,
+        mode: this.mode,
+        sandboxOrigin: this.props.sandboxOrigin,
+        onModeChange: (newMode) => this.handleModeChange(newMode)
+      })
+      container.appendChild(this.postStageElement)
+    }
 
     // Post actions
     const actions = createPostActions({
@@ -92,11 +94,6 @@ export class PostCard {
         sandboxOrigin: this.props.sandboxOrigin,
         onModeChange: (newMode) => this.handleModeChange(newMode)
       })
-      
-      // Re-setup sandbox bridge when mode changes to EXECUTING
-      if (newMode === PostCardMode.EXECUTING) {
-        setTimeout(() => this.setupSandboxBridge(), 100)
-      }
     }
   }
 
