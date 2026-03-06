@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign in - Flaxia</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      background-color: #0f172a;
+      color: white;
+      font-family: monospace;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .container {
+      text-align: center;
+      max-width: 400px;
+      padding: 2rem;
+    }
+    
+    .logo {
+      font-size: 2rem;
+      font-weight: bold;
+      margin-bottom: 1rem;
+      color: #22c55e;
+    }
+    
+    .tagline {
+      font-size: 1rem;
+      margin-bottom: 2rem;
+      opacity: 0.8;
+    }
+    
+    .cta-button {
+      background-color: #22c55e;
+      color: #0f172a;
+      border: none;
+      padding: 1rem 2rem;
+      font-family: monospace;
+      font-size: 1rem;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    
+    .cta-button:hover {
+      background-color: #16a34a;
+    }
+    
+    .cta-button:focus {
+      outline: 2px solid #22c55e;
+      outline-offset: 2px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">FLAXIA</div>
+    <div class="tagline">Twitter with Flash inside</div>
+    <button class="cta-button" onclick="signIn()">
+      Sign in with Google
+    </button>
+  </div>
+
+  <script>
+    function signIn() {
+      // Use hardcoded login URL for Google OAuth via Cloudflare Access
+      const loginUrl = 'https://remydre8.cloudflareaccess.com/cdn-cgi/access/login';
+      const redirectUrl = encodeURIComponent(window.location.href);
+      window.location.href = `${loginUrl}?redirect_url=${redirectUrl}`;
+    }
+  </script>
+</body>
+</html>

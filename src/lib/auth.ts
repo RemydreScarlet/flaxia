@@ -34,3 +34,13 @@ function getCookieFromRequest(request: Request, name: string): string | null {
   const cookie = cookies.split(';').find(c => c.trim().startsWith(name + '='))
   return cookie ? cookie.split('=')[1] : null
 }
+
+export function logout(): void {
+  window.location.href =
+    `https://remydre8.cloudflareaccess.com/cdn-cgi/access/logout` 
+}
+
+export function getLoginUrl(): string {
+  const redirectUrl = encodeURIComponent(window.location.href)
+  return `https://remydre8.cloudflareaccess.com/cdn-cgi/access/login?redirect_url=${redirectUrl}` 
+}
