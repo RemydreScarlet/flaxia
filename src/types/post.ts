@@ -53,3 +53,16 @@ export interface PostActionsProps {
   isFreshed: boolean
   onFreshToggle: () => void
 }
+
+export interface TimelineProps {
+  sandboxOrigin: string
+}
+
+export interface TimelineState {
+  mode: 'following' | 'hashtag'
+  hashtag: string
+  posts: Post[]
+  cursor?: string
+  loading: boolean
+  hasMore: boolean
+}

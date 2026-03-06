@@ -1,20 +1,6 @@
-import { createPostCard } from './components/PostCard.js'
-import type { Post } from './types/post.js'
+import { createTimeline } from './components/Timeline.js'
 
 console.log('Flaxia initialized')
-
-// Demo data for testing
-const demoPost: Post = {
-  id: 'demo-post-1',
-  user_id: 'user-1',
-  username: 'alice',
-  text: 'Check out this interactive math demo: $E = mc^2$ and $$\\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}$$',
-  hashtags: '["math", "physics"]',
-  gif_key: 'demo-gif-1',
-  payload_key: 'demo-payload-1',
-  fresh_count: 42,
-  created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() // 2 hours ago
-}
 
 // Basic app initialization
 document.addEventListener('DOMContentLoaded', () => {
@@ -33,14 +19,13 @@ document.addEventListener('DOMContentLoaded', () => {
     `
     app.appendChild(header)
     
-    // Create demo PostCard
-    const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'http://localhost:8080'
-    const postCard = createPostCard({
-      post: demoPost,
+    // Create Timeline
+    const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://flaxiausercontent.com'
+    const timeline = createTimeline({
       sandboxOrigin
     })
     
-    app.appendChild(postCard.getElement())
+    app.appendChild(timeline.getElement())
     
     // Add some spacing
     const style = document.createElement('style')

@@ -1,6 +1,9 @@
 // Main PostCard component
 export { PostCard, createPostCard } from './components/PostCard.js'
 
+// Timeline component
+export { Timeline, createTimeline } from './components/Timeline.js'
+
 // Sub-components (for advanced usage)
 export { createPostHeader } from './components/PostHeader.js'
 export { createPostText } from './components/PostText.js'
@@ -13,6 +16,8 @@ export { createPostActions } from './components/PostActions.js'
 export type { 
   Post, 
   PostCardProps, 
+  TimelineProps,
+  TimelineState,
   PostHeaderProps, 
   PostTextProps, 
   PostStageProps, 
