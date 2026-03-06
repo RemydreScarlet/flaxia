@@ -4,6 +4,10 @@ export { PostCard, createPostCard } from './components/PostCard.js'
 // Timeline component
 export { Timeline, createTimeline } from './components/Timeline.js'
 
+// Sandbox bridge
+export { SandboxBridge, useSandboxBridge } from './lib/sandbox-bridge.js'
+export type { SandboxBridgeOptions } from './lib/sandbox-bridge.js'
+
 // Sub-components (for advanced usage)
 export { createPostHeader } from './components/PostHeader.js'
 export { createPostText } from './components/PostText.js'

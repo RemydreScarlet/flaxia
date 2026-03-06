@@ -3,6 +3,7 @@ import { createPostHeader } from './PostHeader.js'
 import { createPostText } from './PostText.js'
 import { createPostStage, updatePostStage } from './PostStage.js'
 import { createPostActions } from './PostActions.js'
+import { useSandboxBridge } from '../lib/sandbox-bridge.js'
 
 export class PostCard {
   private element: HTMLElement
@@ -11,6 +12,7 @@ export class PostCard {
   private isFreshed: boolean
   private freshCount: number
   private postStageElement?: HTMLElement
+  private sandboxBridge?: ReturnType<typeof useSandboxBridge>
 
   constructor(props: PostCardProps) {
     this.props = props
@@ -61,19 +63,24 @@ export class PostCard {
   }
 
   private setupEventListeners(): void {
-    // Listen for sandbox messages
-    window.addEventListener('sandboxRequestFresh', (event: any) => {
-      if (event.detail.postId === this.props.post.id) {
-        this.handleFreshToggle()
-      }
-    })
+    // Setup sandbox bridge when iframe is available
+    this.setupSandboxBridge()
+  }
 
-    window.addEventListener('sandboxPostScore', (event: any) => {
-      if (event.detail.postId === this.props.post.id) {
-        console.log('Score submitted:', event.detail.score, event.detail.label)
-        // TODO: Handle score submission
-      }
-    })
+  private setupSandboxBridge(): void {
+    // Find the iframe in the post stage
+    const iframe = this.element.querySelector('.sandbox-frame') as HTMLIFrameElement
+    
+    if (iframe) {
+      this.sandboxBridge = useSandboxBridge({
+        iframe,
+        post: this.props.post,
+        onFreshRequest: () => this.handleFreshToggle()
+      })
+    } else {
+      // Iframe might not be ready yet, try again after a delay
+      setTimeout(() => this.setupSandboxBridge(), 100)
+    }
   }
 
   private handleModeChange(newMode: PostCardMode): void {
@@ -85,6 +92,11 @@ export class PostCard {
         sandboxOrigin: this.props.sandboxOrigin,
         onModeChange: (newMode) => this.handleModeChange(newMode)
       })
+      
+      // Re-setup sandbox bridge when mode changes to EXECUTING
+      if (newMode === PostCardMode.EXECUTING) {
+        setTimeout(() => this.setupSandboxBridge(), 100)
+      }
     }
   }
 
@@ -148,6 +160,12 @@ export class PostCard {
   }
 
   public destroy(): void {
+    // Cleanup sandbox bridge
+    if (this.sandboxBridge) {
+      this.sandboxBridge.destroy()
+      this.sandboxBridge = undefined
+    }
+    
     // Cleanup event listeners
     this.element.remove()
   }
