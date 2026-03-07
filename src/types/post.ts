@@ -7,6 +7,11 @@ export interface Post {
   gif_key?: string
   payload_key?: string
   fresh_count: number
+  reply_count: number
+  parent_id?: string
+  root_id?: string
+  depth: number
+  status: string
   created_at: string
 }
 
@@ -50,8 +55,10 @@ export interface SandboxFrameProps {
 export interface PostActionsProps {
   postId: string
   freshCount: number
+  replyCount: number
   isFreshed: boolean
   onFreshToggle: () => void
+  onReplyToggle: () => void
 }
 
 export interface TimelineProps {

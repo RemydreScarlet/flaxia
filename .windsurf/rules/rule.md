@@ -1,7 +1,3 @@
----
-trigger: always_on
----
-
 # Flaxia — Project Rules (Cloudflare Pages Edition)
 
 ## Project Identity
@@ -259,25 +255,6 @@ DELETE /api/follows/:id                               # unfollow
 
 ---
 
-## Dev Workflow
-
-```bash
-# Install
-pnpm install
-
-# Local dev (D1 + R2 local simulation)
-wrangler pages dev --d1=DB --r2=BUCKET -- pnpm vite
-
-# D1 migrations
-wrangler d1 migrations apply flaxia --local   # dev
-wrangler d1 migrations apply flaxia           # prod
-
-# Deploy
-wrangler pages deploy dist
-```
-
----
-
 ## Open Decisions (resolve before Phase 1)
 
 | # | Decision | Options | Impact |
@@ -285,3 +262,52 @@ wrangler pages deploy dist
 | 1 | Rendering strategy | SSR (hono/jsx) vs SPA (Vite+React) | Entire component architecture |
 | 2 | Sandbox origin deployment | Separate CF Pages project vs same project custom domain | DevOps complexity |
 | 3 | KaTeX rendering | Client-side only vs SSR pre-render | Flash-of-unstyled-math |
+
+---
+
+## Design Language
+
+**Design tokens**
+```css
+--bg-primary:    #ffffff;
+--bg-secondary:  #f0fdf4;
+--bg-input:      #f1f5f9;
+--border:        #e2e8f0;
+--text-primary:  #0f172a;
+--text-muted:    #64748b;
+--accent:        #22c55e;
+--accent-dark:   #16a34a;
+--danger:        #ef4444;
+```
+- `font-mono` for counts, timestamps, composer
+- `system-ui` for body text, nav labels
+
+---
+
+**Layout — 3 columns (mirrors Twitter/X)**
+```
+┌─────────────┬──────────────────┬─────────────────┐
+│  Left Nav   │   Main Feed      │   Right Panel   │
+│  (240px)    │   (600px)        │   (350px)       │
+└─────────────┴──────────────────┴─────────────────┘
+```
+Mobile: Left Nav collapses to bottom tab bar. Right Panel hidden.
+
+---
+
+**Component style**
+- Cards: `background: #ffffff`, separated by `border-bottom: 1px solid var(--border)`, no border-radius
+- Button (Primary): `background: #22c55e`, `color: #000`, `font-mono`, `font-bold`, pill shape
+- Button (Ghost): transparent background, `border: 1px solid var(--accent)`, `color: var(--accent)`
+- Avatars: `border-radius: 50%`, 40px (feed) / 48px (profile header)
+- Input fields: `background: var(--bg-input)`, underline-only or no border
+
+---
+
+**Forbidden (non-negotiable)**
+- `rounded-3xl` or equivalent excessive border-radius (pill buttons and search box excluded)
+- Pastel colors, gradient backgrounds
+- Box shadows on cards
+- `allow-same-origin` on any iframe (security requirement)
+- Layouts that cause horizontal scroll on mobile
+- Dark background (`#0f172a`) as base — white-first only

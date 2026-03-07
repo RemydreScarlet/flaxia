@@ -140,6 +140,20 @@ export class Timeline {
       }
     })
 
+    // Reply toggle events - listen for replyToggle events from post cards
+    this.element.addEventListener('replyToggle', (e: any) => {
+      const postId = e.detail.postId
+      this.handleReplyToggle(postId)
+    })
+    
+    // Thread navigation events - listen for navigateToThread events from post cards
+    this.element.addEventListener('navigateToThread', (e: any) => {
+      const postId = e.detail.postId
+      console.log('Timeline received navigateToThread event for postId:', postId)
+      // Let the main app handle this navigation
+      console.log('Navigate to thread:', postId)
+    })
+
     // Hashtag search
     const hashtagInput = this.element.querySelector('.hashtag-search-btn') as HTMLButtonElement
     const inputField = this.element.querySelector('.hashtag-input-field') as HTMLInputElement
@@ -173,6 +187,15 @@ export class Timeline {
     // Add the new post to the beginning of the timeline
     this.state.posts = [post, ...this.state.posts]
     this.renderPostList()
+  }
+
+  private handleReplyToggle(postId: string): void {
+    // Find the post card and let it handle the inline reply composer
+    const postCard = this.postCards.get(postId)
+    if (postCard) {
+      // PostCard will handle showing/hiding its inline reply composer
+      postCard.handleReplyTogglePublic()
+    }
   }
 
   private switchMode(mode: 'following' | 'foryou'): void {

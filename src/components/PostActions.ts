@@ -9,11 +9,8 @@ export function createPostActions(props: PostActionsProps): HTMLElement {
   freshButton.addEventListener('click', props.onFreshToggle)
   
   // Reply button
-  const replyButton = createActionButton('reply', '0', false)
-  replyButton.addEventListener('click', () => {
-    // TODO: Implement reply functionality
-    console.log('Reply clicked for post:', props.postId)
-  })
+  const replyButton = createActionButton('reply', props.replyCount.toString(), false)
+  replyButton.addEventListener('click', props.onReplyToggle)
   
   // Share button
   const shareButton = createActionButton('share', '0', false)
@@ -57,7 +54,7 @@ function createActionButton(type: 'fresh' | 'reply' | 'share', count: string, is
 function getIconForType(type: 'fresh' | 'reply' | 'share'): string {
   switch (type) {
     case 'fresh':
-      return '�' // Leaf emoji for Fresh!
+      return '🍃' // Leaf emoji for Fresh!
     case 'reply':
       return '💬' // Message emoji for Reply
     case 'share':

@@ -65,11 +65,11 @@ app.get('/api/posts', async (c) => {
       return c.json({ error: 'Database not available' }, 500)
     }
     
-    let query = 'SELECT * FROM posts WHERE status = \'published\' ORDER BY created_at DESC LIMIT ?'
+    let query = 'SELECT id, user_id, username, text, hashtags, gif_key, payload_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE status = \'published\' AND parent_id IS NULL ORDER BY created_at DESC LIMIT ?'
     const params: any[] = [limit]
     
     if (cursor) {
-      query = 'SELECT * FROM posts WHERE status = \'published\' AND created_at < ? ORDER BY created_at DESC LIMIT ?'
+      query = 'SELECT id, user_id, username, text, hashtags, gif_key, payload_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE status = \'published\' AND parent_id IS NULL AND created_at < ? ORDER BY created_at DESC LIMIT ?'
       params.unshift(cursor)
     }
     
@@ -287,6 +287,273 @@ app.post('/api/posts/:id/fresh', async (c) => {
     ).bind(postId).run()
     
     return c.json({ freshed: true })
+  }
+})
+
+// GET /api/posts/:id/replies - get direct replies
+app.get('/api/posts/:id/replies', async (c) => {
+  try {
+    const postId = c.req.param('id')
+    const cursor = c.req.query('cursor')
+    const limit = Math.min(Number(c.req.query('limit') || '20'), 50)
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    // Verify parent post exists and is published
+    const parentPost = await c.env.DB.prepare(
+      'SELECT id, user_id, username, text, hashtags, gif_key, payload_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE id = ? AND status = \'published\''
+    ).bind(postId).first()
+    
+    if (!parentPost) {
+      return c.json({ error: 'Post not found' }, 404)
+    }
+    
+    let query = 'SELECT id, user_id, username, text, hashtags, gif_key, payload_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE parent_id = ? AND status = \'published\' ORDER BY created_at ASC LIMIT ?'
+    const params: any[] = [postId, limit]
+    
+    if (cursor) {
+      query = 'SELECT id, user_id, username, text, hashtags, gif_key, payload_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE parent_id = ? AND status = \'published\' AND created_at > ? ORDER BY created_at ASC LIMIT ?'
+      params.unshift(postId, cursor)
+    }
+    
+    const result = await c.env.DB.prepare(query).bind(...params).all()
+    
+    if (!result.success) {
+      return c.json({ error: 'Failed to fetch replies' }, 500)
+    }
+    
+    const replies = result.results || []
+    const nextCursor = replies.length === limit ? replies[replies.length - 1].created_at : null
+    
+    return c.json({ replies, nextCursor })
+  } catch (error: any) {
+    console.error('Replies fetch error:', error)
+    return c.json({ error: 'Internal server error' }, 500)
+  }
+})
+
+// GET /api/posts/:id/thread - get full thread
+app.get('/api/posts/:id/thread', async (c) => {
+  try {
+    const postId = c.req.param('id')
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    // First get the post to find root_id
+    const post = await c.env.DB.prepare(
+      'SELECT id, user_id, username, text, hashtags, gif_key, payload_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE id = ? AND status = \'published\''
+    ).bind(postId).first()
+    
+    if (!post) {
+      return c.json({ error: 'Post not found' }, 404)
+    }
+    
+    const rootId = post.root_id || post.id
+    
+    // Get root post
+    const rootPost = await c.env.DB.prepare(
+      'SELECT id, user_id, username, text, hashtags, gif_key, payload_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE id = ? AND status = \'published\''
+    ).bind(rootId).first()
+    
+    if (!rootPost) {
+      return c.json({ error: 'Thread not found' }, 404)
+    }
+    
+    // Get all replies in thread (max 200 for MVP)
+    const repliesResult = await c.env.DB.prepare(
+      'SELECT id, user_id, username, text, hashtags, gif_key, payload_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE root_id = ? AND status = \'published\' AND id != ? ORDER BY created_at ASC LIMIT 200'
+    ).bind(rootId, rootId).all()
+    
+    if (!repliesResult.success) {
+      return c.json({ error: 'Failed to fetch thread' }, 500)
+    }
+    
+    return c.json({ root: rootPost, replies: repliesResult.results || [] })
+  } catch (error: any) {
+    console.error('Thread fetch error:', error)
+    return c.json({ error: 'Internal server error' }, 500)
+  }
+})
+
+// Step 1 — POST /api/posts/:id/replies/prepare
+app.post('/api/posts/:id/replies/prepare', async (c) => {
+  try {
+    const postId = c.req.param('id')
+    const { filename, contentType } = await c.req.json()
+    
+    if (!filename || !contentType) {
+      return c.json({ error: 'Missing filename or contentType' }, 400)
+    }
+    
+    if (contentType !== 'image/gif') {
+      return c.json({ error: 'Only GIF files are supported' }, 400)
+    }
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    // Validate parent post exists and is published
+    const parentPost = await c.env.DB.prepare(
+      'SELECT id, user_id, username, text, hashtags, gif_key, payload_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE id = ? AND status = \'published\''
+    ).bind(postId).first()
+    
+    if (!parentPost) {
+      return c.json({ error: 'Parent post not found' }, 404)
+    }
+    
+    const replyId = crypto.randomUUID()
+    const gifKey = `gif/${replyId}.gif`
+    
+    // Compute depth and root_id
+    const depth = Math.min(Number(parentPost.depth || 0) + 1, 5)
+    const rootId = parentPost.root_id || parentPost.id
+    
+    // Store pending reply in D1
+    const result = await c.env.DB.prepare(`
+      INSERT INTO posts (id, user_id, username, text, hashtags, gif_key, status, parent_id, root_id, depth, reply_count)
+      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, 0)
+    `).bind(
+      replyId, 
+      c.get('user').sub, 
+      c.get('user').email?.split('@')[0] || 'anonymous', 
+      '', 
+      '[]', 
+      gifKey,
+      postId,
+      rootId,
+      depth
+    ).run()
+    
+    if (!result.success) {
+      return c.json({ error: 'Failed to create pending reply' }, 500)
+    }
+    
+    // Generate presigned URL for R2 upload (simplified for now)
+    const gifUploadUrl = `https://placeholder-upload-url.com/${gifKey}`
+    
+    return c.json({
+      replyId,
+      gifUploadUrl,
+      gifKey
+    })
+  } catch (error: any) {
+    console.error('Prepare reply error:', error)
+    return c.json({ error: 'Internal server error' }, 500)
+  }
+})
+
+// Step 3 — POST /api/posts/:id/replies/commit
+app.post('/api/posts/:id/replies/commit', async (c) => {
+  try {
+    const postId = c.req.param('id')
+    const { replyId, gifKey, text, hashtags } = await c.req.json()
+    
+    // Validate text
+    if (!text || text.length < 1 || text.length > 200) {
+      return c.json({ error: 'Text must be 1-200 characters' }, 422)
+    }
+    
+    // Validate hashtags
+    if (!Array.isArray(hashtags) || hashtags.length > 5) {
+      return c.json({ error: 'Maximum 5 hashtags allowed' }, 422)
+    }
+    
+    for (const tag of hashtags) {
+      if (typeof tag !== 'string' || tag.length > 20 || !/^[a-zA-Z0-9_]+$/.test(tag)) {
+        return c.json({ error: 'Hashtags must be alphanumeric and ≤20 chars' }, 422)
+      }
+    }
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    // Validate parent still exists and is published
+    const parentPost = await c.env.DB.prepare(
+      'SELECT id, user_id, username, text, hashtags, gif_key, payload_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE id = ? AND status = \'published\''
+    ).bind(postId).first()
+    
+    if (!parentPost) {
+      return c.json({ error: 'Parent post no longer available' }, 422)
+    }
+    
+    let reply: any
+    
+    if (gifKey) {
+      // Validate that this is a pending reply and gifKey matches
+      const pendingReply = await c.env.DB.prepare(`
+        SELECT * FROM posts WHERE id = ? AND status = 'pending' AND gif_key = ? AND parent_id = ?
+      `).bind(replyId, gifKey, postId).first()
+      
+      if (!pendingReply) {
+        return c.json({ error: 'Invalid or expired reply preparation' }, 422)
+      }
+      
+      // Check if GIF exists in R2 (simplified check for now)
+      const gifExists = true // Placeholder - implement actual R2 check
+      
+      if (!gifExists) {
+        return c.json({ error: 'GIF not uploaded' }, 422)
+      }
+      
+      // Update reply to published status
+      const updateResult = await c.env.DB.prepare(`
+        UPDATE posts 
+        SET text = ?, hashtags = ?, status = 'published', created_at = datetime('now')
+        WHERE id = ?
+      `).bind(text, JSON.stringify(hashtags), replyId).run()
+      
+      if (!updateResult.success) {
+        return c.json({ error: 'Failed to commit reply' }, 500)
+      }
+      
+      // Return the updated reply
+      reply = await c.env.DB.prepare(`
+        SELECT id, user_id, username, text, hashtags, gif_key, payload_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE id = ?
+      `).bind(replyId).first()
+    } else {
+      // Create text-only reply directly
+      const depth = Math.min(Number(parentPost.depth || 0) + 1, 5)
+      const rootId = parentPost.root_id || parentPost.id
+      
+      const result = await c.env.DB.prepare(`
+        INSERT INTO posts (id, user_id, username, text, hashtags, status, parent_id, root_id, depth, reply_count)
+        VALUES (?, ?, ?, ?, ?, 'published', ?, ?, ?, 0)
+      `).bind(
+        replyId, 
+        c.get('user').sub, 
+        c.get('user').email?.split('@')[0] || 'anonymous', 
+        text, 
+        JSON.stringify(hashtags),
+        postId,
+        rootId,
+        depth
+      ).run()
+      
+      if (!result.success) {
+        return c.json({ error: 'Failed to create reply' }, 500)
+      }
+      
+      // Return the created reply
+      reply = await c.env.DB.prepare(`
+        SELECT id, user_id, username, text, hashtags, gif_key, payload_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE id = ?
+      `).bind(replyId).first()
+    }
+    
+    // Increment parent's reply count
+    await c.env.DB.prepare(`
+      UPDATE posts SET reply_count = reply_count + 1 WHERE id = ?
+    `).bind(postId).run()
+    
+    return c.json({ reply })
+  } catch (error: any) {
+    console.error('Commit reply error:', error)
+    return c.json({ error: 'Internal server error' }, 500)
   }
 })
 
