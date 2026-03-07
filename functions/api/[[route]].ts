@@ -24,13 +24,25 @@ app.put('/api/upload/*', async (c) => {
   try {
     const key = c.req.path.replace('/api/upload/', '')
     const contentType = c.req.header('content-type')
+    const contentLength = c.req.header('content-length')
     
     if (!key) {
       return c.json({ error: 'Missing file key' }, 400)
     }
     
+    // Check file size limit (10MB = 10 * 1024 * 1024 bytes)
+    const maxSize = 10 * 1024 * 1024
+    if (contentLength && Number(contentLength) > maxSize) {
+      return c.json({ error: 'File too large. Maximum size is 10MB' }, 413)
+    }
+    
     // Get the file data from request body
     const fileData = await c.req.arrayBuffer()
+    
+    // Double-check file size after reading
+    if (fileData.byteLength > maxSize) {
+      return c.json({ error: 'File too large. Maximum size is 10MB' }, 413)
+    }
     
     if (!c.env.BUCKET) {
       return c.json({ error: 'Storage not available' }, 500)
