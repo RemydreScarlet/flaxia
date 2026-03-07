@@ -35,13 +35,13 @@ export class PostComposer {
         <div class="composer-file-dropzone" style="display: none;">
           <div class="dropzone-content">
             <span class="dropzone-icon">📎</span>
-            <span class="dropzone-text">Optional: Add an image (GIF, PNG, JPG) or audio (MP3, WAV, OGG, M4A, WebM)</span>
+            <span class="dropzone-text">Optional: Add an image (GIF, PNG, JPG), audio (MP3, WAV, OGG, M4A, WebM), or ZIP file</span>
           </div>
         </div>
         <div class="composer-divider"></div>
         <div class="composer-footer">
           <div class="composer-actions">
-            <input type="file" class="composer-file-input" accept=".js,.wasm,.html,.gif,.png,.jpg,.jpeg,.mp3,.wav,.ogg,.m4a,.webm" />
+            <input type="file" class="composer-file-input" accept=".js,.wasm,.html,.gif,.png,.jpg,.jpeg,.mp3,.wav,.ogg,.m4a,.webm,.zip" />
             <button class="composer-file-button" type="button">
               📎
             </button>
@@ -125,9 +125,9 @@ export class PostComposer {
     }
 
     // Check if file is an accepted format
-    const allowedTypes = ['image/gif', 'image/png', 'image/jpeg', 'image/jpg', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/webm']
+    const allowedTypes = ['image/gif', 'image/png', 'image/jpeg', 'image/jpg', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/webm', 'application/zip']
     if (!allowedTypes.includes(file.type)) {
-      alert('Only image files (GIF, PNG, JPG) and audio files (MP3, WAV, OGG, M4A, WebM) are supported')
+      alert('Only image files (GIF, PNG, JPG), audio files (MP3, WAV, OGG, M4A, WebM), and ZIP files are supported')
       this.clearFileSelection()
       return
     }
@@ -180,6 +180,7 @@ export class PostComposer {
 
     try {
       let gifKey: string | undefined
+      let zipKey: string | undefined
       let postId: string | undefined
 
       // Step 1: Prepare post if file is selected
@@ -190,17 +191,26 @@ export class PostComposer {
         }
         
         postId = prepareResult.postId
-        gifKey = prepareResult.gifKey
-
-        // Step 2: Upload file directly to R2
-        const uploadSuccess = await this.uploadFileDirect(this.selectedFile, prepareResult.gifUploadUrl)
-        if (!uploadSuccess) {
-          throw new Error('Failed to upload file')
+        
+        if (prepareResult.zipUploadUrl && prepareResult.zipKey) {
+          // ZIP file upload
+          zipKey = prepareResult.zipKey
+          const uploadSuccess = await this.uploadFileDirect(this.selectedFile, prepareResult.zipUploadUrl)
+          if (!uploadSuccess) {
+            throw new Error('Failed to upload ZIP file')
+          }
+        } else if (prepareResult.gifUploadUrl && prepareResult.gifKey) {
+          // Image/audio file upload
+          gifKey = prepareResult.gifKey
+          const uploadSuccess = await this.uploadFileDirect(this.selectedFile, prepareResult.gifUploadUrl)
+          if (!uploadSuccess) {
+            throw new Error('Failed to upload file')
+          }
         }
       }
 
       // Step 3: Commit post
-      const commitResult = await this.commitPost(postId, gifKey, text)
+      const commitResult = await this.commitPost(postId, gifKey, zipKey, text)
       
       if (!commitResult) {
         throw new Error('Failed to commit post')
@@ -226,7 +236,7 @@ export class PostComposer {
     }
   }
 
-  private async preparePost(file: File): Promise<{ postId: string; gifUploadUrl: string; gifKey: string } | null> {
+  private async preparePost(file: File): Promise<{ postId: string; gifUploadUrl?: string; gifKey?: string; zipUploadUrl?: string; zipKey?: string } | null> {
     try {
       const response = await fetch('/api/posts/prepare', {
         method: 'POST',
@@ -244,7 +254,22 @@ export class PostComposer {
         throw new Error('Failed to prepare post')
       }
 
-      return await response.json() as { postId: string; gifUploadUrl: string; gifKey: string }
+      const result = await response.json() as any
+      
+      // Handle both ZIP and non-ZIP responses
+      if (result.zipUploadUrl && result.zipKey) {
+        return {
+          postId: result.postId,
+          zipUploadUrl: result.zipUploadUrl,
+          zipKey: result.zipKey
+        }
+      } else {
+        return {
+          postId: result.postId,
+          gifUploadUrl: result.gifUploadUrl,
+          gifKey: result.gifKey
+        }
+      }
     } catch (error) {
       console.error('Prepare post failed:', error)
       return null
@@ -292,7 +317,7 @@ export class PostComposer {
     }
   }
 
-  private async commitPost(postId: string | undefined, gifKey: string | undefined, text: string): Promise<{ post: any } | null> {
+  private async commitPost(postId: string | undefined, gifKey: string | undefined, zipKey: string | undefined, text: string): Promise<{ post: any } | null> {
     try {
       // Extract hashtags from text
       const hashtagRegex = /#(\w+)/g
@@ -307,6 +332,7 @@ export class PostComposer {
         body: JSON.stringify({
           postId: postId || crypto.randomUUID(), // Generate ID for text-only posts
           gifKey: gifKey,
+          zipKey: zipKey,
           text,
           hashtags
         })

@@ -136,13 +136,51 @@ app.get('/api/audio/*', async (c) => {
   }
 })
 
+// GET /api/zip/:postId - serve ZIP files from R2
+app.get('/api/zip/:postId', async (c) => {
+  try {
+    const postId = c.req.param('postId')
+    
+    if (!postId) {
+      return c.json({ error: 'Missing post ID' }, 400)
+    }
+    
+    if (!c.env.BUCKET) {
+      return c.json({ error: 'Storage not available' }, 500)
+    }
+    
+    // Construct the ZIP key
+    const zipKey = `zip/${postId}.zip`
+    
+    // Get object from R2
+    const object = await c.env.BUCKET.get(zipKey)
+    
+    if (!object) {
+      return c.json({ error: 'ZIP not found' }, 404)
+    }
+    
+    // Return the ZIP with proper headers
+    return new Response(object.body, {
+      headers: {
+        'Content-Type': 'application/zip',
+        'Cache-Control': 'public, max-age=31536000', // Cache for 1 year
+        'Access-Control-Allow-Origin': '*'
+      }
+    })
+  } catch (error: any) {
+    console.error('ZIP proxy error:', error)
+    return c.json({ error: 'Failed to fetch ZIP', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
 // Auth middleware - only for API routes
 app.use('/api/*', async (c, next) => {
-  // Skip auth for GET /api/me, PUT /api/upload/*, GET /api/images/*, and GET /api/audio/*
+  // Skip auth for GET /api/me, PUT /api/upload/*, GET /api/images/*, GET /api/audio/*, and GET /api/zip/*
   if ((c.req.method === 'GET' && c.req.path === '/api/me') || 
       (c.req.method === 'PUT' && c.req.path.startsWith('/api/upload/')) ||
       (c.req.method === 'GET' && c.req.path.startsWith('/api/images/')) ||
-      (c.req.method === 'GET' && c.req.path.startsWith('/api/audio/'))) {
+      (c.req.method === 'GET' && c.req.path.startsWith('/api/audio/')) ||
+      (c.req.method === 'GET' && c.req.path.startsWith('/api/zip/'))) {
     await next()
     return
   }
@@ -218,9 +256,9 @@ app.post('/api/posts/prepare', async (c) => {
       return c.json({ error: 'Missing filename or contentType' }, 400)
     }
     
-    const allowedTypes = ['image/gif', 'image/png', 'image/jpeg', 'image/jpg', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/webm']
+    const allowedTypes = ['image/gif', 'image/png', 'image/jpeg', 'image/jpg', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/webm', 'application/zip']
     if (!allowedTypes.includes(contentType)) {
-      return c.json({ error: 'Only image files (GIF, PNG, JPG) and audio files (MP3, WAV, OGG, M4A, WebM) are supported' }, 400)
+      return c.json({ error: 'Only image files (GIF, PNG, JPG), audio files (MP3, WAV, OGG, M4A, WebM), and ZIP files are supported' }, 400)
     }
     
     const postId = crypto.randomUUID()
@@ -236,6 +274,8 @@ app.post('/api/posts/prepare', async (c) => {
                      contentType === 'audio/ogg' ? '.ogg' : 
                      contentType === 'audio/mp4' ? '.m4a' : '.webm'
       storageKey = `audio/${postId}${fileExtension}`
+    } else if (contentType === 'application/zip') {
+      storageKey = `zip/${postId}.zip`
     } else {
       return c.json({ error: 'Unsupported file type' }, 400)
     }
@@ -248,7 +288,7 @@ app.post('/api/posts/prepare', async (c) => {
     }
     
     const result = await c.env.DB.prepare(`
-      INSERT INTO posts (id, user_id, username, text, hashtags, gif_key, status)
+      INSERT INTO posts (id, user_id, username, text, hashtags, ${contentType === 'application/zip' ? 'payload_key' : 'gif_key'}, status)
       VALUES (?, ?, ?, ?, ?, ?, 'pending')
     `).bind(postId, c.get('user').sub, c.get('user').email?.split('@')[0] || 'anonymous', '', '[]', gifKey).run()
     
@@ -257,13 +297,21 @@ app.post('/api/posts/prepare', async (c) => {
     }
     
     // Return upload endpoint URL (our own API)
-    const gifUploadUrl = `${new URL(c.req.url).origin}/api/upload/${gifKey}`
-    
-    return c.json({
-      postId,
-      gifUploadUrl,
-      gifKey
-    })
+    if (contentType === 'application/zip') {
+      const zipUploadUrl = `${new URL(c.req.url).origin}/api/upload/${gifKey}`
+      return c.json({
+        postId,
+        zipUploadUrl,
+        zipKey: gifKey
+      })
+    } else {
+      const gifUploadUrl = `${new URL(c.req.url).origin}/api/upload/${gifKey}`
+      return c.json({
+        postId,
+        gifUploadUrl,
+        gifKey
+      })
+    }
   } catch (error: any) {
     console.error('Prepare post error:', error)
     return c.json({ error: 'Internal server error', details: error?.message || 'Unknown error' }, 500)
@@ -273,7 +321,7 @@ app.post('/api/posts/prepare', async (c) => {
 // Step 3 — POST /api/posts/commit
 app.post('/api/posts/commit', async (c) => {
   try {
-    const { postId, gifKey, text, hashtags } = await c.req.json()
+    const { postId, gifKey, zipKey, text, hashtags } = await c.req.json()
     
     // Validate text
     if (!text || text.length < 1 || text.length > 200) {
@@ -297,22 +345,23 @@ app.post('/api/posts/commit', async (c) => {
     
     let post: any
     
-    if (gifKey) {
-      // Validate that this is a pending post and gifKey matches
+    if (gifKey || zipKey) {
+      const key = zipKey || gifKey
+      // Validate that this is a pending post and key matches
       const pendingPost = await c.env.DB.prepare(`
-        SELECT * FROM posts WHERE id = ? AND status = 'pending' AND gif_key = ?
-      `).bind(postId, gifKey).first()
+        SELECT * FROM posts WHERE id = ? AND status = 'pending' AND (gif_key = ? OR payload_key = ?)
+      `).bind(postId, key, key).first()
       
       if (!pendingPost) {
         return c.json({ error: 'Invalid or expired post preparation' }, 422)
       }
       
-      // Check if GIF exists in R2 (simplified check for now)
-      // In production, this would be: await c.env.BUCKET.head(gifKey)
-      const gifExists = true // Placeholder - implement actual R2 check
+      // Check if file exists in R2 (simplified check for now)
+      // In production, this would be: await c.env.BUCKET.head(key)
+      const fileExists = true // Placeholder - implement actual R2 check
       
-      if (!gifExists) {
-        return c.json({ error: 'GIF not uploaded' }, 422)
+      if (!fileExists) {
+        return c.json({ error: 'File not uploaded' }, 422)
       }
       
       // Update post to published status
