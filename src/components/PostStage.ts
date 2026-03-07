@@ -1,7 +1,7 @@
 import { PostStageProps, PostCardMode } from '../types/post.js'
 import { createImagePreview } from './ImagePreview.js'
 import { createAudioPlayer } from './AudioPlayer.js'
-import { createSandboxFrame } from './SandboxFrame.js'
+import { executeZip } from '../lib/zip-executor.js'
 
 // Load JSZip dynamically
 declare const JSZip: any
@@ -48,11 +48,14 @@ function createZipExecutionButton(props: ZipExecutionButtonProps): HTMLElement {
   const container = document.createElement('div')
   container.className = 'zip-execution-button'
   container.style.cssText = `
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 100%;
-    height: 200px;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     border-radius: 8px;
     cursor: pointer;
@@ -146,12 +149,14 @@ export function createPostStage(props: PostStageProps): HTMLElement {
   })
   
   // Render current mode
-  updateStageContent(container, props)
+  updateStageContent(container, props).catch(error => {
+    console.error('Error updating stage content:', error)
+  })
   
   return container
 }
 
-function updateStageContent(container: HTMLElement, props: PostStageProps): void {
+async function updateStageContent(container: HTMLElement, props: PostStageProps): Promise<void> {
   // Clear existing content
   container.innerHTML = ''
   
@@ -192,15 +197,28 @@ function updateStageContent(container: HTMLElement, props: PostStageProps): void
       container.appendChild(hint)
     }
   } else {
-    const sandboxFrame = createSandboxFrame({
-      postId: props.post.id,
-      sandboxOrigin: props.sandboxOrigin
-    })
-    container.appendChild(sandboxFrame)
+    // For ZIP files, use the new ZIP execution engine
+    if (props.post.payload_key && props.post.payload_key.startsWith('zip/')) {
+      // The executeZip function will handle creating the iframe and cleanup
+      executeZip(props.post.id, container).catch(error => {
+        console.error('Failed to execute ZIP:', error)
+        container.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">Failed to load ZIP content</div>'
+      })
+    } else {
+      // For non-ZIP files, use the old sandbox frame
+      const { createSandboxFrame } = await import('./SandboxFrame.js')
+      const sandboxFrame = createSandboxFrame({
+        postId: props.post.id,
+        sandboxOrigin: props.sandboxOrigin
+      })
+      container.appendChild(sandboxFrame)
+    }
   }
 }
 
 // Export a function to update the stage content when mode changes
 export function updatePostStage(container: HTMLElement, props: PostStageProps): void {
-  updateStageContent(container, props)
+  updateStageContent(container, props).catch(error => {
+    console.error('Error updating stage content:', error)
+  })
 }
