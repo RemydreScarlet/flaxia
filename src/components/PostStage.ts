@@ -1,5 +1,6 @@
 import { PostStageProps, PostCardMode } from '../types/post.js'
 import { createImagePreview } from './ImagePreview.js'
+import { createAudioPlayer } from './AudioPlayer.js'
 import { createSandboxFrame } from './SandboxFrame.js'
 
 export function createPostStage(props: PostStageProps): HTMLElement {
@@ -30,11 +31,22 @@ function updateStageContent(container: HTMLElement, props: PostStageProps): void
   }
   
   if (props.mode === PostCardMode.PREVIEW) {
-    const imagePreview = createImagePreview({
-      gifKey: props.post.gif_key,
-      postId: props.post.id
-    })
-    container.appendChild(imagePreview)
+    let mediaElement
+    
+    // Check if it's an audio file
+    if (props.post.gif_key && props.post.gif_key.startsWith('audio/')) {
+      mediaElement = createAudioPlayer({
+        gifKey: props.post.gif_key,
+        postId: props.post.id
+      })
+    } else {
+      mediaElement = createImagePreview({
+        gifKey: props.post.gif_key,
+        postId: props.post.id
+      })
+    }
+    
+    container.appendChild(mediaElement)
     
     // Add click hint
     const hint = document.createElement('div')

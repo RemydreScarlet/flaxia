@@ -63,6 +63,7 @@ app.put('/api/upload/*', async (c) => {
 })
 
 // GET /api/images/* - proxy images from R2
+// GET /api/audio/* - proxy audio files from R2  
 app.get('/api/images/*', async (c) => {
   try {
     const key = c.req.path.replace('/api/images/', '')
@@ -99,12 +100,49 @@ app.get('/api/images/*', async (c) => {
   }
 })
 
+app.get('/api/audio/*', async (c) => {
+  try {
+    const key = c.req.path.replace('/api/audio/', '')
+    
+    if (!key) {
+      return c.json({ error: 'Missing audio key' }, 400)
+    }
+    
+    if (!c.env.BUCKET) {
+      return c.json({ error: 'Storage not available' }, 500)
+    }
+    
+    // Get object from R2
+    const object = await c.env.BUCKET.get(key)
+    
+    if (!object) {
+      return c.json({ error: 'Audio not found' }, 404)
+    }
+    
+    // Get content type from object metadata or default to audio/mpeg
+    const contentType = object.httpMetadata?.contentType || 'audio/mpeg'
+    
+    // Return the audio with proper headers
+    return new Response(object.body, {
+      headers: {
+        'Content-Type': contentType,
+        'Cache-Control': 'public, max-age=31536000', // Cache for 1 year
+        'Access-Control-Allow-Origin': '*'
+      }
+    })
+  } catch (error: any) {
+    console.error('Audio proxy error:', error)
+    return c.json({ error: 'Failed to fetch audio', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
 // Auth middleware - only for API routes
 app.use('/api/*', async (c, next) => {
-  // Skip auth for GET /api/me, PUT /api/upload/*, and GET /api/images/*
+  // Skip auth for GET /api/me, PUT /api/upload/*, GET /api/images/*, and GET /api/audio/*
   if ((c.req.method === 'GET' && c.req.path === '/api/me') || 
       (c.req.method === 'PUT' && c.req.path.startsWith('/api/upload/')) ||
-      (c.req.method === 'GET' && c.req.path.startsWith('/api/images/'))) {
+      (c.req.method === 'GET' && c.req.path.startsWith('/api/images/')) ||
+      (c.req.method === 'GET' && c.req.path.startsWith('/api/audio/'))) {
     await next()
     return
   }
@@ -180,14 +218,29 @@ app.post('/api/posts/prepare', async (c) => {
       return c.json({ error: 'Missing filename or contentType' }, 400)
     }
     
-    const allowedTypes = ['image/gif', 'image/png', 'image/jpeg', 'image/jpg']
+    const allowedTypes = ['image/gif', 'image/png', 'image/jpeg', 'image/jpg', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/webm']
     if (!allowedTypes.includes(contentType)) {
-      return c.json({ error: 'Only image files (GIF, PNG, JPG) are supported' }, 400)
+      return c.json({ error: 'Only image files (GIF, PNG, JPG) and audio files (MP3, WAV, OGG, M4A, WebM) are supported' }, 400)
     }
     
     const postId = crypto.randomUUID()
-    const fileExtension = contentType === 'image/png' ? '.png' : contentType === 'image/jpeg' || contentType === 'image/jpg' ? '.jpg' : '.gif'
-    const gifKey = `gif/${postId}${fileExtension}`
+    let fileExtension: string
+    let storageKey: string
+    
+    if (contentType.startsWith('image/')) {
+      fileExtension = contentType === 'image/png' ? '.png' : contentType === 'image/jpeg' || contentType === 'image/jpg' ? '.jpg' : '.gif'
+      storageKey = `gif/${postId}${fileExtension}`
+    } else if (contentType.startsWith('audio/')) {
+      fileExtension = contentType === 'audio/mpeg' ? '.mp3' : 
+                     contentType === 'audio/wav' ? '.wav' : 
+                     contentType === 'audio/ogg' ? '.ogg' : 
+                     contentType === 'audio/mp4' ? '.m4a' : '.webm'
+      storageKey = `audio/${postId}${fileExtension}`
+    } else {
+      return c.json({ error: 'Unsupported file type' }, 400)
+    }
+    
+    const gifKey = storageKey
     
     // Store pending record in D1
     if (!c.env.DB) {
@@ -475,9 +528,9 @@ app.post('/api/posts/:id/replies/prepare', async (c) => {
       return c.json({ error: 'Missing filename or contentType' }, 400)
     }
     
-    const allowedTypes = ['image/gif', 'image/png', 'image/jpeg', 'image/jpg']
+    const allowedTypes = ['image/gif', 'image/png', 'image/jpeg', 'image/jpg', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/webm']
     if (!allowedTypes.includes(contentType)) {
-      return c.json({ error: 'Only image files (GIF, PNG, JPG) are supported' }, 400)
+      return c.json({ error: 'Only image files (GIF, PNG, JPG) and audio files (MP3, WAV, OGG, M4A, WebM) are supported' }, 400)
     }
     
     if (!c.env.DB) {
@@ -494,8 +547,23 @@ app.post('/api/posts/:id/replies/prepare', async (c) => {
     }
     
     const replyId = crypto.randomUUID()
-    const fileExtension = contentType === 'image/png' ? '.png' : contentType === 'image/jpeg' || contentType === 'image/jpg' ? '.jpg' : '.gif'
-    const gifKey = `gif/${replyId}${fileExtension}`
+    let fileExtension: string
+    let storageKey: string
+    
+    if (contentType.startsWith('image/')) {
+      fileExtension = contentType === 'image/png' ? '.png' : contentType === 'image/jpeg' || contentType === 'image/jpg' ? '.jpg' : '.gif'
+      storageKey = `gif/${replyId}${fileExtension}`
+    } else if (contentType.startsWith('audio/')) {
+      fileExtension = contentType === 'audio/mpeg' ? '.mp3' : 
+                     contentType === 'audio/wav' ? '.wav' : 
+                     contentType === 'audio/ogg' ? '.ogg' : 
+                     contentType === 'audio/mp4' ? '.m4a' : '.webm'
+      storageKey = `audio/${replyId}${fileExtension}`
+    } else {
+      return c.json({ error: 'Unsupported file type' }, 400)
+    }
+    
+    const gifKey = storageKey
     
     // Compute depth and root_id
     const depth = Math.min(Number(parentPost.depth || 0) + 1, 5)

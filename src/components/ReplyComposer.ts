@@ -60,13 +60,13 @@ export class ReplyComposer {
         <div class="reply-composer-file-dropzone" style="display: none;">
           <div class="dropzone-content">
             <span class="dropzone-icon">📎</span>
-            <span class="dropzone-text">Optional: Add an image (GIF, PNG, JPG)</span>
+            <span class="dropzone-text">Optional: Add an image (GIF, PNG, JPG) or audio (MP3, WAV, OGG, M4A, WebM)</span>
           </div>
         </div>
         <div class="reply-composer-divider"></div>
         <div class="reply-composer-footer">
           <div class="reply-composer-actions">
-            <input type="file" class="reply-composer-file-input" accept=".gif,.png,.jpg,.jpeg" />
+            <input type="file" class="reply-composer-file-input" accept=".gif,.png,.jpg,.jpeg,.mp3,.wav,.ogg,.m4a,.webm" />
             <button class="reply-composer-file-button" type="button" style="
               background: none;
               border: none;
@@ -193,10 +193,10 @@ export class ReplyComposer {
       return
     }
 
-    // Check if file is an accepted image format
-    const allowedTypes = ['image/gif', 'image/png', 'image/jpeg', 'image/jpg']
+    // Check if file is an accepted format
+    const allowedTypes = ['image/gif', 'image/png', 'image/jpeg', 'image/jpg', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/webm']
     if (!allowedTypes.includes(file.type)) {
-      alert('Only image files (GIF, PNG, JPG) are supported')
+      alert('Only image files (GIF, PNG, JPG) and audio files (MP3, WAV, OGG, M4A, WebM) are supported')
       this.clearFileSelection()
       return
     }
