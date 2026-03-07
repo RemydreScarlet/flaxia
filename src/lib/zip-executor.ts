@@ -198,70 +198,58 @@ async function rewriteIndexHtml(zip: JSZip, blobUrlMap: Map<string, string>): Pr
     throw new Error('index.html not found at root')
   }
 
-  const htmlContent = await indexFile.async('string')
+  let htmlContent = await indexFile.async('string')
   
-  // Parse HTML with DOMParser
-  const parser = new DOMParser()
-  const doc = parser.parseFromString(htmlContent, 'text/html')
+  // Use string replacement to avoid corrupting JavaScript code
+  htmlContent = rewriteHtmlString(htmlContent, blobUrlMap)
   
-  // Rewrite HTML attributes
-  rewriteAttributes(doc, blobUrlMap)
-  
-  // Rewrite CSS in style tags and inline styles
-  rewriteCss(doc, blobUrlMap)
-  
-  // Serialize back to string
-  return new XMLSerializer().serializeToString(doc)
+  return htmlContent
 }
 
-function rewriteAttributes(doc: Document, blobUrlMap: Map<string, string>): void {
-  const elements = doc.querySelectorAll('*')
-  
-  elements.forEach(element => {
-    // Rewrite src attributes
-    const src = element.getAttribute('src')
-    if (src && shouldRewritePath(src)) {
+function rewriteHtmlString(htmlContent: string, blobUrlMap: Map<string, string>): string {
+  // Rewrite src attributes in HTML tags (excluding script tags to preserve JS)
+  htmlContent = htmlContent.replace(/<(?!script)([^>]+)\s+src\s*=\s*['"]([^'"]+)['"]/gi, (match, tagAttrs, src) => {
+    if (shouldRewritePath(src)) {
       const normalizedPath = src.replace(/^\.\//, '')
       const blobUrl = blobUrlMap.get(normalizedPath)
       if (blobUrl) {
-        element.setAttribute('src', blobUrl)
+        return `<${tagAttrs} src="${blobUrl}"`
       }
     }
-    
-    // Rewrite href attributes
-    const href = element.getAttribute('href')
-    if (href && shouldRewritePath(href)) {
+    return match
+  })
+  
+  // Rewrite href attributes in HTML tags
+  htmlContent = htmlContent.replace(/<([^>]+)\s+href\s*=\s*['"]([^'"]+)['"]/gi, (match, tagAttrs, href) => {
+    if (shouldRewritePath(href)) {
       const normalizedPath = href.replace(/^\.\//, '')
       const blobUrl = blobUrlMap.get(normalizedPath)
       if (blobUrl) {
-        element.setAttribute('href', blobUrl)
+        return `<${tagAttrs} href="${blobUrl}"`
       }
     }
+    return match
   })
-}
-
-function rewriteCss(doc: Document, blobUrlMap: Map<string, string>): void {
+  
   // Rewrite CSS in style tags
-  const styleTags = doc.querySelectorAll('style')
-  styleTags.forEach(styleTag => {
-    if (styleTag.textContent) {
-      styleTag.textContent = rewriteCssUrls(styleTag.textContent, blobUrlMap)
-    }
+  htmlContent = htmlContent.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (match, cssContent) => {
+    const rewrittenCss = rewriteCssUrls(cssContent, blobUrlMap)
+    return match.replace(cssContent, rewrittenCss)
   })
   
   // Rewrite inline style attributes
-  const elements = doc.querySelectorAll('[style]')
-  elements.forEach(element => {
-    const style = element.getAttribute('style')
-    if (style) {
-      element.setAttribute('style', rewriteCssUrls(style, blobUrlMap))
-    }
+  htmlContent = htmlContent.replace(/style\s*=\s*['"]([^'"]+)['"]/gi, (match, styleContent) => {
+    const rewrittenStyle = rewriteCssUrls(styleContent, blobUrlMap)
+    return `style="${rewrittenStyle}"`
   })
+  
+  return htmlContent
 }
 
+
 function rewriteCssUrls(cssText: string, blobUrlMap: Map<string, string>): string {
-  // Rewrite url() references in CSS
-  return cssText.replace(/url\(['"]?([^'")]+)['"]?\)/g, (match, path) => {
+  // Rewrite url() references in CSS - be more precise to avoid JS interference
+  return cssText.replace(/url\s*\(\s*['"]?([^'")\s]+)['"]?\s*\)/g, (match, path) => {
     if (shouldRewritePath(path)) {
       const normalizedPath = path.replace(/^\.\//, '')
       const blobUrl = blobUrlMap.get(normalizedPath)
@@ -292,8 +280,8 @@ function createIframe(rewrittenHtml: string, containerEl: HTMLElement): { iframe
     position: absolute;
     top: 0;
     left: 0;
-    width: 100%;
-    height: 100%;
+    right: 0;
+    bottom: 0;
     display: flex;
     flex-direction: column;
   `
@@ -301,7 +289,7 @@ function createIframe(rewrittenHtml: string, containerEl: HTMLElement): { iframe
   // Create iframe
   const iframe = document.createElement('iframe')
   iframe.src = htmlBlobUrl
-  iframe.sandbox = 'allow-scripts allow-pointer-lock'
+  iframe.sandbox = 'allow-scripts allow-pointer-lock allow-fullscreen'
   iframe.setAttribute('allow', 'fullscreen')
   iframe.setAttribute('referrerpolicy', 'no-referrer')
   iframe.style.cssText = `
@@ -326,9 +314,29 @@ function createIframe(rewrittenHtml: string, containerEl: HTMLElement): { iframe
     border-radius: 4px;
     align-self: center;
   `
-  fullscreenBtn.onclick = () => {
-    if (iframe.requestFullscreen) {
-      iframe.requestFullscreen()
+  fullscreenBtn.onclick = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    
+    // Try fullscreen immediately on user interaction
+    try {
+      if (iframeContainer.requestFullscreen) {
+        iframeContainer.requestFullscreen().catch(err => {
+          console.warn('Container fullscreen failed:', err)
+          // Fallback to iframe
+          if (iframe.requestFullscreen) {
+            iframe.requestFullscreen().catch(err2 => {
+              console.warn('Iframe fullscreen failed:', err2)
+            })
+          }
+        })
+      } else if (iframe.requestFullscreen) {
+        iframe.requestFullscreen().catch(err => {
+          console.warn('Iframe fullscreen failed:', err)
+        })
+      }
+    } catch (error) {
+      console.error('Fullscreen error:', error)
     }
   }
   
