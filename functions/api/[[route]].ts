@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { verifyCloudflareAccess } from '../lib/auth.js'
+import { User, getSession, getSessionToken, setSessionCookie, clearSessionCookie, registerUser, loginUser, deleteSession } from '../lib/auth'
+import { nanoid } from 'nanoid'
 
 type Bindings = {
   DB: D1Database
@@ -9,10 +10,7 @@ type Bindings = {
 }
 
 type Variables = {
-  user: {
-    sub: string
-    email?: string
-  }
+  user: User | null
 }
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
@@ -175,21 +173,27 @@ app.get('/api/zip/:postId', async (c) => {
 
 // Auth middleware - only for API routes
 app.use('/api/*', async (c, next) => {
-  // Skip auth for GET /api/me, PUT /api/upload/*, GET /api/images/*, GET /api/audio/*, and GET /api/zip/*
+  // Skip auth for public routes
   if ((c.req.method === 'GET' && c.req.path === '/api/me') || 
       (c.req.method === 'PUT' && c.req.path.startsWith('/api/upload/')) ||
       (c.req.method === 'GET' && c.req.path.startsWith('/api/images/')) ||
       (c.req.method === 'GET' && c.req.path.startsWith('/api/audio/')) ||
-      (c.req.method === 'GET' && c.req.path.startsWith('/api/zip/'))) {
+      (c.req.method === 'GET' && c.req.path.startsWith('/api/zip/')) ||
+      (c.req.method === 'GET' && c.req.path.startsWith('/api/users/')) ||
+      (c.req.path.startsWith('/api/auth/'))) {
     await next()
     return
   }
   
-  const identity = await verifyCloudflareAccess(c.req, c.env)
-  if (!identity) {
+  // Validate session with custom auth
+  const token = getSessionToken(c.req.raw)
+  const sessionData = token ? await getSession(c.env, token) : null
+  if (!sessionData) {
     return c.json({ error: 'Unauthorized' }, 401)
   }
-  c.set('user', identity)
+  
+  // Set user in context
+  c.set('user', sessionData.user)
   await next()
 })
 
@@ -198,18 +202,314 @@ app.use('/*', cors())
 // GET /api/me - check auth state
 app.get('/api/me', async (c) => {
   try {
-    const identity = await verifyCloudflareAccess(c.req, c.env)
-    if (!identity) {
+    const token = getSessionToken(c.req.raw)
+    const sessionData = token ? await getSession(c.env, token) : null
+    if (!sessionData) {
       return c.json({ error: 'Not authenticated' }, 401)
     }
     
     return c.json({ 
-      sub: identity.sub, 
-      email: identity.email 
+      user: sessionData.user 
     })
   } catch (error: any) {
     console.error('Auth check error:', error)
     return c.json({ error: 'Auth check failed' }, 500)
+  }
+})
+
+// POST /api/auth/register - user registration
+app.post('/api/auth/register', async (c) => {
+  try {
+    const { email, password, username, display_name } = await c.req.json()
+    
+    // Validation
+    if (!email || !password || !username || !display_name) {
+      return c.json({ error: 'Missing required fields' }, 400)
+    }
+    
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(email)) {
+      return c.json({ error: 'Invalid email format' }, 400)
+    }
+    
+    // Password validation
+    if (password.length < 8 || password.length > 128) {
+      return c.json({ error: 'Password must be 8-128 characters' }, 400)
+    }
+    
+    // Username validation
+    const usernameRegex = /^[a-zA-Z0-9_]{1,20}$/
+    if (!usernameRegex.test(username)) {
+      return c.json({ error: 'Username must be 1-20 alphanumeric characters' }, 400)
+    }
+    
+    // Display name validation
+    if (display_name.length > 50) {
+      return c.json({ error: 'Display name must be ≤50 characters' }, 400)
+    }
+    
+    // Register user with custom auth
+    const user = await registerUser(c.env, {
+      email,
+      password,
+      username,
+      display_name
+    })
+    
+    return c.json({ user })
+  } catch (error: any) {
+    console.error('Registration error:', error)
+    return c.json({ error: 'Registration failed', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// POST /api/auth/login - user login
+app.post('/api/auth/login', async (c) => {
+  try {
+    const { email, password } = await c.req.json()
+    
+    if (!email || !password) {
+      return c.json({ error: 'Email and password required' }, 400)
+    }
+    
+    // Login with custom auth
+    const result = await loginUser(c.env, email, password)
+    
+    // Set session cookie
+    const response = c.json({ user: result.user })
+    setSessionCookie(response, result.session.id)
+    
+    return response
+  } catch (error: any) {
+    console.error('Login error:', error)
+    return c.json({ error: 'Login failed', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// POST /api/auth/logout - user logout
+app.post('/api/auth/logout', async (c) => {
+  try {
+    const token = getSessionToken(c.req.raw)
+    if (token) {
+      await deleteSession(c.env, token)
+    }
+    
+    // Clear session cookie
+    const response = c.json({ success: true })
+    clearSessionCookie(response)
+    
+    return response
+  } catch (error: any) {
+    console.error('Logout error:', error)
+    return c.json({ error: 'Logout failed', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// GET /api/users/:username - get public user profile
+app.get('/api/users/:username', async (c) => {
+  try {
+    const username = c.req.param('username')
+    
+    if (!username) {
+      return c.json({ error: 'Username required' }, 400)
+    }
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    const user = await c.env.DB.prepare(`
+      SELECT id, username, display_name, bio, avatar_key, created_at 
+      FROM users 
+      WHERE username = ?
+    `).bind(username).first()
+    
+    if (!user) {
+      return c.json({ error: 'User not found' }, 404)
+    }
+    
+    return c.json({ user })
+  } catch (error: any) {
+    console.error('Get user error:', error)
+    return c.json({ error: 'Failed to get user', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// PATCH /api/users/me - update current user profile
+app.patch('/api/users/me', async (c) => {
+  try {
+    const token = getSessionToken(c.req.raw)
+    const sessionData = token ? await getSession(c.env, token) : null
+    if (!sessionData) {
+      return c.json({ error: 'Unauthorized' }, 401)
+    }
+    
+    const { display_name, bio, avatar_key } = await c.req.json()
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    // Validation
+    if (display_name !== undefined && display_name.length > 50) {
+      return c.json({ error: 'Display name must be ≤50 characters' }, 400)
+    }
+    
+    if (bio !== undefined && bio.length > 200) {
+      return c.json({ error: 'Bio must be ≤200 characters' }, 400)
+    }
+    
+    const userId = sessionData.user.id
+    
+    // Build update query
+    const updates: string[] = []
+    const values: any[] = []
+    
+    if (display_name !== undefined) {
+      updates.push('display_name = ?')
+      values.push(display_name)
+    }
+    
+    if (bio !== undefined) {
+      updates.push('bio = ?')
+      values.push(bio)
+    }
+    
+    if (avatar_key !== undefined) {
+      updates.push('avatar_key = ?')
+      values.push(avatar_key)
+    }
+    
+    if (updates.length === 0) {
+      return c.json({ error: 'No fields to update' }, 400)
+    }
+    
+    values.push(userId)
+    
+    const result = await c.env.DB.prepare(`
+      UPDATE users SET ${updates.join(', ')} WHERE id = ?
+    `).bind(...values).run()
+    
+    if (!result.success) {
+      return c.json({ error: 'Failed to update profile' }, 500)
+    }
+    
+    // Return updated user
+    const updatedUser = await c.env.DB.prepare(`
+      SELECT id, email, username, display_name, bio, avatar_key, created_at 
+      FROM users 
+      WHERE id = ?
+    `).bind(userId).first()
+    
+    return c.json({ user: updatedUser })
+  } catch (error: any) {
+    console.error('Update profile error:', error)
+    return c.json({ error: 'Failed to update profile', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// DELETE /api/users/me - delete current user account
+app.delete('/api/users/me', async (c) => {
+  try {
+    const token = getSessionToken(c.req.raw)
+    const sessionData = token ? await getSession(c.env, token) : null
+    if (!sessionData) {
+      return c.json({ error: 'Unauthorized' }, 401)
+    }
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    const userId = sessionData.user.id
+    
+    // Delete user (posts remain with user_id intact)
+    const result = await c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(userId).run()
+    
+    if (!result.success) {
+      return c.json({ error: 'Failed to delete account' }, 500)
+    }
+    
+    // Delete the session
+    if (token) {
+      await deleteSession(c.env, token)
+    }
+    
+    return c.json({ success: true })
+  } catch (error: any) {
+    console.error('Delete account error:', error)
+    return c.json({ error: 'Failed to delete account', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// POST /api/users/me/avatar - upload avatar
+app.post('/api/users/me/avatar', async (c) => {
+  try {
+    const token = getSessionToken(c.req.raw)
+    const sessionData = token ? await getSession(c.env, token) : null
+    if (!sessionData) {
+      return c.json({ error: 'Unauthorized' }, 401)
+    }
+    
+    const contentType = c.req.header('content-type')
+    const contentLength = c.req.header('content-length')
+    
+    if (!contentType || !contentLength) {
+      return c.json({ error: 'Content-Type and Content-Length headers required' }, 400)
+    }
+    
+    // Validate content type
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif']
+    if (!contentType || !allowedTypes.includes(contentType as string)) {
+      return c.json({ error: 'Only JPEG, PNG, and GIF images are allowed' }, 400)
+    }
+    
+    // Check file size limit (200KB = 200 * 1024 bytes)
+    const maxSize = 200 * 1024
+    if (Number(contentLength) > maxSize) {
+      return c.json({ error: 'Avatar must be ≤200KB' }, 413)
+    }
+    
+    if (!c.env.BUCKET) {
+      return c.json({ error: 'Storage not available' }, 500)
+    }
+    
+    const userId = sessionData.user.id
+    
+    // Get the file data from request body
+    const fileData = await c.req.arrayBuffer()
+    
+    // Double-check file size after reading
+    if (fileData.byteLength > maxSize) {
+      return c.json({ error: 'Avatar must be ≤200KB' }, 413)
+    }
+    
+    // Generate avatar key (overwrite existing avatar)
+    const avatarKey = `avatar/${userId}`
+    
+    // Upload to R2 with proper content type
+    await c.env.BUCKET.put(avatarKey, fileData, {
+      httpMetadata: {
+        contentType: contentType
+      }
+    })
+    
+    // Update user's avatar_key in database
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    const result = await c.env.DB.prepare('UPDATE users SET avatar_key = ? WHERE id = ?').bind(avatarKey, userId).run()
+    
+    if (!result.success) {
+      return c.json({ error: 'Failed to update avatar' }, 500)
+    }
+    
+    return c.json({ success: true, avatar_key: avatarKey })
+  } catch (error: any) {
+    console.error('Avatar upload error:', error)
+    return c.json({ error: 'Avatar upload failed', details: error?.message || 'Unknown error' }, 500)
   }
 })
 
@@ -290,7 +590,7 @@ app.post('/api/posts/prepare', async (c) => {
     const result = await c.env.DB.prepare(`
       INSERT INTO posts (id, user_id, username, text, hashtags, ${contentType === 'application/zip' ? 'payload_key' : 'gif_key'}, status)
       VALUES (?, ?, ?, ?, ?, ?, 'pending')
-    `).bind(postId, c.get('user').sub, c.get('user').email?.split('@')[0] || 'anonymous', '', '[]', gifKey).run()
+    `).bind(postId, c.get('user')?.id || '', c.get('user')?.username || 'anonymous', '', '[]', gifKey).run()
     
     if (!result.success) {
       return c.json({ error: 'Failed to create pending post' }, 500)
@@ -384,7 +684,7 @@ app.post('/api/posts/commit', async (c) => {
       const result = await c.env.DB.prepare(`
         INSERT INTO posts (id, user_id, username, text, hashtags, status)
         VALUES (?, ?, ?, ?, ?, 'published')
-      `).bind(postId, c.get('user').sub, c.get('user').email?.split('@')[0] || 'anonymous', text, JSON.stringify(hashtags)).run()
+      `).bind(postId, c.get('user')?.id || '', c.get('user')?.username || 'anonymous', text, JSON.stringify(hashtags)).run()
       
       if (!result.success) {
         return c.json({ error: 'Failed to create post' }, 500)
@@ -413,8 +713,8 @@ app.post('/api/posts', async (c) => {
     }
     
     const postId = crypto.randomUUID()
-    const userId = c.get('user').sub
-    const username = c.get('user').email?.split('@')[0] || 'anonymous'
+    const userId = c.get('user')?.id
+    const username = c.get('user')?.username || 'anonymous'
     
     // Extract hashtags from text
     const hashtagRegex = /#(\w+)/g
@@ -446,7 +746,7 @@ app.post('/api/posts', async (c) => {
 // POST /api/posts/:id/fresh - toggle Fresh!
 app.post('/api/posts/:id/fresh', async (c) => {
   const postId = c.req.param('id')
-  const userId = c.get('user').sub
+  const userId = c.get('user')?.id || ''
   
   // Check if already freshed
   const existing = await c.env.DB.prepare(
@@ -624,8 +924,8 @@ app.post('/api/posts/:id/replies/prepare', async (c) => {
       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, 0)
     `).bind(
       replyId, 
-      c.get('user').sub, 
-      c.get('user').email?.split('@')[0] || 'anonymous', 
+      c.get('user')?.id || '', 
+      c.get('user')?.username || 'anonymous', 
       '', 
       '[]', 
       gifKey,
@@ -731,8 +1031,8 @@ app.post('/api/posts/:id/replies/commit', async (c) => {
         VALUES (?, ?, ?, ?, ?, 'published', ?, ?, ?, 0)
       `).bind(
         replyId, 
-        c.get('user').sub, 
-        c.get('user').email?.split('@')[0] || 'anonymous', 
+        c.get('user')?.id || '', 
+        c.get('user')?.username || 'anonymous', 
         text, 
         JSON.stringify(hashtags),
         postId,

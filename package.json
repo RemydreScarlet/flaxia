@@ -4,7 +4,7 @@
   "description": "Chronological SNS where posts are living, interactive applications",
   "type": "module",
   "scripts": {
-    "dev": "wrangler pages dev --d1=DB --r2=BUCKET -- pnpm vite",
+    "dev": "wrangler pages dev dist --d1=DB --r2=BUCKET --port 8787",
     "build": "vite build",
     "preview": "vite preview",
     "deploy": "wrangler pages deploy dist",
@@ -12,11 +12,12 @@
     "migrate:prod": "wrangler d1 migrations apply flaxia"
   },
   "dependencies": {
-    "@cloudflare/workers-oauth-provider": "^0.1.0",
+    "better-auth": "^1.5.4",
     "hono": "^4.0.0",
     "jszip": "^3.10.1",
     "katex": "^0.16.0",
-    "lucide": "^0.300.0"
+    "lucide": "^0.300.0",
+    "nanoid": "^5.1.6"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",
