@@ -60,13 +60,13 @@ export class ReplyComposer {
         <div class="reply-composer-file-dropzone" style="display: none;">
           <div class="dropzone-content">
             <span class="dropzone-icon">📎</span>
-            <span class="dropzone-text">Optional: Add a GIF</span>
+            <span class="dropzone-text">Optional: Add an image (GIF, PNG, JPG)</span>
           </div>
         </div>
         <div class="reply-composer-divider"></div>
         <div class="reply-composer-footer">
           <div class="reply-composer-actions">
-            <input type="file" class="reply-composer-file-input" accept=".gif" />
+            <input type="file" class="reply-composer-file-input" accept=".gif,.png,.jpg,.jpeg" />
             <button class="reply-composer-file-button" type="button" style="
               background: none;
               border: none;
@@ -186,16 +186,17 @@ export class ReplyComposer {
   }
 
   private handleFileSelection(file: File): void {
-    // Only accept GIF files for replies
-    if (!file.type.includes('gif')) {
-      alert('Only GIF files are supported for replies')
+    // Check file size (10MB limit)
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File size must be less than 10MB')
       this.clearFileSelection()
       return
     }
 
-    // Check file size (10MB limit)
-    if (file.size > 10 * 1024 * 1024) {
-      alert('File size must be less than 10MB')
+    // Check if file is an accepted image format
+    const allowedTypes = ['image/gif', 'image/png', 'image/jpeg', 'image/jpg']
+    if (!allowedTypes.includes(file.type)) {
+      alert('Only image files (GIF, PNG, JPG) are supported')
       this.clearFileSelection()
       return
     }
@@ -333,15 +334,39 @@ export class ReplyComposer {
 
   private async uploadFileDirect(file: File, uploadUrl: string): Promise<boolean> {
     try {
+      console.log('Uploading file to:', uploadUrl, 'Type:', file.type, 'Size:', file.size)
+      
       const response = await fetch(uploadUrl, {
         method: 'PUT',
         body: file,
         headers: {
           'Content-Type': file.type
-        }
+        },
+        credentials: 'include'
       })
 
-      return response.ok
+      console.log('Upload response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        const responseText = await response.text()
+        console.error('Upload failed response:', responseText)
+        
+        // Try to parse as JSON, fallback to text if it fails
+        let error
+        try {
+          error = JSON.parse(responseText)
+        } catch {
+          error = { error: responseText }
+        }
+        
+        console.error('Upload failed parsed error:', error)
+        return false
+      }
+
+      const responseText = await response.text()
+      console.log('Upload success response:', responseText)
+      
+      return true
     } catch (error) {
       console.error('File upload failed:', error)
       return false

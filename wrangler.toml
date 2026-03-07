@@ -11,3 +11,7 @@ database_id = "7c99f35f-69a0-4644-96a1-34c716a3e82d"
 CF_TEAM_DOMAIN = "remydre8.cloudflareaccess.com"
 CF_ACCESS_AUD = "f3d5445c-2211-4a82-89b8-38d67eff4a47"
 SANDBOX_ORIGIN = "https://flaxia-egj.pages.dev"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "flaxia-content"

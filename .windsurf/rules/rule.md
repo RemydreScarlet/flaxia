@@ -12,28 +12,12 @@ Concept: "Twitter with Flash inside". Spiritual successor to Adobe Flash.
 |---|---|---|
 | Runtime | Cloudflare Pages + Workers | Edge-first, no Node.js server |
 | API | Hono (`hono/cloudflare-pages`) | Thin router, runs as Pages Function |
-| Rendering | **TBD** — SSR (hono/jsx) or SPA (Vite + React) | Decide before Phase 1 ships |
+| Rendering | **TBD** — SSR (hono/jsx) or SPA (Vite + React) | Run as Pages Function |
 | Database | Cloudflare D1 (SQLite) | Bound as `DB` in wrangler.toml |
 | Storage | Cloudflare R2 | Post payloads, GIF previews |
 | Auth | Cloudflare Access (JWT) | Validated via Hono middleware |
 | Math | KaTeX (client-side) | CDN import, no SSR needed |
 | Icons | Lucide (React or SVG sprite) | Depends on rendering choice |
-
-### Rendering decision guide (pick one before writing components)
-- **SSR (hono/jsx)**: less JS shipped, simpler infra, worse DX for interactive UI
-- **SPA (Vite + React)**: better DX, natural fit for PostStage interactivity, needs `_worker.js` or Pages Functions for API
-
-Until decided: **keep all UI logic in plain TypeScript files with no framework imports.**
-This makes the pivot cheap in either direction.
-
----
-
-## Design Language
-- Primary: `#22c55e` (Fresh Green)
-- Background: `#0f172a` (Deep Slate)
-- Font: monospace for technical/count data, system-ui for body
-- Sharp edges, minimal padding, pro-tool aesthetic
-- **Forbidden**: `rounded-3xl`, pastel colors, box shadows on cards
 
 ---
 

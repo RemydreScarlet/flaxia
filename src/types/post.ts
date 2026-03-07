@@ -4,7 +4,7 @@ export interface Post {
   username: string
   text: string
   hashtags: string
-  gif_key?: string
+  gif_key?: string  // Stores all image formats (GIF, PNG, JPG), not just GIFs
   payload_key?: string
   fresh_count: number
   reply_count: number

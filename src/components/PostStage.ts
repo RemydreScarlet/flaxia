@@ -1,5 +1,5 @@
 import { PostStageProps, PostCardMode } from '../types/post.js'
-import { createGifPreview } from './GifPreview.js'
+import { createImagePreview } from './ImagePreview.js'
 import { createSandboxFrame } from './SandboxFrame.js'
 
 export function createPostStage(props: PostStageProps): HTMLElement {
@@ -30,11 +30,11 @@ function updateStageContent(container: HTMLElement, props: PostStageProps): void
   }
   
   if (props.mode === PostCardMode.PREVIEW) {
-    const gifPreview = createGifPreview({
+    const imagePreview = createImagePreview({
       gifKey: props.post.gif_key,
       postId: props.post.id
     })
-    container.appendChild(gifPreview)
+    container.appendChild(imagePreview)
     
     // Add click hint
     const hint = document.createElement('div')

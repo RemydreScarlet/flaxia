@@ -35,7 +35,7 @@ export class PostComposer {
         <div class="composer-file-dropzone" style="display: none;">
           <div class="dropzone-content">
             <span class="dropzone-icon">📎</span>
-            <span class="dropzone-text">Drag and drop a file or click to browse</span>
+            <span class="dropzone-text">Optional: Add an image (GIF, PNG, JPG)</span>
           </div>
         </div>
         <div class="composer-divider"></div>
@@ -120,6 +120,14 @@ export class PostComposer {
     // Check file size (10MB limit)
     if (file.size > 10 * 1024 * 1024) {
       alert('File size must be less than 10MB')
+      this.clearFileSelection()
+      return
+    }
+
+    // Check if file is an accepted image format
+    const allowedTypes = ['image/gif', 'image/png', 'image/jpeg', 'image/jpg']
+    if (!allowedTypes.includes(file.type)) {
+      alert('Only image files (GIF, PNG, JPG) are supported')
       this.clearFileSelection()
       return
     }
@@ -245,15 +253,39 @@ export class PostComposer {
 
   private async uploadFileDirect(file: File, uploadUrl: string): Promise<boolean> {
     try {
+      console.log('Uploading file to:', uploadUrl, 'Type:', file.type, 'Size:', file.size)
+      
       const response = await fetch(uploadUrl, {
         method: 'PUT',
         body: file,
         headers: {
           'Content-Type': file.type
-        }
+        },
+        credentials: 'include'
       })
 
-      return response.ok
+      console.log('Upload response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        const responseText = await response.text()
+        console.error('Upload failed response:', responseText)
+        
+        // Try to parse as JSON, fallback to text if it fails
+        let error
+        try {
+          error = JSON.parse(responseText)
+        } catch {
+          error = { error: responseText }
+        }
+        
+        console.error('Upload failed parsed error:', error)
+        return false
+      }
+
+      const responseText = await response.text()
+      console.log('Upload success response:', responseText)
+      
+      return true
     } catch (error) {
       console.error('File upload failed:', error)
       return false

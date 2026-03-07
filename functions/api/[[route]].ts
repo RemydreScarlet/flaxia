@@ -17,10 +17,44 @@ type Variables = {
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
+app.use('/*', cors())
+
+// PUT /api/upload/:key - direct file upload endpoint (no auth required - validated in prepare step)
+app.put('/api/upload/*', async (c) => {
+  try {
+    const key = c.req.path.replace('/api/upload/', '')
+    const contentType = c.req.header('content-type')
+    
+    if (!key) {
+      return c.json({ error: 'Missing file key' }, 400)
+    }
+    
+    // Get the file data from request body
+    const fileData = await c.req.arrayBuffer()
+    
+    if (!c.env.BUCKET) {
+      return c.json({ error: 'Storage not available' }, 500)
+    }
+    
+    // Upload to R2 with proper content type
+    await c.env.BUCKET.put(key, fileData, {
+      httpMetadata: {
+        contentType: contentType || 'application/octet-stream'
+      }
+    })
+    
+    return c.json({ success: true, key })
+  } catch (error: any) {
+    console.error('Upload error:', error)
+    return c.json({ error: 'Upload failed', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
 // Auth middleware - only for API routes
 app.use('/api/*', async (c, next) => {
-  // Skip auth for GET /api/me
-  if (c.req.method === 'GET' && c.req.path === '/api/me') {
+  // Skip auth for GET /api/me and PUT /api/upload/*
+  if ((c.req.method === 'GET' && c.req.path === '/api/me') || 
+      (c.req.method === 'PUT' && c.req.path.startsWith('/api/upload/'))) {
     await next()
     return
   }
@@ -96,12 +130,14 @@ app.post('/api/posts/prepare', async (c) => {
       return c.json({ error: 'Missing filename or contentType' }, 400)
     }
     
-    if (contentType !== 'image/gif') {
-      return c.json({ error: 'Only GIF files are supported' }, 400)
+    const allowedTypes = ['image/gif', 'image/png', 'image/jpeg', 'image/jpg']
+    if (!allowedTypes.includes(contentType)) {
+      return c.json({ error: 'Only image files (GIF, PNG, JPG) are supported' }, 400)
     }
     
     const postId = crypto.randomUUID()
-    const gifKey = `gif/${postId}.gif`
+    const fileExtension = contentType === 'image/png' ? '.png' : contentType === 'image/jpeg' || contentType === 'image/jpg' ? '.jpg' : '.gif'
+    const gifKey = `gif/${postId}${fileExtension}`
     
     // Store pending record in D1
     if (!c.env.DB) {
@@ -117,8 +153,8 @@ app.post('/api/posts/prepare', async (c) => {
       return c.json({ error: 'Failed to create pending post' }, 500)
     }
     
-    // Generate presigned URL for R2 upload (simplified for now)
-    const gifUploadUrl = `https://placeholder-upload-url.com/${gifKey}`
+    // Return upload endpoint URL (our own API)
+    const gifUploadUrl = `${new URL(c.req.url).origin}/api/upload/${gifKey}`
     
     return c.json({
       postId,
@@ -389,8 +425,9 @@ app.post('/api/posts/:id/replies/prepare', async (c) => {
       return c.json({ error: 'Missing filename or contentType' }, 400)
     }
     
-    if (contentType !== 'image/gif') {
-      return c.json({ error: 'Only GIF files are supported' }, 400)
+    const allowedTypes = ['image/gif', 'image/png', 'image/jpeg', 'image/jpg']
+    if (!allowedTypes.includes(contentType)) {
+      return c.json({ error: 'Only image files (GIF, PNG, JPG) are supported' }, 400)
     }
     
     if (!c.env.DB) {
@@ -407,7 +444,8 @@ app.post('/api/posts/:id/replies/prepare', async (c) => {
     }
     
     const replyId = crypto.randomUUID()
-    const gifKey = `gif/${replyId}.gif`
+    const fileExtension = contentType === 'image/png' ? '.png' : contentType === 'image/jpeg' || contentType === 'image/jpg' ? '.jpg' : '.gif'
+    const gifKey = `gif/${replyId}${fileExtension}`
     
     // Compute depth and root_id
     const depth = Math.min(Number(parentPost.depth || 0) + 1, 5)
@@ -433,8 +471,8 @@ app.post('/api/posts/:id/replies/prepare', async (c) => {
       return c.json({ error: 'Failed to create pending reply' }, 500)
     }
     
-    // Generate presigned URL for R2 upload (simplified for now)
-    const gifUploadUrl = `https://placeholder-upload-url.com/${gifKey}`
+    // Generate upload endpoint URL (our own API)
+    const gifUploadUrl = `${new URL(c.req.url).origin}/api/upload/${gifKey}`
     
     return c.json({
       replyId,

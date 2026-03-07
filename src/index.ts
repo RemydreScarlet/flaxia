@@ -12,7 +12,7 @@ export type { SandboxBridgeOptions } from './lib/sandbox-bridge.js'
 export { createPostHeader } from './components/PostHeader.js'
 export { createPostText } from './components/PostText.js'
 export { createPostStage, updatePostStage } from './components/PostStage.js'
-export { createGifPreview } from './components/GifPreview.js'
+export { createImagePreview } from './components/ImagePreview.js'
 export { createSandboxFrame } from './components/SandboxFrame.js'
 export { createPostActions } from './components/PostActions.js'
 

@@ -7,6 +7,17 @@ export class Storage {
     return key
   }
   
+  async uploadImage(postId: string, image: ArrayBuffer, contentType: string): Promise<string> {
+    const fileExtension = contentType === 'image/png' ? '.png' : contentType === 'image/jpeg' || contentType === 'image/jpg' ? '.jpg' : '.gif'
+    const key = `gif/${postId}${fileExtension}`
+    await this.bucket.put(key, image, {
+      httpMetadata: {
+        contentType: contentType
+      }
+    })
+    return key
+  }
+  
   async uploadPayload(postId: string, payload: ArrayBuffer): Promise<string> {
     const key = `payload/${postId}`
     await this.bucket.put(key, payload)
