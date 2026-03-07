@@ -50,11 +50,49 @@ app.put('/api/upload/*', async (c) => {
   }
 })
 
+// GET /api/images/* - proxy images from R2
+app.get('/api/images/*', async (c) => {
+  try {
+    const key = c.req.path.replace('/api/images/', '')
+    
+    if (!key) {
+      return c.json({ error: 'Missing image key' }, 400)
+    }
+    
+    if (!c.env.BUCKET) {
+      return c.json({ error: 'Storage not available' }, 500)
+    }
+    
+    // Get object from R2
+    const object = await c.env.BUCKET.get(key)
+    
+    if (!object) {
+      return c.json({ error: 'Image not found' }, 404)
+    }
+    
+    // Get content type from object metadata or default to image/jpeg
+    const contentType = object.httpMetadata?.contentType || 'image/jpeg'
+    
+    // Return the image with proper headers
+    return new Response(object.body, {
+      headers: {
+        'Content-Type': contentType,
+        'Cache-Control': 'public, max-age=31536000', // Cache for 1 year
+        'Access-Control-Allow-Origin': '*'
+      }
+    })
+  } catch (error: any) {
+    console.error('Image proxy error:', error)
+    return c.json({ error: 'Failed to fetch image', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
 // Auth middleware - only for API routes
 app.use('/api/*', async (c, next) => {
-  // Skip auth for GET /api/me and PUT /api/upload/*
+  // Skip auth for GET /api/me, PUT /api/upload/*, and GET /api/images/*
   if ((c.req.method === 'GET' && c.req.path === '/api/me') || 
-      (c.req.method === 'PUT' && c.req.path.startsWith('/api/upload/'))) {
+      (c.req.method === 'PUT' && c.req.path.startsWith('/api/upload/')) ||
+      (c.req.method === 'GET' && c.req.path.startsWith('/api/images/'))) {
     await next()
     return
   }
@@ -215,7 +253,7 @@ app.post('/api/posts/commit', async (c) => {
       // Update post to published status
       const updateResult = await c.env.DB.prepare(`
         UPDATE posts 
-        SET text = ?, hashtags = ?, status = 'published', created_at = datetime('now')
+        SET text = ?, hashtags = ?, status = 'published', created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
         WHERE id = ?
       `).bind(text, JSON.stringify(hashtags), postId).run()
       
@@ -351,7 +389,7 @@ app.get('/api/posts/:id/replies', async (c) => {
     
     if (cursor) {
       query = 'SELECT id, user_id, username, text, hashtags, gif_key, payload_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE parent_id = ? AND status = \'published\' AND created_at > ? ORDER BY created_at ASC LIMIT ?'
-      params.unshift(postId, cursor)
+      params.splice(1, 0, cursor)
     }
     
     const result = await c.env.DB.prepare(query).bind(...params).all()
@@ -542,7 +580,7 @@ app.post('/api/posts/:id/replies/commit', async (c) => {
       // Update reply to published status
       const updateResult = await c.env.DB.prepare(`
         UPDATE posts 
-        SET text = ?, hashtags = ?, status = 'published', created_at = datetime('now')
+        SET text = ?, hashtags = ?, status = 'published', created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
         WHERE id = ?
       `).bind(text, JSON.stringify(hashtags), replyId).run()
       

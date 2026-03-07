@@ -424,13 +424,14 @@ p {
   position: relative;
   width: 100%;
   padding-top: 56.25%; /* 16:9 aspect ratio */
-  background: #000;
+  background: var(--bg-input);
   border: 1px solid var(--border);
   margin-bottom: 1rem;
   cursor: pointer;
   overflow: hidden;
 }
 
+.image-preview,
 .gif-preview,
 .sandbox-frame-container {
   position: absolute;
@@ -443,16 +444,33 @@ p {
   justify-content: center;
 }
 
+.image-preview-img,
 .gif-image {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
+.image-preview-error,
+.image-preview-loading,
 .gif-fallback {
   color: var(--text-muted);
   font-family: monospace;
   font-size: 0.875rem;
+  text-align: center;
+  padding: 1rem;
+}
+
+.image-preview-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--bg-input);
 }
 
 .stage-hint {

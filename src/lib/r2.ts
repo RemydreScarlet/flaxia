@@ -34,6 +34,6 @@ export class Storage {
   }
   
   getPublicUrl(key: string): string {
-    return `https://flaxia-content.com/${key}`
+    return `/api/images/${key}`
   }
 }

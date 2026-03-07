@@ -13,17 +13,29 @@ export function createImagePreview(props: GifPreviewProps): HTMLElement {
     return container
   }
   
+  // Add loading indicator
+  const loading = document.createElement('div')
+  loading.className = 'image-preview-loading'
+  loading.textContent = 'Loading...'
+  container.appendChild(loading)
+  
   const img = document.createElement('img')
   img.className = 'image-preview-img'
   img.alt = `Post ${props.postId} preview`
   img.loading = 'lazy'
   
-  // Use the same R2 URL pattern for all image types (all stored in gif/ directory)
-  const r2PublicUrl = `https://pub-${import.meta.env.VITE_CLOUDFLARE_ACCOUNT_ID || ''}.r2.dev/gif/${props.gifKey}`
-  img.src = r2PublicUrl
+  // Use the API proxy endpoint for images
+  const imageUrl = `/api/images/${props.gifKey}`
+  img.src = imageUrl
+  
+  // Handle image load success
+  img.onload = () => {
+    loading.style.display = 'none'
+  }
   
   // Handle image loading errors
   img.onerror = () => {
+    loading.style.display = 'none'
     img.style.display = 'none'
     const fallback = document.createElement('div')
     fallback.className = 'image-preview-error'
