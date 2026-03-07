@@ -17,8 +17,14 @@ type Variables = {
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
-// Auth middleware
+// Auth middleware - only for API routes
 app.use('/api/*', async (c, next) => {
+  // Skip auth for GET /api/me
+  if (c.req.method === 'GET' && c.req.path === '/api/me') {
+    await next()
+    return
+  }
+  
   const identity = await verifyCloudflareAccess(c.req, c.env)
   if (!identity) {
     return c.json({ error: 'Unauthorized' }, 401)
@@ -28,6 +34,24 @@ app.use('/api/*', async (c, next) => {
 })
 
 app.use('/*', cors())
+
+// GET /api/me - check auth state
+app.get('/api/me', async (c) => {
+  try {
+    const identity = await verifyCloudflareAccess(c.req, c.env)
+    if (!identity) {
+      return c.json({ error: 'Not authenticated' }, 401)
+    }
+    
+    return c.json({ 
+      sub: identity.sub, 
+      email: identity.email 
+    })
+  } catch (error: any) {
+    console.error('Auth check error:', error)
+    return c.json({ error: 'Auth check failed' }, 500)
+  }
+})
 
 // GET /api/posts - timeline
 app.get('/api/posts', async (c) => {

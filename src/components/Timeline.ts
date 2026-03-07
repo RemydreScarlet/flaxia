@@ -27,15 +27,15 @@ export class Timeline {
     const container = document.createElement('section')
     container.className = 'timeline'
 
-    // Post composer
+    // Sticky tabs at top
+    const feedToggle = this.createFeedToggle()
+    container.appendChild(feedToggle)
+
+    // Post composer pinned directly below tabs
     this.composer = createPostComposer({
       onPostCreated: (post) => this.handleNewPost(post)
     })
     container.appendChild(this.composer.getElement())
-
-    // Feed toggle
-    const feedToggle = this.createFeedToggle()
-    container.appendChild(feedToggle)
 
     // Hashtag input (hidden by default)
     const hashtagInput = this.createHashtagInput()
@@ -64,16 +64,16 @@ export class Timeline {
       followingBtn.classList.add('active')
     }
 
-    const hashtagBtn = document.createElement('button')
-    hashtagBtn.className = 'feed-toggle-btn'
-    hashtagBtn.textContent = 'Hashtag'
-    hashtagBtn.dataset.mode = 'hashtag'
-    if (this.state.mode === 'hashtag') {
-      hashtagBtn.classList.add('active')
+    const forYouBtn = document.createElement('button')
+    forYouBtn.className = 'feed-toggle-btn'
+    forYouBtn.textContent = 'For You'
+    forYouBtn.dataset.mode = 'foryou'
+    if (this.state.mode === 'foryou') {
+      forYouBtn.classList.add('active')
     }
 
     container.appendChild(followingBtn)
-    container.appendChild(hashtagBtn)
+    container.appendChild(forYouBtn)
 
     return container
   }
@@ -81,9 +81,7 @@ export class Timeline {
   private createHashtagInput(): HTMLElement {
     const container = document.createElement('div')
     container.className = 'hashtag-input'
-    if (this.state.mode !== 'hashtag') {
-      container.style.display = 'none'
-    }
+    container.style.display = 'none' // Always hidden since we removed hashtag mode
 
     const input = document.createElement('input')
     input.type = 'text'
@@ -137,7 +135,7 @@ export class Timeline {
     this.element.addEventListener('click', (e) => {
       const target = e.target as HTMLElement
       if (target.classList.contains('feed-toggle-btn')) {
-        const mode = (target as HTMLElement).dataset.mode as 'following' | 'hashtag'
+        const mode = (target as HTMLElement).dataset.mode as 'following' | 'foryou'
         this.switchMode(mode)
       }
     })
@@ -177,7 +175,7 @@ export class Timeline {
     this.renderPostList()
   }
 
-  private switchMode(mode: 'following' | 'hashtag'): void {
+  private switchMode(mode: 'following' | 'foryou'): void {
     if (mode === this.state.mode) return
 
     this.state.mode = mode
@@ -191,13 +189,7 @@ export class Timeline {
       }
     })
 
-    // Show/hide hashtag input
-    const hashtagInput = this.element.querySelector('.hashtag-input') as HTMLElement
-    if (hashtagInput) {
-      hashtagInput.style.display = mode === 'hashtag' ? 'flex' : 'none'
-    }
-
-    // Reset and load posts
+    // Reset and load posts (hashtag input is always hidden now)
     this.resetAndLoadPosts()
   }
 
@@ -289,9 +281,7 @@ export class Timeline {
     if (this.state.mode === 'following') {
       return `/api/posts?${params.toString()}`
     } else {
-      if (this.state.hashtag) {
-        params.set('hashtag', this.state.hashtag)
-      }
+      // For You mode - same API endpoint for now, could be personalized later
       return `/api/posts?${params.toString()}`
     }
   }

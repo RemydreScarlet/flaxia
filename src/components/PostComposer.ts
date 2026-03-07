@@ -23,20 +23,27 @@ export class PostComposer {
     container.className = 'post-composer'
     
     container.innerHTML = `
-      <div class="composer-header">
-        <h3>Create Post</h3>
-      </div>
       <div class="composer-body">
-        <textarea 
-          class="composer-textarea" 
-          placeholder="What's happening? Include math with $E=mc^2$ or $$\\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}$$"
-          maxlength="200"
-        ></textarea>
+        <div class="composer-header">
+          <div class="composer-avatar"></div>
+          <textarea 
+            class="composer-textarea" 
+            placeholder="What's happening?"
+            maxlength="200"
+          ></textarea>
+        </div>
+        <div class="composer-file-dropzone" style="display: none;">
+          <div class="dropzone-content">
+            <span class="dropzone-icon">📎</span>
+            <span class="dropzone-text">Drag and drop a file or click to browse</span>
+          </div>
+        </div>
+        <div class="composer-divider"></div>
         <div class="composer-footer">
           <div class="composer-actions">
             <input type="file" class="composer-file-input" accept=".js,.wasm,.html,.gif,.png,.jpg,.jpeg" />
             <button class="composer-file-button" type="button">
-              📎 Attach File
+              📎
             </button>
             <span class="composer-char-count">0/200</span>
           </div>
@@ -67,7 +74,11 @@ export class PostComposer {
     this.textarea.addEventListener('input', () => {
       const length = this.textarea.value.length
       this.charCount.textContent = `${length}/200`
-      this.charCount.className = length > 180 ? 'composer-char-count warning' : 'composer-char-count'
+      if (length > 180) {
+        this.charCount.style.color = length >= 200 ? 'var(--danger)' : 'var(--accent)'
+      } else {
+        this.charCount.style.color = 'var(--text-muted)'
+      }
       this.updateSubmitButton()
     })
 

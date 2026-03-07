@@ -57,7 +57,7 @@ function createActionButton(type: 'fresh' | 'reply' | 'share', count: string, is
 function getIconForType(type: 'fresh' | 'reply' | 'share'): string {
   switch (type) {
     case 'fresh':
-      return '🍃' // Leaf emoji for Fresh!
+      return '�' // Leaf emoji for Fresh!
     case 'reply':
       return '💬' // Message emoji for Reply
     case 'share':

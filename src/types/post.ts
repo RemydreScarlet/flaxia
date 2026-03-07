@@ -59,7 +59,7 @@ export interface TimelineProps {
 }
 
 export interface TimelineState {
-  mode: 'following' | 'hashtag'
+  mode: 'following' | 'foryou'
   hashtag: string
   posts: Post[]
   cursor?: string
