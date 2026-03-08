@@ -49,6 +49,13 @@ export class PostCard {
     })
     container.appendChild(text)
 
+    // Tag chips (between text and PostStage)
+    const hashtags = this.parseHashtags(this.props.post.hashtags)
+    if (hashtags.length > 0) {
+      const tagChips = this.createTagChips(hashtags)
+      container.appendChild(tagChips)
+    }
+
     // Post stage (16:9 container for GIF/iframe) - only show if has attachments
     if (this.props.post.gif_key || this.props.post.payload_key) {
       this.postStageElement = createPostStage({
@@ -291,6 +298,58 @@ export class PostCard {
     
     // Cleanup event listeners
     this.element.remove()
+  }
+
+  private parseHashtags(hashtagsString: string): string[] {
+    try {
+      const parsed = JSON.parse(hashtagsString)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+
+  private createTagChips(hashtags: string[]): HTMLElement {
+    const container = document.createElement('div')
+    container.className = 'post-tag-chips'
+    container.style.cssText = `
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0;
+    `
+
+    hashtags.forEach(tag => {
+      const chip = document.createElement('a')
+      chip.className = 'post-tag-chip'
+      chip.href = `/explore?tag=${encodeURIComponent(tag)}`
+      chip.textContent = `#${tag}`
+      chip.style.cssText = `
+        display: inline-block;
+        padding: 4px 12px;
+        background: var(--bg-secondary);
+        color: var(--accent);
+        font-family: monospace;
+        font-size: 13px;
+        border-radius: 9999px;
+        text-decoration: none;
+        transition: all 0.2s ease;
+      `
+      
+      chip.addEventListener('mouseenter', () => {
+        chip.style.background = 'var(--accent)'
+        chip.style.color = '#000'
+      })
+      
+      chip.addEventListener('mouseleave', () => {
+        chip.style.background = 'var(--bg-secondary)'
+        chip.style.color = 'var(--accent)'
+      })
+
+      container.appendChild(chip)
+    })
+
+    return container
   }
 }
 

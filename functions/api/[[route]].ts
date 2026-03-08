@@ -559,6 +559,7 @@ app.get('/api/posts', async (c) => {
   try {
     const cursor = c.req.query('cursor')
     const limit = Math.min(Number(c.req.query('limit') || '20'), 50)
+    const hashtag = c.req.query('hashtag')
     
     // Check if database is available
     if (!c.env.DB) {
@@ -566,12 +567,27 @@ app.get('/api/posts', async (c) => {
       return c.json({ error: 'Database not available' }, 500)
     }
     
-    let query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.username = u.username WHERE p.status = \'published\' AND p.parent_id IS NULL ORDER BY p.created_at DESC LIMIT ?'
-    const params: any[] = [limit]
+    let query: string
+    const params: any[] = []
     
-    if (cursor) {
-      query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.username = u.username WHERE p.status = \'published\' AND p.parent_id IS NULL AND p.created_at < ? ORDER BY p.created_at DESC LIMIT ?'
-      params.unshift(cursor)
+    if (hashtag) {
+      // Filter by hashtag using json_each
+      query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.username = u.username WHERE p.status = \'published\' AND p.parent_id IS NULL AND EXISTS (SELECT 1 FROM json_each(p.hashtags) WHERE value = ?) ORDER BY p.created_at DESC LIMIT ?'
+      params.push(hashtag, limit)
+      
+      if (cursor) {
+        query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.username = u.username WHERE p.status = \'published\' AND p.parent_id IS NULL AND EXISTS (SELECT 1 FROM json_each(p.hashtags) WHERE value = ?) AND p.created_at < ? ORDER BY p.created_at DESC LIMIT ?'
+        params.unshift(cursor)
+      }
+    } else {
+      // Regular timeline query
+      query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.username = u.username WHERE p.status = \'published\' AND p.parent_id IS NULL ORDER BY p.created_at DESC LIMIT ?'
+      params.push(limit)
+      
+      if (cursor) {
+        query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.username = u.username WHERE p.status = \'published\' AND p.parent_id IS NULL AND p.created_at < ? ORDER BY p.created_at DESC LIMIT ?'
+        params.unshift(cursor)
+      }
     }
     
     const result = await c.env.DB.prepare(query).bind(...params).all()
@@ -675,8 +691,8 @@ app.post('/api/posts/commit', async (c) => {
     }
     
     for (const tag of hashtags) {
-      if (typeof tag !== 'string' || tag.length > 20 || !/^[a-zA-Z0-9_]+$/.test(tag)) {
-        return c.json({ error: 'Hashtags must be alphanumeric and ≤20 chars' }, 422)
+      if (typeof tag !== 'string' || tag.length > 20 || !/^[a-zA-Z0-9_\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]+$/u.test(tag)) {
+        return c.json({ error: 'Hashtags must be alphanumeric, Japanese characters, and ≤20 chars' }, 422)
       }
     }
     
@@ -863,6 +879,38 @@ app.get('/api/posts/:id/replies', async (c) => {
   }
 })
 
+// GET /api/tags/trending - get top 5 trending hashtags
+app.get('/api/tags/trending', async (c) => {
+  try {
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    // Query trending tags using json_each to extract array elements
+    const result = await c.env.DB.prepare(`
+      SELECT value AS tag, COUNT(*) AS post_count
+      FROM posts, json_each(posts.hashtags)
+      GROUP BY value
+      ORDER BY post_count DESC
+      LIMIT 5
+    `).all()
+    
+    if (!result.success) {
+      return c.json({ error: 'Failed to fetch trending tags' }, 500)
+    }
+    
+    const tags = result.results || []
+    
+    // Return response with cache headers for 5 minutes
+    return c.json({ tags }, 200, {
+      'Cache-Control': 'public, max-age=300'
+    })
+  } catch (error: any) {
+    console.error('Trending tags error:', error)
+    return c.json({ error: 'Internal server error', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
 // GET /api/posts/:id/thread - get full thread
 app.get('/api/posts/:id/thread', async (c) => {
   try {
@@ -1010,8 +1058,8 @@ app.post('/api/posts/:id/replies/commit', async (c) => {
     }
     
     for (const tag of hashtags) {
-      if (typeof tag !== 'string' || tag.length > 20 || !/^[a-zA-Z0-9_]+$/.test(tag)) {
-        return c.json({ error: 'Hashtags must be alphanumeric and ≤20 chars' }, 422)
+      if (typeof tag !== 'string' || tag.length > 20 || !/^[a-zA-Z0-9_\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]+$/u.test(tag)) {
+        return c.json({ error: 'Hashtags must be alphanumeric, Japanese characters, and ≤20 chars' }, 422)
       }
     }
     

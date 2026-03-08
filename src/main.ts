@@ -5,6 +5,7 @@ import { createThreadPage } from './components/ThreadPage.js'
 import { createLoginPage } from './components/LoginPage.js'
 import { createRegisterPage } from './components/RegisterPage.js'
 import { createProfilePage } from './components/ProfilePage.js'
+import { createExplorePage } from './components/ExplorePage.js'
 import { logout } from './lib/auth.js'
 
 console.log('Flaxia initialized')
@@ -16,14 +17,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('App mounted')
     
     // Routing state
-    let currentView: 'timeline' | 'thread' | 'login' | 'register' | 'profile' = 'timeline'
+    let currentView: 'timeline' | 'thread' | 'login' | 'register' | 'profile' | 'explore' = 'timeline'
     let currentPostId: string | null = null
     let currentUsername: string | null = null
+    let currentTag: string | null = null
     let timeline: ReturnType<typeof createTimeline> | null = null
     let threadPage: ReturnType<typeof createThreadPage> | null = null
     let loginPage: ReturnType<typeof createLoginPage> | null = null
     let registerPage: ReturnType<typeof createRegisterPage> | null = null
     let profilePage: ReturnType<typeof createProfilePage> | null = null
+    let explorePage: ReturnType<typeof createExplorePage> | null = null
     let currentUser: { username: string; display_name?: string; avatar_key?: string } | null = null
     
     // Check current user session
@@ -69,19 +72,28 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Auth routes
       if (cleanPath === '/login') {
         console.log('Login route detected')
-        return { view: 'login' as const, postId: null, username: null }
+        return { view: 'login' as const, postId: null, username: null, tag: null }
       }
       
       if (cleanPath === '/register') {
         console.log('Register route detected')
-        return { view: 'register' as const, postId: null, username: null }
+        return { view: 'register' as const, postId: null, username: null, tag: null }
+      }
+      
+      // Explore route
+      const exploreMatch = cleanPath.match(/^\/explore$/)
+      if (exploreMatch) {
+        const urlParams = new URLSearchParams(window.location.search)
+        const tag = urlParams.get('tag')
+        console.log('Explore route detected, tag:', tag)
+        return { view: 'explore' as const, postId: null, username: null, tag }
       }
       
       // Thread route (check before profile)
       const threadMatch = cleanPath.match(/^\/posts\/([^\/]+)$/)
       if (threadMatch) {
         console.log('Thread route detected, postId:', threadMatch[1])
-        return { view: 'thread' as const, postId: threadMatch[1], username: null }
+        return { view: 'thread' as const, postId: threadMatch[1], username: null, tag: null }
       }
       
       // Profile route - matches /profile/:username
@@ -89,23 +101,23 @@ document.addEventListener('DOMContentLoaded', async () => {
       console.log('Profile match test:', profileMatch, 'cleanPath:', cleanPath)
       if (profileMatch && profileMatch[1]) {
         console.log('Profile route detected, username:', profileMatch[1])
-        return { view: 'profile' as const, postId: null, username: profileMatch[1] }
+        return { view: 'profile' as const, postId: null, username: profileMatch[1], tag: null }
       }
       
       // Default timeline (only for root path)
       if (cleanPath === '' || cleanPath === '/') {
         console.log('Timeline route detected')
-        return { view: 'timeline' as const, postId: null, username: null }
+        return { view: 'timeline' as const, postId: null, username: null, tag: null }
       }
       
       // If no specific route matched, default to timeline
       console.log('Unknown route, defaulting to timeline')
-      return { view: 'timeline' as const, postId: null, username: null }
+      return { view: 'timeline' as const, postId: null, username: null, tag: null }
     }
     
     // Navigate to view
-    const navigateTo = async (view: 'timeline' | 'thread' | 'login' | 'register' | 'profile', postId?: string, username?: string) => {
-      console.log('Navigate to:', view, postId, username, 'Current view:', currentView)
+    const navigateTo = async (view: 'timeline' | 'thread' | 'login' | 'register' | 'profile' | 'explore', postId?: string, username?: string, tag?: string) => {
+      console.log('Navigate to:', view, postId, username, tag, 'Current view:', currentView)
       
       // For auth routes, proceed directly
       if (view === 'login' || view === 'register') {
@@ -200,11 +212,71 @@ document.addEventListener('DOMContentLoaded', async () => {
         return
       }
       
+      // Handle explore page (within 3-column layout)
+      if (view === 'explore') {
+        currentView = 'explore'
+        currentPostId = null
+        currentUsername = null
+        currentTag = tag || null
+        
+        // Create main container for 3-column layout
+        const mainContainer = document.createElement('div')
+        mainContainer.className = 'main-container'
+        
+        // Create Left Nav
+        const leftNav = createLeftNav({
+          activeItem: 'explore',
+          onNavigate: async (item) => {
+            console.log('Navigate to:', item)
+            if (item === 'home') {
+              window.history.pushState({}, '', '/')
+              navigateTo('timeline')
+            } else if (item === 'profile') {
+              if (!currentUser) {
+                window.history.pushState({}, '', '/')
+                navigateTo('timeline')
+                return
+              }
+              window.history.pushState({}, '', `/profile/${currentUser.username}`)
+              navigateTo('profile', undefined, currentUser.username)
+            }
+          }
+        })
+        
+        // Create Explore Page (as main content)
+        const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://flaxiausercontent.com'
+        explorePage = createExplorePage({
+          tag: currentTag || undefined,
+          sandboxOrigin
+        })
+        
+        // Create Right Panel
+        const rightPanel = createRightPanel({
+          onSearch: (query) => {
+            console.log('Search:', query)
+            // Handle search here
+          },
+          onFollowUser: (userId) => {
+            console.log('Follow user:', userId)
+            // Handle follow here
+          }
+        })
+        
+        // Assemble layout
+        mainContainer.appendChild(leftNav.getElement())
+        mainContainer.appendChild(explorePage.getElement())
+        mainContainer.appendChild(rightPanel.getElement())
+        
+        app.appendChild(mainContainer)
+        return
+      }
+      
       // Handle profile page (within 3-column layout)
       if (view === 'profile' && username) {
         currentView = 'profile'
         currentPostId = null
         currentUsername = username
+        currentTag = null
         
         // Create main container for 3-column layout
         const mainContainer = document.createElement('div')
@@ -344,13 +416,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Handle browser back/forward
     window.addEventListener('popstate', async (e) => {
       const route = parseCurrentRoute()
-      await navigateTo(route.view, route.postId || undefined, route.username || undefined)
+      await navigateTo(route.view, route.postId || undefined, route.username || undefined, route.tag || undefined)
     })
     
     // Initial navigation
     console.log('DOM Content Loaded, starting initial routing...')
     const initialRoute = parseCurrentRoute()
     console.log('Initial route:', initialRoute)
-    await navigateTo(initialRoute.view, initialRoute.postId || undefined, initialRoute.username || undefined)
+    await navigateTo(initialRoute.view, initialRoute.postId || undefined, initialRoute.username || undefined, initialRoute.tag || undefined)
   }
 })

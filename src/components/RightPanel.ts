@@ -6,11 +6,13 @@ export interface RightPanelProps {
 export class RightPanel {
   private element: HTMLElement
   private props: RightPanelProps
+  private trendingTags: Array<{ tag: string; post_count: number }> = []
 
   constructor(props: RightPanelProps = {}) {
     this.props = props
     this.element = this.createElement()
     this.setupEventListeners()
+    this.loadTrendingTags()
   }
 
   private createElement(): HTMLElement {
@@ -55,38 +57,9 @@ export class RightPanel {
     section.className = 'trending-section'
     
     section.innerHTML = `
-      <h3 class="section-title">Trending hashtags</h3>
+      <h3 class="section-title">Trending</h3>
       <div class="trending-list">
-        <div class="trending-item">
-          <div class="trending-content">
-            <div class="trending-hashtag">#webgpu</div>
-            <div class="trending-count">1,234 posts</div>
-          </div>
-        </div>
-        <div class="trending-item">
-          <div class="trending-content">
-            <div class="trending-hashtag">#creativecoding</div>
-            <div class="trending-count">856 posts</div>
-          </div>
-        </div>
-        <div class="trending-item">
-          <div class="trending-content">
-            <div class="trending-hashtag">#generativeart</div>
-            <div class="trending-count">642 posts</div>
-          </div>
-        </div>
-        <div class="trending-item">
-          <div class="trending-content">
-            <div class="trending-hashtag">#javascript</div>
-            <div class="trending-count">523 posts</div>
-          </div>
-        </div>
-        <div class="trending-item">
-          <div class="trending-content">
-            <div class="trending-hashtag">#wasm</div>
-            <div class="trending-count">387 posts</div>
-          </div>
-        </div>
+        <div class="trending-loading" style="text-align: center; padding: 20px; color: var(--text-muted);">Loading...</div>
       </div>
     `
 
@@ -171,15 +144,66 @@ export class RightPanel {
         }
       })
     })
+  }
 
-    // Trending hashtags
-    this.element.querySelectorAll('.trending-item').forEach(item => {
+  private async loadTrendingTags(): Promise<void> {
+    try {
+      const response = await fetch('/api/tags/trending')
+      if (!response.ok) {
+        throw new Error('Failed to load trending tags')
+      }
+
+      const data = await response.json() as { tags: Array<{ tag: string; post_count: number }> }
+      this.trendingTags = data.tags || []
+      this.renderTrendingTags()
+    } catch (error) {
+      console.error('Failed to load trending tags:', error)
+    }
+  }
+
+  private renderTrendingTags(): void {
+    const trendingList = this.element.querySelector('.trending-list')
+    if (!trendingList) return
+
+    trendingList.innerHTML = ''
+
+    if (this.trendingTags.length === 0) {
+      const emptyState = document.createElement('div')
+      emptyState.style.cssText = 'padding: 20px; color: var(--text-muted); text-align: center;'
+      emptyState.textContent = 'No trending tags yet'
+      trendingList.appendChild(emptyState)
+      return
+    }
+
+    this.trendingTags.forEach(({ tag, post_count }) => {
+      const item = document.createElement('div')
+      item.className = 'trending-item'
+      item.style.cssText = `
+        padding: 12px 0;
+        cursor: pointer;
+        transition: background 0.2s ease;
+      `
+      
+      item.innerHTML = `
+        <div class="trending-content">
+          <div class="trending-hashtag" style="font-family: monospace; color: var(--accent); font-size: 15px; font-weight: 600;"># ${tag}</div>
+          <div class="trending-count" style="font-family: monospace; color: var(--text-muted); font-size: 13px;">${post_count} posts</div>
+        </div>
+      `
+
       item.addEventListener('click', () => {
-        const hashtag = item.querySelector('.trending-hashtag')?.textContent
-        if (hashtag) {
-          this.props.onSearch?.(hashtag)
-        }
+        window.location.href = `/explore?tag=${encodeURIComponent(tag)}`
       })
+
+      item.addEventListener('mouseenter', () => {
+        item.style.background = 'var(--bg-secondary)'
+      })
+
+      item.addEventListener('mouseleave', () => {
+        item.style.background = 'transparent'
+      })
+
+      trendingList.appendChild(item)
     })
   }
 
