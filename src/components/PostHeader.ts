@@ -6,23 +6,51 @@ export function createPostHeader(props: PostHeaderProps): HTMLElement {
   
   const avatar = document.createElement('div')
   avatar.className = 'post-avatar'
-  avatar.textContent = props.username.charAt(0).toUpperCase()
   avatar.style.cursor = 'pointer'
+  avatar.style.width = '40px'
+  avatar.style.height = '40px'
+  avatar.style.borderRadius = '50%'
+  avatar.style.display = 'flex'
+  avatar.style.alignItems = 'center'
+  avatar.style.justifyContent = 'center'
+  avatar.style.fontSize = '1.2rem'
+  avatar.style.color = 'white'
+  avatar.style.background = 'var(--accent)'
+  avatar.style.flexShrink = '0'
+  
+  // Show avatar image if available, otherwise show initial
+  if (props.avatar_key) {
+    avatar.style.backgroundImage = `url(/api/images/${props.avatar_key})`
+    avatar.style.backgroundSize = 'cover'
+    avatar.style.backgroundPosition = 'center'
+    avatar.textContent = ''
+  } else {
+    avatar.textContent = props.username.charAt(0).toUpperCase()
+  }
+  
+  const displayName = document.createElement('span')
+  displayName.className = 'post-display-name'
+  displayName.textContent = props.display_name || props.username
+  displayName.style.cursor = 'pointer'
+  displayName.style.fontWeight = 'bold'
   
   const username = document.createElement('span')
   username.className = 'post-username'
-  username.textContent = props.username
+  username.textContent = `@${props.username}`
   username.style.cursor = 'pointer'
+  username.style.color = 'var(--text-muted)'
+  username.style.marginLeft = '0.5rem'
   
   const timestamp = document.createElement('span')
   timestamp.className = 'post-timestamp'
   timestamp.textContent = formatTimestamp(props.createdAt)
   
   header.appendChild(avatar)
+  header.appendChild(displayName)
   header.appendChild(username)
   header.appendChild(timestamp)
   
-  // Make avatar and username clickable to navigate to profile
+  // Make avatar and names clickable to navigate to profile
   const navigateToProfile = () => {
     window.history.pushState({}, '', `/profile/${props.username}`)
     const event = new PopStateEvent('popstate', { state: {} })
@@ -30,6 +58,11 @@ export function createPostHeader(props: PostHeaderProps): HTMLElement {
   }
   
   avatar.addEventListener('click', (e) => {
+    e.stopPropagation()
+    navigateToProfile()
+  })
+  
+  displayName.addEventListener('click', (e) => {
     e.stopPropagation()
     navigateToProfile()
   })

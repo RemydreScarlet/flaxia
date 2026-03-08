@@ -346,8 +346,8 @@ export function createEditProfileModal({ currentUser, onSave }: EditProfileModal
       return
     }
 
-    if (file.size > 200 * 1024) {
-      avatarError.textContent = 'Image must be 200KB or less'
+    if (file.size > 1024 * 1024) {
+      avatarError.textContent = 'Image must be 1MB or less'
       return
     }
 

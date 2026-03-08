@@ -566,11 +566,11 @@ app.get('/api/posts', async (c) => {
       return c.json({ error: 'Database not available' }, 500)
     }
     
-    let query = 'SELECT id, user_id, username, text, hashtags, gif_key, payload_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE status = \'published\' AND parent_id IS NULL ORDER BY created_at DESC LIMIT ?'
+    let query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.username = u.username WHERE p.status = \'published\' AND p.parent_id IS NULL ORDER BY p.created_at DESC LIMIT ?'
     const params: any[] = [limit]
     
     if (cursor) {
-      query = 'SELECT id, user_id, username, text, hashtags, gif_key, payload_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE status = \'published\' AND parent_id IS NULL AND created_at < ? ORDER BY created_at DESC LIMIT ?'
+      query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.username = u.username WHERE p.status = \'published\' AND p.parent_id IS NULL AND p.created_at < ? ORDER BY p.created_at DESC LIMIT ?'
       params.unshift(cursor)
     }
     

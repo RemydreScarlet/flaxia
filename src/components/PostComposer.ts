@@ -1,5 +1,6 @@
 export interface PostComposerProps {
   onPostCreated?: (post: any) => void
+  currentUser?: { username: string; display_name?: string; avatar_key?: string } | null
 }
 
 export class PostComposer {
@@ -65,6 +66,30 @@ export class PostComposer {
     this.fileInput = container.querySelector('.composer-file-input')!
     this.submitButton = container.querySelector('.composer-submit')!
     this.charCount = container.querySelector('.composer-char-count')!
+
+    // Set avatar
+    const avatar = container.querySelector('.composer-avatar') as HTMLElement
+    if (this.props.currentUser) {
+      avatar.style.width = '40px'
+      avatar.style.height = '40px'
+      avatar.style.borderRadius = '50%'
+      avatar.style.display = 'flex'
+      avatar.style.alignItems = 'center'
+      avatar.style.justifyContent = 'center'
+      avatar.style.fontSize = '1.2rem'
+      avatar.style.color = 'white'
+      avatar.style.background = 'var(--accent)'
+      avatar.style.flexShrink = '0'
+      
+      if (this.props.currentUser.avatar_key) {
+        avatar.style.backgroundImage = `url(/api/images/${this.props.currentUser.avatar_key})`
+        avatar.style.backgroundSize = 'cover'
+        avatar.style.backgroundPosition = 'center'
+        avatar.textContent = ''
+      } else {
+        avatar.textContent = this.props.currentUser.username.charAt(0).toUpperCase()
+      }
+    }
 
     return container
   }

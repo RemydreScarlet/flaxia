@@ -2,6 +2,8 @@ export interface Post {
   id: string
   user_id: string
   username: string
+  display_name?: string
+  avatar_key?: string
   text: string
   hashtags: string
   gif_key?: string  // Stores all image formats (GIF, PNG, JPG), not just GIFs
@@ -28,6 +30,8 @@ export interface PostCardProps {
 
 export interface PostHeaderProps {
   username: string
+  display_name?: string
+  avatar_key?: string
   createdAt: string
 }
 
@@ -63,6 +67,7 @@ export interface PostActionsProps {
 
 export interface TimelineProps {
   sandboxOrigin: string
+  currentUser?: { username: string; display_name?: string; avatar_key?: string } | null
 }
 
 export interface TimelineState {

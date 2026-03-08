@@ -37,6 +37,8 @@ export class PostCard {
     // Post header
     const header = createPostHeader({
       username: this.props.post.username,
+      display_name: this.props.post.display_name,
+      avatar_key: this.props.post.avatar_key,
       createdAt: this.props.post.created_at
     })
     container.appendChild(header)

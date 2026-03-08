@@ -24,7 +24,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let loginPage: ReturnType<typeof createLoginPage> | null = null
     let registerPage: ReturnType<typeof createRegisterPage> | null = null
     let profilePage: ReturnType<typeof createProfilePage> | null = null
-    let currentUser: { username: string } | null = null
+    let currentUser: { username: string; display_name?: string; avatar_key?: string } | null = null
     
     // Check current user session
     const checkAuth = async () => {
@@ -32,7 +32,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         const response = await fetch('/api/me')
         if (response.ok) {
           const data = await response.json() as { user: any }
-          currentUser = { username: data.user.username }
+          currentUser = { 
+            username: data.user.username,
+            display_name: data.user.display_name,
+            avatar_key: data.user.avatar_key
+          }
           return true
         }
       } catch (error) {
@@ -211,7 +215,10 @@ document.addEventListener('DOMContentLoaded', async () => {
           activeItem: 'profile',
           onNavigate: async (item) => {
             console.log('Navigate to:', item)
-            if (item === 'profile') {
+            if (item === 'home') {
+              window.history.pushState({}, '', '/')
+              navigateTo('timeline')
+            } else if (item === 'profile') {
               if (!currentUser) {
                 window.history.pushState({}, '', '/')
                 navigateTo('timeline')
@@ -284,7 +291,10 @@ document.addEventListener('DOMContentLoaded', async () => {
           activeItem: 'home',
           onNavigate: async (item) => {
             console.log('Navigate to:', item)
-            if (item === 'profile') {
+            if (item === 'home') {
+              window.history.pushState({}, '', '/')
+              navigateTo('timeline')
+            } else if (item === 'profile') {
               if (!currentUser) {
                 window.history.pushState({}, '', '/')
                 navigateTo('timeline')
@@ -299,7 +309,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Create Timeline
         const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://flaxiausercontent.com'
         timeline = createTimeline({
-          sandboxOrigin
+          sandboxOrigin,
+          currentUser
         })
         
         // Listen for navigation events from timeline

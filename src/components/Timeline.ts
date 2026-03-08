@@ -33,7 +33,8 @@ export class Timeline {
 
     // Post composer pinned directly below tabs
     this.composer = createPostComposer({
-      onPostCreated: (post) => this.handleNewPost(post)
+      onPostCreated: (post) => this.handleNewPost(post),
+      currentUser: this.props.currentUser
     })
     container.appendChild(this.composer.getElement())
 
