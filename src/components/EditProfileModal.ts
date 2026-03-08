@@ -261,6 +261,7 @@ export function createEditProfileModal({ currentUser, onSave }: EditProfileModal
   let selectedFile: File | null = null
   let avatarPreviewUrl: string | null = null
   let hasChanges = false
+  let hasAvatarChange = false
 
   const updateCharCounter = () => {
     const length = bioTextarea.value.length
@@ -303,7 +304,7 @@ export function createEditProfileModal({ currentUser, onSave }: EditProfileModal
     const hasFieldChanges = 
       displayNameInput.value.trim() !== originalDisplayName ||
       bioTextarea.value !== originalBio ||
-      selectedFile !== null
+      hasAvatarChange
     
     hasChanges = hasFieldChanges
     
@@ -341,8 +342,8 @@ export function createEditProfileModal({ currentUser, onSave }: EditProfileModal
     const file = (e.target as HTMLInputElement).files?.[0]
     if (!file) return
 
-    if (!file.type.match(/^image\/(jpeg|png|gif)$/)) {
-      avatarError.textContent = 'Only JPEG, PNG, and GIF images are allowed'
+    if (!file.type.match(/^image\/(jpeg|jpg|png|gif|webp)$/)) {
+      avatarError.textContent = 'Only JPEG, PNG, GIF, and WebP images are allowed'
       return
     }
 
@@ -353,6 +354,7 @@ export function createEditProfileModal({ currentUser, onSave }: EditProfileModal
 
     avatarError.textContent = ''
     selectedFile = file
+    hasAvatarChange = true
     avatarPreviewUrl = URL.createObjectURL(file)
     avatar.style.backgroundImage = `url(${avatarPreviewUrl})`
     avatar.style.backgroundSize = 'cover'

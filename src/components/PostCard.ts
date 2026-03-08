@@ -240,15 +240,16 @@ export class PostCard {
   private handlePostClick(): void {
     console.log('handlePostClick called for post:', this.props.post.id)
     
-    // Navigate to thread page
-    const threadUrl = `/posts/${this.props.post.id}`
+    // Navigate to thread page using SPA navigation
+    const threadUrl = `/thread/${this.props.post.id}`
     console.log('Pushing state to URL:', threadUrl)
     window.history.pushState({ postId: this.props.post.id }, '', threadUrl)
     
-    // Manually trigger routing since pushState doesn't trigger popstate
-    console.log('Manually triggering navigation after pushState')
-    const event = new PopStateEvent('popstate', { state: { postId: this.props.post.id } })
-    window.dispatchEvent(event)
+    // Use SPA navigation event
+    console.log('Dispatching SPA navigation event')
+    window.dispatchEvent(new CustomEvent('spaNavigate', { 
+      detail: { view: 'thread', postId: this.props.post.id } 
+    }))
     
     // Also emit custom event for navigation (backup)
     console.log('Emitting navigateToThread event')

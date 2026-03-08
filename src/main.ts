@@ -6,6 +6,7 @@ import { createLoginPage } from './components/LoginPage.js'
 import { createRegisterPage } from './components/RegisterPage.js'
 import { createProfilePage } from './components/ProfilePage.js'
 import { createExplorePage } from './components/ExplorePage.js'
+import { createTrendingModal } from './components/TrendingModal.js'
 import { logout } from './lib/auth.js'
 
 console.log('Flaxia initialized')
@@ -237,7 +238,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 navigateTo('timeline')
                 return
               }
-              window.history.pushState({}, '', `/profile/${currentUser.username}`)
+              window.history.pushState({}, '', `/users/${currentUser.username}`)
               navigateTo('profile', undefined, currentUser.username)
             }
           }
@@ -290,13 +291,29 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (item === 'home') {
               window.history.pushState({}, '', '/')
               navigateTo('timeline')
+            } else if (item === 'explore') {
+              window.history.pushState({}, '', '/explore')
+              navigateTo('explore')
+            } else if (item === 'trending') {
+              // Show trending modal
+              const trendingModal = createTrendingModal({
+                onClose: () => {
+                  document.body.removeChild(trendingModal)
+                },
+                onTagClick: (tag) => {
+                  document.body.removeChild(trendingModal)
+                  window.history.pushState({}, '', `/explore?tag=${encodeURIComponent(tag)}`)
+                  navigateTo('explore', undefined, undefined, tag)
+                }
+              })
+              document.body.appendChild(trendingModal)
             } else if (item === 'profile') {
               if (!currentUser) {
                 window.history.pushState({}, '', '/')
                 navigateTo('timeline')
                 return
               }
-              window.history.pushState({}, '', `/profile/${currentUser.username}`)
+              window.history.pushState({}, '', `/users/${currentUser.username}`)
               navigateTo('profile', undefined, currentUser.username)
             }
           }
@@ -366,13 +383,29 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (item === 'home') {
               window.history.pushState({}, '', '/')
               navigateTo('timeline')
+            } else if (item === 'explore') {
+              window.history.pushState({}, '', '/explore')
+              navigateTo('explore')
+            } else if (item === 'trending') {
+              // Show trending modal
+              const trendingModal = createTrendingModal({
+                onClose: () => {
+                  document.body.removeChild(trendingModal)
+                },
+                onTagClick: (tag) => {
+                  document.body.removeChild(trendingModal)
+                  window.history.pushState({}, '', `/explore?tag=${encodeURIComponent(tag)}`)
+                  navigateTo('explore', undefined, undefined, tag)
+                }
+              })
+              document.body.appendChild(trendingModal)
             } else if (item === 'profile') {
               if (!currentUser) {
                 window.history.pushState({}, '', '/')
                 navigateTo('timeline')
                 return
               }
-              window.history.pushState({}, '', `/profile/${currentUser.username}`)
+              window.history.pushState({}, '', `/users/${currentUser.username}`)
               navigateTo('profile', undefined, currentUser.username)
             }
           }

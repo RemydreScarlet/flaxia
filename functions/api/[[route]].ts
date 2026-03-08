@@ -435,24 +435,40 @@ app.patch('/api/users/me', async (c) => {
           return c.json({ error: 'Only JPEG, PNG, and GIF images are allowed' }, 400)
         }
         
-        // Validate file size (200KB)
-        if (avatarFile.size > 200 * 1024) {
-          return c.json({ error: 'Avatar must be ≤200KB' }, 413)
+        // Validate file size (1MB)
+        if (avatarFile.size > 1024 * 1024) {
+          return c.json({ error: 'Avatar must be ≤1MB' }, 413)
         }
         
         if (!c.env.BUCKET) {
           return c.json({ error: 'Storage not available' }, 500)
         }
         
-        // Generate avatar key
-        const avatarKey = `avatar/${userId}`
+        // Calculate file hash
+        const fileBuffer = await avatarFile.arrayBuffer()
+        const hashBuffer = await crypto.subtle.digest('SHA-256', fileBuffer)
+        const hashArray = Array.from(new Uint8Array(hashBuffer))
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
         
-        // Upload to R2
-        await c.env.BUCKET.put(avatarKey, await avatarFile.arrayBuffer(), {
-          httpMetadata: {
-            contentType: avatarFile.type
-          }
-        })
+        // Check if file with same hash already exists
+        const existingKey = `avatar/${hashHex}`
+        const existingObject = await c.env.BUCKET.head(existingKey)
+        
+        let avatarKey: string
+        if (existingObject) {
+          // Use existing file
+          avatarKey = existingKey
+          console.log('Reusing existing avatar file:', avatarKey)
+        } else {
+          // Upload new file with hash as key
+          avatarKey = existingKey
+          await c.env.BUCKET.put(avatarKey, fileBuffer, {
+            httpMetadata: {
+              contentType: avatarFile.type
+            }
+          })
+          console.log('Uploaded new avatar file:', avatarKey)
+        }
         
         // Update avatar_key in database
         await c.env.DB.prepare('UPDATE users SET avatar_key = ? WHERE id = ?')
@@ -570,10 +586,10 @@ app.post('/api/users/me/avatar', async (c) => {
       return c.json({ error: 'Only JPEG, PNG, and GIF images are allowed' }, 400)
     }
     
-    // Check file size limit (200KB = 200 * 1024 bytes)
-    const maxSize = 200 * 1024
+    // Check file size limit (1MB = 1024 * 1024 bytes)
+    const maxSize = 1024 * 1024
     if (Number(contentLength) > maxSize) {
-      return c.json({ error: 'Avatar must be ≤200KB' }, 413)
+      return c.json({ error: 'Avatar must be ≤1MB' }, 413)
     }
     
     if (!c.env.BUCKET) {
@@ -587,18 +603,33 @@ app.post('/api/users/me/avatar', async (c) => {
     
     // Double-check file size after reading
     if (fileData.byteLength > maxSize) {
-      return c.json({ error: 'Avatar must be ≤200KB' }, 413)
+      return c.json({ error: 'Avatar must be ≤1MB' }, 413)
     }
     
-    // Generate avatar key (overwrite existing avatar)
-    const avatarKey = `avatar/${userId}`
+    // Calculate file hash
+    const hashBuffer = await crypto.subtle.digest('SHA-256', fileData)
+    const hashArray = Array.from(new Uint8Array(hashBuffer))
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
     
-    // Upload to R2 with proper content type
-    await c.env.BUCKET.put(avatarKey, fileData, {
-      httpMetadata: {
-        contentType: contentType
-      }
-    })
+    // Check if file with same hash already exists
+    const existingKey = `avatar/${hashHex}`
+    const existingObject = await c.env.BUCKET.head(existingKey)
+    
+    let avatarKey: string
+    if (existingObject) {
+      // Use existing file
+      avatarKey = existingKey
+      console.log('Reusing existing avatar file:', avatarKey)
+    } else {
+      // Upload new file with hash as key
+      avatarKey = existingKey
+      await c.env.BUCKET.put(avatarKey, fileData, {
+        httpMetadata: {
+          contentType: contentType
+        }
+      })
+      console.log('Uploaded new avatar file:', avatarKey)
+    }
     
     // Update user's avatar_key in database
     if (!c.env.DB) {
