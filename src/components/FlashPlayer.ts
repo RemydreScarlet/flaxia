@@ -67,6 +67,14 @@ export async function executeFlash(
     #player {
       width: 100%;
       height: 100%;
+      position: relative;
+    }
+    #flash-player {
+      width: 100% !important;
+      height: 100% !important;
+      position: absolute;
+      top: 0;
+      left: 0;
     }
   </style>
 </head>
@@ -81,14 +89,15 @@ export async function executeFlash(
       player.config = {
         autoplay: 'on',
         unmuteOverlay: 'visible',
-        letterbox: 'on',
+        letterbox: 'off',
         backgroundColor: '#000000',
         allowScriptAccess: 'never',
         allowNetworking: 'none',
         maxExecutionDuration: 15,
         frameRate: 60,
-        width: 640,
-        height: 480
+        base: window.location.origin,
+        quality: 'high',
+        scale: 'exactFit'
       };
       
       const container = document.getElementById('player');
