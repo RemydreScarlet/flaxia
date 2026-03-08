@@ -572,20 +572,20 @@ app.get('/api/posts', async (c) => {
     
     if (hashtag) {
       // Filter by hashtag using json_each
-      query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.username = u.username WHERE p.status = \'published\' AND p.parent_id IS NULL AND EXISTS (SELECT 1 FROM json_each(p.hashtags) WHERE value = ?) ORDER BY p.created_at DESC LIMIT ?'
+      query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.parent_id IS NULL AND EXISTS (SELECT 1 FROM json_each(p.hashtags) WHERE value = ?) ORDER BY p.created_at DESC LIMIT ?'
       params.push(hashtag, limit)
       
       if (cursor) {
-        query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.username = u.username WHERE p.status = \'published\' AND p.parent_id IS NULL AND EXISTS (SELECT 1 FROM json_each(p.hashtags) WHERE value = ?) AND p.created_at < ? ORDER BY p.created_at DESC LIMIT ?'
+        query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.parent_id IS NULL AND EXISTS (SELECT 1 FROM json_each(p.hashtags) WHERE value = ?) AND p.created_at < ? ORDER BY p.created_at DESC LIMIT ?'
         params.unshift(cursor)
       }
     } else {
       // Regular timeline query
-      query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.username = u.username WHERE p.status = \'published\' AND p.parent_id IS NULL ORDER BY p.created_at DESC LIMIT ?'
+      query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.parent_id IS NULL ORDER BY p.created_at DESC LIMIT ?'
       params.push(limit)
       
       if (cursor) {
-        query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.username = u.username WHERE p.status = \'published\' AND p.parent_id IS NULL AND p.created_at < ? ORDER BY p.created_at DESC LIMIT ?'
+        query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.parent_id IS NULL AND p.created_at < ? ORDER BY p.created_at DESC LIMIT ?'
         params.unshift(cursor)
       }
     }
@@ -855,11 +855,21 @@ app.get('/api/posts/:id/replies', async (c) => {
       return c.json({ error: 'Post not found' }, 404)
     }
     
-    let query = 'SELECT id, user_id, username, text, hashtags, gif_key, payload_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE parent_id = ? AND status = \'published\' ORDER BY created_at ASC LIMIT ?'
+    let query = `SELECT p.id, p.user_id, p.username, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at,
+       u.display_name, u.avatar_key
+       FROM posts p
+       LEFT JOIN users u ON p.user_id = u.id
+       WHERE p.parent_id = ? AND p.status = 'published' 
+       ORDER BY p.created_at ASC LIMIT ?`
     const params: any[] = [postId, limit]
     
     if (cursor) {
-      query = 'SELECT id, user_id, username, text, hashtags, gif_key, payload_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE parent_id = ? AND status = \'published\' AND created_at > ? ORDER BY created_at ASC LIMIT ?'
+      query = `SELECT p.id, p.user_id, p.username, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at,
+       u.display_name, u.avatar_key
+       FROM posts p
+       LEFT JOIN users u ON p.user_id = u.id
+       WHERE p.parent_id = ? AND p.status = 'published' AND p.created_at > ? 
+       ORDER BY p.created_at ASC LIMIT ?`
       params.splice(1, 0, cursor)
     }
     
@@ -875,7 +885,7 @@ app.get('/api/posts/:id/replies', async (c) => {
     return c.json({ replies, nextCursor })
   } catch (error: any) {
     console.error('Replies fetch error:', error)
-    return c.json({ error: 'Internal server error' }, 500)
+    return c.json({ error: 'Internal server error', details: error?.message || 'Unknown error' }, 500)
   }
 })
 
@@ -931,18 +941,27 @@ app.get('/api/posts/:id/thread', async (c) => {
     
     const rootId = post.root_id || post.id
     
-    // Get root post
+    // Get root post with user info
     const rootPost = await c.env.DB.prepare(
-      'SELECT id, user_id, username, text, hashtags, gif_key, payload_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE id = ? AND status = \'published\''
+      `SELECT p.id, p.user_id, p.username, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at,
+       u.display_name, u.avatar_key
+       FROM posts p
+       LEFT JOIN users u ON p.user_id = u.id
+       WHERE p.id = ? AND p.status = 'published'`
     ).bind(rootId).first()
     
     if (!rootPost) {
       return c.json({ error: 'Thread not found' }, 404)
     }
     
-    // Get all replies in thread (max 200 for MVP)
+    // Get all replies in thread with user info (max 200 for MVP)
     const repliesResult = await c.env.DB.prepare(
-      'SELECT id, user_id, username, text, hashtags, gif_key, payload_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE root_id = ? AND status = \'published\' AND id != ? ORDER BY created_at ASC LIMIT 200'
+      `SELECT p.id, p.user_id, p.username, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at,
+       u.display_name, u.avatar_key
+       FROM posts p
+       LEFT JOIN users u ON p.user_id = u.id
+       WHERE p.root_id = ? AND p.status = 'published' AND p.id != ?
+       ORDER BY p.created_at ASC LIMIT 200`
     ).bind(rootId, rootId).all()
     
     if (!repliesResult.success) {
@@ -952,7 +971,7 @@ app.get('/api/posts/:id/thread', async (c) => {
     return c.json({ root: rootPost, replies: repliesResult.results || [] })
   } catch (error: any) {
     console.error('Thread fetch error:', error)
-    return c.json({ error: 'Internal server error' }, 500)
+    return c.json({ error: 'Internal server error', details: error?.message || 'Unknown error' }, 500)
   }
 })
 
