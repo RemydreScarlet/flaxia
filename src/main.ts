@@ -90,14 +90,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       
       // Thread route (check before profile)
-      const threadMatch = cleanPath.match(/^\/posts\/([^\/]+)$/)
+      const threadMatch = cleanPath.match(/^\/thread\/([^\/]+)$/)
       if (threadMatch) {
         console.log('Thread route detected, postId:', threadMatch[1])
         return { view: 'thread' as const, postId: threadMatch[1], username: null, tag: null }
       }
       
-      // Profile route - matches /profile/:username
-      const profileMatch = cleanPath.match(/^\/profile\/([^\/]+)$/)
+      // Profile route - matches /users/:username
+      const profileMatch = cleanPath.match(/^\/users\/([^\/]+)$/)
       console.log('Profile match test:', profileMatch, 'cleanPath:', cleanPath)
       if (profileMatch && profileMatch[1]) {
         console.log('Profile route detected, username:', profileMatch[1])
@@ -388,7 +388,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Listen for navigation events from timeline
         timeline.getElement().addEventListener('navigateToThread', (e: any) => {
           const postId = e.detail.postId
-          window.history.pushState({ postId }, '', `/posts/${postId}`)
+          window.history.pushState({ postId }, '', `/thread/${postId}`)
           navigateTo('thread', postId)
         })
         
@@ -417,6 +417,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.addEventListener('popstate', async (e) => {
       const route = parseCurrentRoute()
       await navigateTo(route.view, route.postId || undefined, route.username || undefined, route.tag || undefined)
+    })
+    
+    // Handle SPA navigation events
+    window.addEventListener('spaNavigate', async (e: any) => {
+      const detail = e.detail
+      await navigateTo(detail.view, detail.postId, detail.username, detail.tag)
     })
     
     // Initial navigation

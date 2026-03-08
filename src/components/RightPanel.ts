@@ -108,42 +108,77 @@ export class RightPanel {
     const searchInput = this.element.querySelector('.search-input') as HTMLInputElement
     if (searchInput) {
       searchInput.addEventListener('input', (e) => {
-        const query = (e.target as HTMLInputElement).value
-        this.props.onSearch?.(query)
+        // Just update input value, no auto-search
       })
 
       searchInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
           const query = searchInput.value.trim()
           if (query) {
-            this.props.onSearch?.(query)
+            this.performSearch(query)
           }
         }
       })
     }
 
     // Follow buttons
-    this.element.querySelectorAll('.follow-button').forEach(button => {
+    const followButtons = this.element.querySelectorAll('.follow-button')
+    followButtons.forEach(button => {
       button.addEventListener('click', (e) => {
-        const followItem = (e.target as HTMLElement).closest('.follow-item')
-        const userId = followItem?.getAttribute('data-user-id')
+        e.preventDefault()
+        const userId = (button as HTMLElement).dataset.userId
         if (userId) {
           this.props.onFollowUser?.(userId)
-          
-          // Update button state
-          const btn = e.target as HTMLButtonElement
-          if (btn.textContent === 'Follow') {
-            btn.textContent = 'Following'
-            btn.style.background = 'var(--accent)'
-            btn.style.color = '#000'
-          } else {
-            btn.textContent = 'Follow'
-            btn.style.background = 'transparent'
-            btn.style.color = 'var(--accent)'
-          }
         }
       })
     })
+  }
+
+  private async performSearch(query: string): Promise<void> {
+    try {
+      console.log('Searching for:', query)
+      
+      // Show loading state
+      const searchBox = this.element.querySelector('.search-box')
+      if (searchBox) {
+        searchBox.classList.add('searching')
+      }
+
+      // Search posts
+      const postsResponse = await fetch(`/api/search?q=${encodeURIComponent(query)}&type=posts&limit=10`)
+      const postsData = postsResponse.ok ? await postsResponse.json() as { results: any[] } : { results: [] }
+
+      // Search users
+      const usersResponse = await fetch(`/api/search?q=${encodeURIComponent(query)}&type=users&limit=5`)
+      const usersData = usersResponse.ok ? await usersResponse.json() as { results: any[] } : { results: [] }
+
+      // Remove loading state
+      if (searchBox) {
+        searchBox.classList.remove('searching')
+      }
+
+      // Import and show search results
+      const { createSearchResults } = await import('./SearchResults.js')
+      const searchResults = createSearchResults({
+        query,
+        posts: postsData.results || [],
+        users: usersData.results || [],
+        onClose: () => {
+          document.body.removeChild(searchResults)
+        }
+      })
+
+      document.body.appendChild(searchResults)
+
+    } catch (error) {
+      console.error('Search error:', error)
+      
+      // Remove loading state
+      const searchBox = this.element.querySelector('.search-box')
+      if (searchBox) {
+        searchBox.classList.remove('searching')
+      }
+    }
   }
 
   private async loadTrendingTags(): Promise<void> {

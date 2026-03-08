@@ -1266,6 +1266,61 @@ app.post('/api/posts/:id/replies/commit', async (c) => {
   }
 })
 
+// GET /api/search - search posts and users
+app.get('/api/search', async (c) => {
+  try {
+    const query = c.req.query('q')
+    const type = c.req.query('type') || 'posts' // 'posts' or 'users'
+    const limit = Math.min(Number(c.req.query('limit') || '20'), 50)
+    
+    if (!query || query.trim().length === 0) {
+      return c.json({ error: 'Search query required' }, 400)
+    }
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    const searchTerm = `%${query.trim()}%`
+    
+    if (type === 'users') {
+      // Search users
+      const users = await c.env.DB.prepare(`
+        SELECT id, username, display_name, bio, avatar_key, created_at 
+        FROM users 
+        WHERE username LIKE ? OR display_name LIKE ?
+        ORDER BY created_at DESC
+        LIMIT ?
+      `).bind(searchTerm, searchTerm, limit).all()
+      
+      return c.json({ 
+        type: 'users',
+        query,
+        results: users.results || []
+      })
+    } else {
+      // Search posts (default)
+      const posts = await c.env.DB.prepare(`
+        SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at 
+        FROM posts p 
+        LEFT JOIN users u ON p.user_id = u.id 
+        WHERE p.status = 'published' AND (p.text LIKE ? OR p.username LIKE ?)
+        ORDER BY p.created_at DESC
+        LIMIT ?
+      `).bind(searchTerm, searchTerm, limit).all()
+      
+      return c.json({ 
+        type: 'posts',
+        query,
+        results: posts.results || []
+      })
+    }
+  } catch (error: any) {
+    console.error('Search error:', error)
+    return c.json({ error: 'Search failed', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
 // Export for Cloudflare Pages Functions
 export async function onRequest(context: any) {
   return app.fetch(context.request, context.env, context)
