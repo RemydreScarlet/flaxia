@@ -23,25 +23,74 @@ export function createAudioPlayer(props: GifPreviewProps): HTMLElement {
   audio.className = 'audio-player-element'
   audio.controls = true
   audio.preload = 'metadata'
+  audio.setAttribute('playsinline', 'true')
+  audio.muted = false
+  audio.style.display = 'block'
+  audio.style.visibility = 'visible'
+  audio.style.opacity = '1'
+  audio.style.width = '100%'
+  audio.style.height = 'auto'
+  audio.style.minHeight = '54px'
   
   // Use the API proxy endpoint for audio
   const audioUrl = `/api/audio/${props.gifKey}`
-  audio.src = audioUrl
+  
+  // Force Chrome to load the audio element properly
+  setTimeout(() => {
+    audio.src = audioUrl
+    audio.load() // Explicitly call load() for Chrome
+  }, 100)
   
   // Handle audio load success
   audio.onloadstart = () => {
     loading.style.display = 'none'
   }
   
+  // Handle audio canplay event - Chrome compatibility
+  audio.oncanplay = () => {
+    // Audio is ready to play
+    console.log('Audio can play')
+  }
+  
+  // Handle audio play attempt for Chrome autoplay policy
+  audio.addEventListener('play', () => {
+    console.log('Audio play started')
+  })
+  
+  audio.addEventListener('pause', () => {
+    console.log('Audio paused')
+  })
+  
   // Handle audio loading errors
-  audio.onerror = () => {
+  audio.onerror = (e) => {
+    console.error('Audio error:', e)
+    console.error('Audio error code:', audio.error?.code)
+    console.error('Audio error message:', audio.error?.message)
     loading.style.display = 'none'
     audio.style.display = 'none'
     const fallback = document.createElement('div')
     fallback.className = 'audio-player-error'
-    fallback.textContent = 'Audio failed to load'
+    fallback.textContent = `Audio failed to load: ${audio.error?.message || 'Unknown error'}`
     container.appendChild(fallback)
   }
+  
+  // Handle network errors specifically
+  audio.addEventListener('stalled', () => {
+    console.warn('Audio stalled - network issue')
+  })
+  
+  audio.addEventListener('suspend', () => {
+    console.warn('Audio suspended - browser paused loading')
+  })
+  
+  // Add click handler to ensure user interaction for Chrome autoplay policy
+  container.addEventListener('click', () => {
+    if (audio.paused && audio.readyState >= 2) { // HAVE_CURRENT_DATA
+      audio.play().catch(error => {
+        console.warn('Audio play failed:', error)
+      })
+    }
+  }, { once: false })
   
   container.appendChild(audio)
   return container

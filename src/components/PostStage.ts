@@ -2,6 +2,90 @@ import { PostStageProps, PostCardMode } from '../types/post.js'
 import { createImagePreview } from './ImagePreview.js'
 import { createAudioPlayer } from './AudioPlayer.js'
 import { executeZip } from '../lib/zip-executor.js'
+import { executeFlash } from './FlashPlayer.js'
+
+// Create SWF execution button (similar to ZIP but for Flash)
+function createSwfExecutionButton(props: {
+  postId: string
+  label: string
+  icon: string
+  onClick: () => void
+}): HTMLElement {
+  const container = document.createElement('div')
+  container.className = 'execution-button'
+  container.style.cssText = `
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    cursor: pointer;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+    padding: 20px;
+  `
+
+  // Icon
+  const icon = document.createElement('div')
+  icon.textContent = props.icon
+  icon.style.cssText = `
+    font-size: 48px;
+    margin-bottom: 12px;
+  `
+
+  // Text
+  const text = document.createElement('div')
+  text.textContent = props.label
+  text.style.cssText = `
+    font-size: 16px;
+    font-weight: 600;
+    text-align: center;
+  `
+
+  container.appendChild(icon)
+  container.appendChild(text)
+
+  // Hover effects
+  container.addEventListener('mouseenter', () => {
+    container.style.transform = 'scale(1.02)'
+    container.style.boxShadow = '0 4px 20px rgba(102, 126, 234, 0.4)'
+  })
+
+  container.addEventListener('mouseleave', () => {
+    container.style.transform = 'scale(1)'
+    container.style.boxShadow = 'none'
+  })
+
+  // Click handler - directly trigger mode change for SWF
+  container.addEventListener('click', async (e) => {
+    e.stopPropagation()
+    
+    // Show loading state
+    const originalContent = container.innerHTML
+    container.innerHTML = '<span style="font-size: 20px;">⏳</span><span>Loading Flash...</span>'
+    container.style.pointerEvents = 'none'
+
+    try {
+      // For SWF, just trigger the mode change to show Flash player
+      props.onClick()
+      
+    } catch (error) {
+      console.error('Failed to load SWF:', error)
+      container.innerHTML = originalContent
+      container.style.pointerEvents = 'auto'
+      alert('Failed to load Flash file. Please try again.')
+    }
+  })
+
+  return container
+}
 
 // Load JSZip dynamically
 declare const JSZip: any
@@ -41,18 +125,20 @@ async function validateZipContainsIndexHtml(zipBlob: Blob): Promise<boolean> {
 
 interface ZipExecutionButtonProps {
   postId: string
+  label: string
+  icon: string
   onClick: () => void
 }
 
-function createZipExecutionButton(props: ZipExecutionButtonProps): HTMLElement {
+function createExecutionButton(props: ZipExecutionButtonProps): HTMLElement {
   const container = document.createElement('div')
   container.className = 'zip-execution-button'
   container.style.cssText = `
     position: absolute;
     top: 0;
     left: 0;
-    width: 100%;
-    height: 100%;
+    right: 0;
+    bottom: 0;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -67,11 +153,11 @@ function createZipExecutionButton(props: ZipExecutionButtonProps): HTMLElement {
   `
 
   const icon = document.createElement('span')
-  icon.textContent = '🚀'
+  icon.textContent = props.icon
   icon.style.fontSize = '24px'
 
   const text = document.createElement('span')
-  text.textContent = 'Click to Execute ZIP'
+  text.textContent = props.label
 
   container.appendChild(icon)
   container.appendChild(text)
@@ -137,7 +223,7 @@ export function createPostStage(props: PostStageProps): HTMLElement {
   // Click handler to toggle between preview and execution modes
   // Only for non-ZIP files - ZIP files have their own button
   container.addEventListener('click', (e) => {
-    // Don't toggle mode if clicking on ZIP execution button
+    // Don't toggle mode if clicking on execution button (ZIP or SWF)
     if ((e.target as HTMLElement).closest('.zip-execution-button')) {
       return
     }
@@ -161,7 +247,7 @@ async function updateStageContent(container: HTMLElement, props: PostStageProps)
   container.innerHTML = ''
   
   // Only show content if there are attachments
-  if (!props.post.gif_key && !props.post.payload_key) {
+  if (!props.post.gif_key && !props.post.payload_key && !props.post.swf_key) {
     return
   }
   
@@ -171,10 +257,22 @@ async function updateStageContent(container: HTMLElement, props: PostStageProps)
     // Check if it's a ZIP file (payload_key starting with 'zip/')
     if (props.post.payload_key && props.post.payload_key.startsWith('zip/')) {
       // Create ZIP execution button
-      mediaElement = createZipExecutionButton({
+      mediaElement = createExecutionButton({
         postId: props.post.id,
+        label: 'Click to Execute ZIP',
+        icon: '🚀',
         onClick: () => props.onModeChange(PostCardMode.EXECUTING)
       })
+    } else if (props.post.swf_key && props.post.swf_key.startsWith('swf/')) {
+      // Create SWF execution button
+      mediaElement = createSwfExecutionButton({
+        postId: props.post.id,
+        label: 'Click to Play Flash',
+        icon: '⚡',
+        onClick: () => props.onModeChange(PostCardMode.EXECUTING)
+      })
+      // Add flash class for 4:3 aspect ratio
+      container.classList.add('post-stage--flash')
     } else if (props.post.gif_key && props.post.gif_key.startsWith('audio/')) {
       mediaElement = createAudioPlayer({
         gifKey: props.post.gif_key,
@@ -189,8 +287,8 @@ async function updateStageContent(container: HTMLElement, props: PostStageProps)
     
     container.appendChild(mediaElement)
     
-    // Add click hint for non-ZIP files
-    if (!props.post.payload_key?.startsWith('zip/')) {
+    // Add click hint for non-ZIP and non-SWF files
+    if (!props.post.payload_key?.startsWith('zip/') && !props.post.swf_key?.startsWith('swf/')) {
       const hint = document.createElement('div')
       hint.className = 'stage-hint'
       hint.textContent = 'Click to run'
@@ -203,6 +301,12 @@ async function updateStageContent(container: HTMLElement, props: PostStageProps)
       executeZip(props.post.id, container).catch(error => {
         console.error('Failed to execute ZIP:', error)
         container.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">Failed to load ZIP content</div>'
+      })
+    } else if (props.post.swf_key && props.post.swf_key.startsWith('swf/')) {
+      // Execute Flash/SWF content using Ruffle
+      executeFlash(props.post.id, container).catch(error => {
+        console.error('Failed to execute SWF:', error)
+        container.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">Failed to load Flash content</div>'
       })
     } else {
       // For non-ZIP files, use the old sandbox frame

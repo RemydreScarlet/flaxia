@@ -117,15 +117,41 @@ app.get('/api/audio/*', async (c) => {
       return c.json({ error: 'Audio not found' }, 404)
     }
     
-    // Get content type from object metadata or default to audio/mpeg
-    const contentType = object.httpMetadata?.contentType || 'audio/mpeg'
+    // Get content type from object metadata or detect from file extension
+    let contentType = object.httpMetadata?.contentType
+    if (!contentType) {
+      // Detect content type from file extension
+      const key = c.req.path.replace('/api/audio/', '')
+      const extension = key.split('.').pop()?.toLowerCase()
+      switch (extension) {
+        case 'mp3':
+          contentType = 'audio/mpeg'
+          break
+        case 'wav':
+          contentType = 'audio/wav'
+          break
+        case 'ogg':
+          contentType = 'audio/ogg'
+          break
+        case 'm4a':
+          contentType = 'audio/mp4'
+          break
+        case 'webm':
+          contentType = 'audio/webm'
+          break
+        default:
+          contentType = 'audio/mpeg'
+      }
+    }
     
     // Return the audio with proper headers
     return new Response(object.body, {
       headers: {
         'Content-Type': contentType,
         'Cache-Control': 'public, max-age=31536000', // Cache for 1 year
-        'Access-Control-Allow-Origin': '*'
+        'Access-Control-Allow-Origin': '*',
+        'Accept-Ranges': 'bytes',
+        'Content-Length': object.size?.toString() || '0'
       }
     })
   } catch (error: any) {
@@ -171,6 +197,43 @@ app.get('/api/zip/:postId', async (c) => {
   }
 })
 
+// GET /api/swf/:postId - serve SWF files from R2
+app.get('/api/swf/:postId', async (c) => {
+  try {
+    const postId = c.req.param('postId')
+    
+    if (!postId) {
+      return c.json({ error: 'Missing post ID' }, 400)
+    }
+    
+    if (!c.env.BUCKET) {
+      return c.json({ error: 'Storage not available' }, 500)
+    }
+    
+    // Construct the SWF key
+    const swfKey = `swf/${postId}.swf`
+    
+    // Get object from R2
+    const object = await c.env.BUCKET.get(swfKey)
+    
+    if (!object) {
+      return c.json({ error: 'SWF not found' }, 404)
+    }
+    
+    // Return the SWF with proper headers
+    return new Response(object.body, {
+      headers: {
+        'Content-Type': 'application/x-shockwave-flash',
+        'Cache-Control': 'public, max-age=31536000', // Cache for 1 year
+        'Access-Control-Allow-Origin': '*'
+      }
+    })
+  } catch (error: any) {
+    console.error('SWF proxy error:', error)
+    return c.json({ error: 'Failed to fetch SWF', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
 // Auth middleware - only for API routes
 app.use('/api/*', async (c, next) => {
   // Skip auth for public routes
@@ -179,6 +242,7 @@ app.use('/api/*', async (c, next) => {
       (c.req.method === 'GET' && c.req.path.startsWith('/api/images/')) ||
       (c.req.method === 'GET' && c.req.path.startsWith('/api/audio/')) ||
       (c.req.method === 'GET' && c.req.path.startsWith('/api/zip/')) ||
+      (c.req.method === 'GET' && c.req.path.startsWith('/api/swf/')) ||
       (c.req.method === 'GET' && c.req.path.startsWith('/api/users/')) ||
       (c.req.path.startsWith('/api/auth/'))) {
     await next()
@@ -572,20 +636,20 @@ app.get('/api/posts', async (c) => {
     
     if (hashtag) {
       // Filter by hashtag using json_each
-      query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.parent_id IS NULL AND EXISTS (SELECT 1 FROM json_each(p.hashtags) WHERE value = ?) ORDER BY p.created_at DESC LIMIT ?'
+      query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.parent_id IS NULL AND EXISTS (SELECT 1 FROM json_each(p.hashtags) WHERE value = ?) ORDER BY p.created_at DESC LIMIT ?'
       params.push(hashtag, limit)
       
       if (cursor) {
-        query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.parent_id IS NULL AND EXISTS (SELECT 1 FROM json_each(p.hashtags) WHERE value = ?) AND p.created_at < ? ORDER BY p.created_at DESC LIMIT ?'
+        query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.parent_id IS NULL AND EXISTS (SELECT 1 FROM json_each(p.hashtags) WHERE value = ?) AND p.created_at < ? ORDER BY p.created_at DESC LIMIT ?'
         params.unshift(cursor)
       }
     } else {
       // Regular timeline query
-      query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.parent_id IS NULL ORDER BY p.created_at DESC LIMIT ?'
+      query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.parent_id IS NULL ORDER BY p.created_at DESC LIMIT ?'
       params.push(limit)
       
       if (cursor) {
-        query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.parent_id IS NULL AND p.created_at < ? ORDER BY p.created_at DESC LIMIT ?'
+        query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.parent_id IS NULL AND p.created_at < ? ORDER BY p.created_at DESC LIMIT ?'
         params.unshift(cursor)
       }
     }
@@ -607,15 +671,27 @@ app.get('/api/posts', async (c) => {
 // Step 1 — POST /api/posts/prepare
 app.post('/api/posts/prepare', async (c) => {
   try {
-    const { filename, contentType } = await c.req.json()
+    const { filename, contentType: initialContentType } = await c.req.json()
     
-    if (!filename || !contentType) {
+    if (!filename || !initialContentType) {
       return c.json({ error: 'Missing filename or contentType' }, 400)
     }
     
-    const allowedTypes = ['image/gif', 'image/png', 'image/jpeg', 'image/jpg', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/webm', 'application/zip']
-    if (!allowedTypes.includes(contentType)) {
-      return c.json({ error: 'Only image files (GIF, PNG, JPG), audio files (MP3, WAV, OGG, M4A, WebM), and ZIP files are supported' }, 400)
+    const allowedTypes = ['image/gif', 'image/png', 'image/jpeg', 'image/jpg', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/webm', 'application/zip', 'application/x-shockwave-flash']
+    
+    // Also check file extension for SWF files (browsers may not report correct MIME type)
+    const isSwfByExtension = filename.toLowerCase().endsWith('.swf')
+    let contentType = initialContentType
+    
+    // Always set correct content type for SWF files by extension
+    if (isSwfByExtension) {
+      contentType = 'application/x-shockwave-flash'
+    }
+    
+    const isValidType = allowedTypes.includes(contentType)
+    
+    if (!isValidType) {
+      return c.json({ error: 'Only image files (GIF, PNG, JPG), audio files (MP3, WAV, OGG, M4A, WebM), ZIP files, and SWF files are supported' }, 400)
     }
     
     const postId = crypto.randomUUID()
@@ -633,6 +709,8 @@ app.post('/api/posts/prepare', async (c) => {
       storageKey = `audio/${postId}${fileExtension}`
     } else if (contentType === 'application/zip') {
       storageKey = `zip/${postId}.zip`
+    } else if (contentType === 'application/x-shockwave-flash') {
+      storageKey = `swf/${postId}.swf`
     } else {
       return c.json({ error: 'Unsupported file type' }, 400)
     }
@@ -644,10 +722,18 @@ app.post('/api/posts/prepare', async (c) => {
       return c.json({ error: 'Database not available' }, 500)
     }
     
+    // Determine which key column to use
+    let keyColumn = 'gif_key'
+    if (contentType === 'application/zip') {
+      keyColumn = 'payload_key'
+    } else if (contentType === 'application/x-shockwave-flash') {
+      keyColumn = 'swf_key'
+    }
+    
     const result = await c.env.DB.prepare(`
-      INSERT INTO posts (id, user_id, username, text, hashtags, ${contentType === 'application/zip' ? 'payload_key' : 'gif_key'}, status)
+      INSERT INTO posts (id, user_id, username, text, hashtags, ${keyColumn}, status)
       VALUES (?, ?, ?, ?, ?, ?, 'pending')
-    `).bind(postId, c.get('user')?.id || '', c.get('user')?.username || 'anonymous', '', '[]', gifKey).run()
+    `).bind(postId, c.get('user')?.id || '', c.get('user')?.username || 'anonymous', '', '[]', storageKey).run()
     
     if (!result.success) {
       return c.json({ error: 'Failed to create pending post' }, 500)
@@ -655,18 +741,25 @@ app.post('/api/posts/prepare', async (c) => {
     
     // Return upload endpoint URL (our own API)
     if (contentType === 'application/zip') {
-      const zipUploadUrl = `${new URL(c.req.url).origin}/api/upload/${gifKey}`
+      const zipUploadUrl = `${new URL(c.req.url).origin}/api/upload/${storageKey}`
       return c.json({
         postId,
         zipUploadUrl,
-        zipKey: gifKey
+        zipKey: storageKey
+      })
+    } else if (contentType === 'application/x-shockwave-flash') {
+      const swfUploadUrl = `${new URL(c.req.url).origin}/api/upload/${storageKey}`
+      return c.json({
+        postId,
+        swfUploadUrl,
+        swfKey: storageKey
       })
     } else {
-      const gifUploadUrl = `${new URL(c.req.url).origin}/api/upload/${gifKey}`
+      const gifUploadUrl = `${new URL(c.req.url).origin}/api/upload/${storageKey}`
       return c.json({
         postId,
         gifUploadUrl,
-        gifKey
+        gifKey: storageKey
       })
     }
   } catch (error: any) {
@@ -678,7 +771,7 @@ app.post('/api/posts/prepare', async (c) => {
 // Step 3 — POST /api/posts/commit
 app.post('/api/posts/commit', async (c) => {
   try {
-    const { postId, gifKey, zipKey, text, hashtags } = await c.req.json()
+    const { postId, gifKey, zipKey, swfKey, text, hashtags } = await c.req.json()
     
     // Validate text
     if (!text || text.length < 1 || text.length > 200) {
@@ -702,12 +795,12 @@ app.post('/api/posts/commit', async (c) => {
     
     let post: any
     
-    if (gifKey || zipKey) {
-      const key = zipKey || gifKey
+    if (gifKey || zipKey || swfKey) {
+      const key = zipKey || swfKey || gifKey
       // Validate that this is a pending post and key matches
       const pendingPost = await c.env.DB.prepare(`
-        SELECT * FROM posts WHERE id = ? AND status = 'pending' AND (gif_key = ? OR payload_key = ?)
-      `).bind(postId, key, key).first()
+        SELECT * FROM posts WHERE id = ? AND status = 'pending' AND (gif_key = ? OR payload_key = ? OR swf_key = ?)
+      `).bind(postId, key, key, key).first()
       
       if (!pendingPost) {
         return c.json({ error: 'Invalid or expired post preparation' }, 422)
@@ -848,14 +941,14 @@ app.get('/api/posts/:id/replies', async (c) => {
     
     // Verify parent post exists and is published
     const parentPost = await c.env.DB.prepare(
-      'SELECT id, user_id, username, text, hashtags, gif_key, payload_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE id = ? AND status = \'published\''
+      'SELECT id, user_id, username, text, hashtags, gif_key, payload_key, swf_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE id = ? AND status = \'published\''
     ).bind(postId).first()
     
     if (!parentPost) {
       return c.json({ error: 'Post not found' }, 404)
     }
     
-    let query = `SELECT p.id, p.user_id, p.username, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at,
+    let query = `SELECT p.id, p.user_id, p.username, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at,
        u.display_name, u.avatar_key
        FROM posts p
        LEFT JOIN users u ON p.user_id = u.id
@@ -864,7 +957,7 @@ app.get('/api/posts/:id/replies', async (c) => {
     const params: any[] = [postId, limit]
     
     if (cursor) {
-      query = `SELECT p.id, p.user_id, p.username, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at,
+      query = `SELECT p.id, p.user_id, p.username, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at,
        u.display_name, u.avatar_key
        FROM posts p
        LEFT JOIN users u ON p.user_id = u.id
@@ -932,7 +1025,7 @@ app.get('/api/posts/:id/thread', async (c) => {
     
     // First get the post to find root_id
     const post = await c.env.DB.prepare(
-      'SELECT id, user_id, username, text, hashtags, gif_key, payload_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE id = ? AND status = \'published\''
+      'SELECT id, user_id, username, text, hashtags, gif_key, payload_key, swf_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE id = ? AND status = \'published\''
     ).bind(postId).first()
     
     if (!post) {
@@ -943,7 +1036,7 @@ app.get('/api/posts/:id/thread', async (c) => {
     
     // Get root post with user info
     const rootPost = await c.env.DB.prepare(
-      `SELECT p.id, p.user_id, p.username, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at,
+      `SELECT p.id, p.user_id, p.username, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at,
        u.display_name, u.avatar_key
        FROM posts p
        LEFT JOIN users u ON p.user_id = u.id
@@ -956,7 +1049,7 @@ app.get('/api/posts/:id/thread', async (c) => {
     
     // Get all replies in thread with user info (max 200 for MVP)
     const repliesResult = await c.env.DB.prepare(
-      `SELECT p.id, p.user_id, p.username, p.text, p.hashtags, p.gif_key, p.payload_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at,
+      `SELECT p.id, p.user_id, p.username, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at,
        u.display_name, u.avatar_key
        FROM posts p
        LEFT JOIN users u ON p.user_id = u.id
@@ -996,7 +1089,7 @@ app.post('/api/posts/:id/replies/prepare', async (c) => {
     
     // Validate parent post exists and is published
     const parentPost = await c.env.DB.prepare(
-      'SELECT id, user_id, username, text, hashtags, gif_key, payload_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE id = ? AND status = \'published\''
+      'SELECT id, user_id, username, text, hashtags, gif_key, payload_key, swf_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE id = ? AND status = \'published\''
     ).bind(postId).first()
     
     if (!parentPost) {
@@ -1088,7 +1181,7 @@ app.post('/api/posts/:id/replies/commit', async (c) => {
     
     // Validate parent still exists and is published
     const parentPost = await c.env.DB.prepare(
-      'SELECT id, user_id, username, text, hashtags, gif_key, payload_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE id = ? AND status = \'published\''
+      'SELECT id, user_id, username, text, hashtags, gif_key, payload_key, swf_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE id = ? AND status = \'published\''
     ).bind(postId).first()
     
     if (!parentPost) {
@@ -1127,7 +1220,7 @@ app.post('/api/posts/:id/replies/commit', async (c) => {
       
       // Return the updated reply
       reply = await c.env.DB.prepare(`
-        SELECT id, user_id, username, text, hashtags, gif_key, payload_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE id = ?
+        SELECT id, user_id, username, text, hashtags, gif_key, payload_key, swf_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(p.status, 'published') as status, created_at FROM posts WHERE id = ?
       `).bind(replyId).first()
     } else {
       // Create text-only reply directly
@@ -1135,14 +1228,17 @@ app.post('/api/posts/:id/replies/commit', async (c) => {
       const rootId = parentPost.root_id || parentPost.id
       
       const result = await c.env.DB.prepare(`
-        INSERT INTO posts (id, user_id, username, text, hashtags, status, parent_id, root_id, depth, reply_count)
-        VALUES (?, ?, ?, ?, ?, 'published', ?, ?, ?, 0)
+        INSERT INTO posts (id, user_id, username, text, hashtags, gif_key, payload_key, swf_key, status, parent_id, root_id, depth, reply_count)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', ?, ?, ?, 0)
       `).bind(
         replyId, 
         c.get('user')?.id || '', 
         c.get('user')?.username || 'anonymous', 
         text, 
         JSON.stringify(hashtags),
+        '',
+        '',
+        '',
         postId,
         rootId,
         depth
@@ -1154,7 +1250,7 @@ app.post('/api/posts/:id/replies/commit', async (c) => {
       
       // Return the created reply
       reply = await c.env.DB.prepare(`
-        SELECT id, user_id, username, text, hashtags, gif_key, payload_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, \'published\') as status, created_at FROM posts WHERE id = ?
+        SELECT id, user_id, username, text, hashtags, gif_key, payload_key, swf_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(p.status, 'published') as status, created_at FROM posts WHERE id = ?
       `).bind(replyId).first()
     }
     

@@ -780,12 +780,16 @@ p {
 .post-stage {
   position: relative;
   width: 100%;
-  padding-top: 56.25%; /* 16:9 aspect ratio */
+  padding-bottom: 56.25%; /* 16:9 aspect ratio */
   background: var(--bg-input);
   border: 1px solid var(--border);
   margin-bottom: 1rem;
   cursor: pointer;
   overflow: hidden;
+}
+
+.post-stage--flash {
+  padding-bottom: 75%; /* 4:3 aspect ratio */
 }
 
 .audio-player,
@@ -807,10 +811,14 @@ p {
   width: 100%;
   max-width: 400px;
   height: auto;
+  min-height: 54px;
   background: var(--bg-primary);
   border-radius: 0.5rem;
   padding: 1rem;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
 }
 
 .audio-player-loading,

@@ -36,13 +36,13 @@ export class PostComposer {
         <div class="composer-file-dropzone" style="display: none;">
           <div class="dropzone-content">
             <span class="dropzone-icon">📎</span>
-            <span class="dropzone-text">Optional: Add an image (GIF, PNG, JPG), audio (MP3, WAV, OGG, M4A, WebM), or ZIP file</span>
+            <span class="dropzone-text">Optional: Add an image (GIF, PNG, JPG), audio (MP3, WAV, OGG, M4A, WebM), ZIP, or SWF file</span>
           </div>
         </div>
         <div class="composer-divider"></div>
         <div class="composer-footer">
           <div class="composer-actions">
-            <input type="file" class="composer-file-input" accept=".js,.wasm,.html,.gif,.png,.jpg,.jpeg,.mp3,.wav,.ogg,.m4a,.webm,.zip" />
+            <input type="file" class="composer-file-input" accept=".js,.wasm,.html,.gif,.png,.jpg,.jpeg,.mp3,.wav,.ogg,.m4a,.webm,.zip,.swf" />
             <button class="composer-file-button" type="button">
               📎
             </button>
@@ -151,17 +151,24 @@ export class PostComposer {
   }
 
   private handleFileSelection(file: File): void {
-    // Check file size (10MB limit)
-    if (file.size > 10 * 1024 * 1024) {
-      alert('File size must be less than 10MB')
+    // Check file size
+    const maxSize = 10 * 1024 * 1024
+    if (file.size > maxSize) {
+      const maxSizeMB = '10MB'
+      alert(`File size must be less than ${maxSizeMB}`)
       this.clearFileSelection()
       return
     }
 
     // Check if file is an accepted format
-    const allowedTypes = ['image/gif', 'image/png', 'image/jpeg', 'image/jpg', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/webm', 'application/zip']
-    if (!allowedTypes.includes(file.type)) {
-      alert('Only image files (GIF, PNG, JPG), audio files (MP3, WAV, OGG, M4A, WebM), and ZIP files are supported')
+    const allowedTypes = ['image/gif', 'image/png', 'image/jpeg', 'image/jpg', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/webm', 'application/zip', 'application/x-shockwave-flash']
+    
+    // Also check file extension for SWF files (browsers may not report correct MIME type)
+    const isSwfByExtension = file.name.toLowerCase().endsWith('.swf')
+    const isValidType = allowedTypes.includes(file.type) || (isSwfByExtension)
+    
+    if (!isValidType) {
+      alert('Only image files (GIF, PNG, JPG), audio files (MP3, WAV, OGG, M4A, WebM), ZIP files, and SWF files are supported')
       this.clearFileSelection()
       return
     }
@@ -215,6 +222,7 @@ export class PostComposer {
     try {
       let gifKey: string | undefined
       let zipKey: string | undefined
+      let swfKey: string | undefined
       let postId: string | undefined
 
       // Step 1: Prepare post if file is selected
@@ -233,6 +241,13 @@ export class PostComposer {
           if (!uploadSuccess) {
             throw new Error('Failed to upload ZIP file')
           }
+        } else if (prepareResult.swfUploadUrl && prepareResult.swfKey) {
+          // SWF file upload
+          swfKey = prepareResult.swfKey
+          const uploadSuccess = await this.uploadFileDirect(this.selectedFile, prepareResult.swfUploadUrl)
+          if (!uploadSuccess) {
+            throw new Error('Failed to upload SWF file')
+          }
         } else if (prepareResult.gifUploadUrl && prepareResult.gifKey) {
           // Image/audio file upload
           gifKey = prepareResult.gifKey
@@ -244,7 +259,7 @@ export class PostComposer {
       }
 
       // Step 3: Commit post
-      const commitResult = await this.commitPost(postId, gifKey, zipKey, text)
+      const commitResult = await this.commitPost(postId, gifKey, zipKey, swfKey, text)
       
       if (!commitResult) {
         throw new Error('Failed to commit post')
@@ -270,7 +285,7 @@ export class PostComposer {
     }
   }
 
-  private async preparePost(file: File): Promise<{ postId: string; gifUploadUrl?: string; gifKey?: string; zipUploadUrl?: string; zipKey?: string } | null> {
+  private async preparePost(file: File): Promise<{ postId: string; gifUploadUrl?: string; gifKey?: string; zipUploadUrl?: string; zipKey?: string; swfUploadUrl?: string; swfKey?: string } | null> {
     try {
       const response = await fetch('/api/posts/prepare', {
         method: 'POST',
@@ -290,12 +305,18 @@ export class PostComposer {
 
       const result = await response.json() as any
       
-      // Handle both ZIP and non-ZIP responses
+      // Handle ZIP, SWF, and non-ZIP responses
       if (result.zipUploadUrl && result.zipKey) {
         return {
           postId: result.postId,
           zipUploadUrl: result.zipUploadUrl,
           zipKey: result.zipKey
+        }
+      } else if (result.swfUploadUrl && result.swfKey) {
+        return {
+          postId: result.postId,
+          swfUploadUrl: result.swfUploadUrl,
+          swfKey: result.swfKey
         }
       } else {
         return {
@@ -351,7 +372,7 @@ export class PostComposer {
     }
   }
 
-  private async commitPost(postId: string | undefined, gifKey: string | undefined, zipKey: string | undefined, text: string): Promise<{ post: any } | null> {
+  private async commitPost(postId: string | undefined, gifKey: string | undefined, zipKey: string | undefined, swfKey: string | undefined, text: string): Promise<{ post: any } | null> {
     try {
       // Extract hashtags from text - support Japanese and other Unicode characters
       const hashtagRegex = /#([a-zA-Z0-9_\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]+)/gu
@@ -367,6 +388,7 @@ export class PostComposer {
           postId: postId || crypto.randomUUID(), // Generate ID for text-only posts
           gifKey: gifKey,
           zipKey: zipKey,
+          swfKey: swfKey,
           text,
           hashtags
         })
