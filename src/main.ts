@@ -73,22 +73,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         return { view: 'register' as const, postId: null, username: null }
       }
       
-      // Profile route
-      const profileMatch = cleanPath.match(/^\/([^\/]+)$/)
-      if (profileMatch && !['login', 'register'].includes(profileMatch[1])) {
-        console.log('Profile route detected, username:', profileMatch[1])
-        return { view: 'profile' as const, postId: null, username: profileMatch[1] }
-      }
-      
-      // Thread route
+      // Thread route (check before profile)
       const threadMatch = cleanPath.match(/^\/posts\/([^\/]+)$/)
       if (threadMatch) {
         console.log('Thread route detected, postId:', threadMatch[1])
         return { view: 'thread' as const, postId: threadMatch[1], username: null }
       }
       
-      // Default timeline
-      console.log('Timeline route detected')
+      // Profile route - matches /profile/:username
+      const profileMatch = cleanPath.match(/^\/profile\/([^\/]+)$/)
+      console.log('Profile match test:', profileMatch, 'cleanPath:', cleanPath)
+      if (profileMatch && profileMatch[1]) {
+        console.log('Profile route detected, username:', profileMatch[1])
+        return { view: 'profile' as const, postId: null, username: profileMatch[1] }
+      }
+      
+      // Default timeline (only for root path)
+      if (cleanPath === '' || cleanPath === '/') {
+        console.log('Timeline route detected')
+        return { view: 'timeline' as const, postId: null, username: null }
+      }
+      
+      // If no specific route matched, default to timeline
+      console.log('Unknown route, defaulting to timeline')
       return { view: 'timeline' as const, postId: null, username: null }
     }
     
@@ -202,9 +209,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Create Left Nav
         const leftNav = createLeftNav({
           activeItem: 'profile',
-          onNavigate: (item) => {
+          onNavigate: async (item) => {
             console.log('Navigate to:', item)
-            // Handle navigation here
+            if (item === 'profile') {
+              if (!currentUser) {
+                window.history.pushState({}, '', '/')
+                navigateTo('timeline')
+                return
+              }
+              window.history.pushState({}, '', `/profile/${currentUser.username}`)
+              navigateTo('profile', undefined, currentUser.username)
+            }
           }
         })
         
@@ -267,9 +282,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Create Left Nav
         const leftNav = createLeftNav({
           activeItem: 'home',
-          onNavigate: (item) => {
+          onNavigate: async (item) => {
             console.log('Navigate to:', item)
-            // Handle navigation here
+            if (item === 'profile') {
+              if (!currentUser) {
+                window.history.pushState({}, '', '/')
+                navigateTo('timeline')
+                return
+              }
+              window.history.pushState({}, '', `/profile/${currentUser.username}`)
+              navigateTo('profile', undefined, currentUser.username)
+            }
           }
         })
         

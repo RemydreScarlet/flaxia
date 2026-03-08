@@ -345,10 +345,60 @@ app.patch('/api/users/me', async (c) => {
       return c.json({ error: 'Unauthorized' }, 401)
     }
     
-    const { display_name, bio, avatar_key } = await c.req.json()
-    
     if (!c.env.DB) {
       return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    const userId = sessionData.user.id
+    let display_name: string | undefined
+    let bio: string | undefined
+    let avatarFile: File | undefined
+    
+    const contentType = c.req.header('content-type')
+    
+    if (contentType?.includes('multipart/form-data')) {
+      // Handle multipart/form-data (for avatar uploads)
+      const formData = await c.req.formData()
+      display_name = formData.get('display_name') as string | null || undefined
+      bio = formData.get('bio') as string | null || undefined
+      avatarFile = formData.get('avatar') as File | null || undefined
+      
+      // Handle avatar upload if present
+      if (avatarFile && avatarFile.size > 0) {
+        // Validate file type
+        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif']
+        if (!allowedTypes.includes(avatarFile.type)) {
+          return c.json({ error: 'Only JPEG, PNG, and GIF images are allowed' }, 400)
+        }
+        
+        // Validate file size (200KB)
+        if (avatarFile.size > 200 * 1024) {
+          return c.json({ error: 'Avatar must be ≤200KB' }, 413)
+        }
+        
+        if (!c.env.BUCKET) {
+          return c.json({ error: 'Storage not available' }, 500)
+        }
+        
+        // Generate avatar key
+        const avatarKey = `avatar/${userId}`
+        
+        // Upload to R2
+        await c.env.BUCKET.put(avatarKey, await avatarFile.arrayBuffer(), {
+          httpMetadata: {
+            contentType: avatarFile.type
+          }
+        })
+        
+        // Update avatar_key in database
+        await c.env.DB.prepare('UPDATE users SET avatar_key = ? WHERE id = ?')
+          .bind(avatarKey, userId).run()
+      }
+    } else {
+      // Handle JSON request (for text-only updates)
+      const body = await c.req.json()
+      display_name = body.display_name
+      bio = body.bio
     }
     
     // Validation
@@ -360,9 +410,7 @@ app.patch('/api/users/me', async (c) => {
       return c.json({ error: 'Bio must be ≤200 characters' }, 400)
     }
     
-    const userId = sessionData.user.id
-    
-    // Build update query
+    // Build update query for text fields
     const updates: string[] = []
     const values: any[] = []
     
@@ -376,23 +424,16 @@ app.patch('/api/users/me', async (c) => {
       values.push(bio)
     }
     
-    if (avatar_key !== undefined) {
-      updates.push('avatar_key = ?')
-      values.push(avatar_key)
-    }
-    
-    if (updates.length === 0) {
-      return c.json({ error: 'No fields to update' }, 400)
-    }
-    
-    values.push(userId)
-    
-    const result = await c.env.DB.prepare(`
-      UPDATE users SET ${updates.join(', ')} WHERE id = ?
-    `).bind(...values).run()
-    
-    if (!result.success) {
-      return c.json({ error: 'Failed to update profile' }, 500)
+    if (updates.length > 0) {
+      values.push(userId)
+      
+      const result = await c.env.DB.prepare(`
+        UPDATE users SET ${updates.join(', ')} WHERE id = ?
+      `).bind(...values).run()
+      
+      if (!result.success) {
+        return c.json({ error: 'Failed to update profile' }, 500)
+      }
     }
     
     // Return updated user

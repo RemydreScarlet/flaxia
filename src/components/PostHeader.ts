@@ -7,10 +7,12 @@ export function createPostHeader(props: PostHeaderProps): HTMLElement {
   const avatar = document.createElement('div')
   avatar.className = 'post-avatar'
   avatar.textContent = props.username.charAt(0).toUpperCase()
+  avatar.style.cursor = 'pointer'
   
   const username = document.createElement('span')
   username.className = 'post-username'
   username.textContent = props.username
+  username.style.cursor = 'pointer'
   
   const timestamp = document.createElement('span')
   timestamp.className = 'post-timestamp'
@@ -19,6 +21,23 @@ export function createPostHeader(props: PostHeaderProps): HTMLElement {
   header.appendChild(avatar)
   header.appendChild(username)
   header.appendChild(timestamp)
+  
+  // Make avatar and username clickable to navigate to profile
+  const navigateToProfile = () => {
+    window.history.pushState({}, '', `/profile/${props.username}`)
+    const event = new PopStateEvent('popstate', { state: {} })
+    window.dispatchEvent(event)
+  }
+  
+  avatar.addEventListener('click', (e) => {
+    e.stopPropagation()
+    navigateToProfile()
+  })
+  
+  username.addEventListener('click', (e) => {
+    e.stopPropagation()
+    navigateToProfile()
+  })
   
   return header
 }
