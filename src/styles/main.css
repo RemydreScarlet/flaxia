@@ -219,6 +219,42 @@ body {
   font-size: 0.875rem;
   color: var(--text-primary);
   line-height: 1.4;
+  margin-bottom: 0.5rem;
+}
+
+/* Profile bio Markdown elements */
+.profile-bio p {
+  margin: 0 0 0.5rem 0;
+}
+
+.profile-bio p:last-child {
+  margin-bottom: 0;
+}
+
+.profile-bio strong {
+  font-weight: 700;
+}
+
+.profile-bio em {
+  font-style: italic;
+}
+
+.profile-bio code {
+  background: var(--bg-secondary);
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  font-family: 'Courier New', Consolas, monospace;
+  font-size: 0.8em;
+  color: var(--accent-dark);
+}
+
+.profile-bio a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.profile-bio a:hover {
+  color: var(--accent-dark);
 }
 
 .profile-edit-input,

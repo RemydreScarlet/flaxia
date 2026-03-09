@@ -38,6 +38,9 @@ export function createPostText(props: PostTextProps): HTMLElement {
   return container
 }
 
+// Export processing functions for reuse
+export { processText, renderMathElements, linkifyHashtags, linkifyUrls }
+
 /**
  * Unified text processing pipeline:
  * 1. Escape math notation → placeholders

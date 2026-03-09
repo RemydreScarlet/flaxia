@@ -1,4 +1,5 @@
 import { createEditProfileModal } from './EditProfileModal.js'
+import { processText, renderMathElements, linkifyHashtags, linkifyUrls } from './PostText.js'
 
 interface ProfilePageProps {
   username: string
@@ -113,7 +114,19 @@ export function createProfilePage({ username, currentUser }: ProfilePageProps) {
         
         // Update UI
         displayName.textContent = userData.display_name
-        bio.textContent = userData.bio || ''
+        
+        // Process bio with Markdown and links
+        if (userData.bio) {
+          const processedHtml = processText(userData.bio)
+          bio.innerHTML = processedHtml
+          
+          // Render math elements and linkify
+          renderMathElements(bio)
+          linkifyHashtags(bio)
+          linkifyUrls(bio)
+        } else {
+          bio.textContent = ''
+        }
         
         // Format and display joined date
         const joinedDateElement = container.querySelector('.profile-joined-date') as HTMLElement
