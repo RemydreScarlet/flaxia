@@ -3,6 +3,18 @@ export interface PostComposerProps {
   currentUser?: { username: string; display_name?: string; avatar_key?: string } | null
 }
 
+import MarkdownIt from 'markdown-it'
+import DOMPurify from 'dompurify'
+
+// Configure markdown-it for our use case
+const md = new MarkdownIt({
+  html: false,        // Disable HTML tags
+  breaks: true,
+  linkify: false,
+  typographer: true,
+})
+md.block.ruler.disable(['heading', 'lheading'])
+
 export class PostComposer {
   private element: HTMLElement
   private props: PostComposerProps

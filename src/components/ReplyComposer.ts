@@ -1,4 +1,15 @@
 import { Post } from '../types/post.js'
+import MarkdownIt from 'markdown-it'
+import DOMPurify from 'dompurify'
+
+// Configure markdown-it for our use case
+const md = new MarkdownIt({
+  html: false,        // Disable HTML tags
+  breaks: true,
+  linkify: false,
+  typographer: true,
+})
+md.block.ruler.disable(['heading', 'lheading'])
 
 export interface ReplyComposerProps {
   postId: string
@@ -39,22 +50,11 @@ export class ReplyComposer {
     container.innerHTML = `
       <div class="reply-composer-body">
         <div class="reply-composer-header">
+          <div class="reply-composer-avatar"></div>
           <textarea 
             class="reply-composer-textarea" 
             placeholder="Write a reply..."
             maxlength="200"
-            style="
-              width: 100%;
-              min-height: 3rem;
-              background: #f1f5f9;
-              border: none;
-              padding: 0.5rem;
-              color: #0f172a;
-              font-family: monospace;
-              font-size: 0.875rem;
-              resize: vertical;
-              outline: none;
-            "
           ></textarea>
         </div>
         <div class="reply-composer-file-dropzone" style="display: none;">
@@ -144,6 +144,16 @@ export class ReplyComposer {
       this.updateSubmitButton()
     })
 
+    // Keyboard shortcuts
+    this.textarea.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        this.props.onCancel()
+      } else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !this.submitButton.disabled) {
+        e.preventDefault()
+        this.handleSubmit()
+      }
+    })
+
     // File button click
     const fileButton = this.element.querySelector('.reply-composer-file-button')!
     fileButton.addEventListener('click', () => {
@@ -174,14 +184,17 @@ export class ReplyComposer {
       this.props.onCancel()
     })
 
-    // Keyboard shortcuts
-    this.textarea.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        this.props.onCancel()
-      } else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !this.submitButton.disabled) {
-        e.preventDefault()
-        this.handleSubmit()
-      }
+    // Add missing event listeners
+    this.element.addEventListener('paste', (e) => {
+      console.log('Paste event:', e)
+    })
+
+    this.element.addEventListener('dragover', (e) => {
+      console.log('Dragover event:', e)
+    })
+
+    this.element.addEventListener('drop', (e) => {
+      console.log('Drop event:', e)
     })
   }
 

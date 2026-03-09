@@ -1,83 +1,312 @@
 import { PostTextProps } from '../types/post.js'
+import MarkdownIt from 'markdown-it'
+import DOMPurify from 'dompurify'
+
+// Configure markdown-it with security settings
+const md = new MarkdownIt({
+  html: false,        // Disable raw HTML for security
+  xhtmlOut: false,
+  breaks: true,       // Convert newlines to <br>
+  linkify: false,     // We'll handle links ourselves
+  typographer: true,
+})
+
+// Disable all heading rules
+md.block.ruler.disable(['heading', 'lheading'])
+
+interface MathPlaceholder {
+  id: string
+  content: string
+  displayMode: boolean
+}
 
 export function createPostText(props: PostTextProps): HTMLElement {
   const container = document.createElement('div')
   container.className = 'post-text'
   
-  // Split text by math delimiters and process
-  const parts = parseMathInText(props.text)
+  // Process the text through the unified pipeline
+  const processedHtml = processText(props.text)
+  container.innerHTML = processedHtml
   
-  parts.forEach(part => {
-    if (part.type === 'text') {
-      const textNode = document.createTextNode(part.content)
-      container.appendChild(textNode)
-    } else if (part.type === 'math') {
-      const mathElement = createMathElement(part.content)
-      container.appendChild(mathElement)
-    }
-  })
+  // Render math elements after HTML is inserted
+  renderMathElements(container)
+  
+  // Linkify hashtags and URLs
+  linkifyHashtags(container)
+  linkifyUrls(container)
   
   return container
 }
 
-interface TextPart {
-  type: 'text' | 'math'
-  content: string
+/**
+ * Unified text processing pipeline:
+ * 1. Escape math notation → placeholders
+ * 2. Parse Markdown
+ * 3. Sanitize HTML
+ * 4. Expand KaTeX placeholders
+ */
+function processText(text: string): string {
+  // Step 1: Escape math notation with placeholders
+  const { textWithPlaceholders, mathPlaceholders } = escapeMathNotation(text)
+  
+  // Step 2: Parse Markdown
+  let html = md.render(textWithPlaceholders)
+  
+  // Step 3: Restore math placeholders BEFORE sanitization
+  html = restoreMathPlaceholders(html, mathPlaceholders)
+  
+  // Step 4: Sanitize HTML (now with proper math placeholders)
+  html = DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'code', 'pre', 'blockquote', 'ul', 'ol', 'li', 'a', 'span'],
+    ALLOWED_ATTR: ['href', 'target', 'rel', 'class', 'data-math-content', 'data-math-display'],
+    ALLOW_DATA_ATTR: true,
+  })
+  
+  return html
 }
 
-function parseMathInText(text: string): TextPart[] {
-  const parts: TextPart[] = []
-  const mathRegex = /\$\$([^$]+)\$\$|\$([^$]+)\$/g
-  let lastIndex = 0
-  let match
+/**
+ * Escape math notation ($...$ and $$...$$) with placeholders
+ * to prevent markdown-it from interfering with math syntax
+ */
+function escapeMathNotation(text: string): { textWithPlaceholders: string; mathPlaceholders: MathPlaceholder[] } {
+  const mathPlaceholders: MathPlaceholder[] = []
+  let placeholderId = 0
   
-  while ((match = mathRegex.exec(text)) !== null) {
-    // Add text before math
-    if (match.index > lastIndex) {
-      parts.push({
-        type: 'text',
-        content: text.slice(lastIndex, match.index)
-      })
+  // Match $$display math$$ or $inline math$
+  const mathRegex = /\$\$([^$]+)\$\$|\$([^$\s][^$]*[^$\s])\$/g
+  
+  const textWithPlaceholders = text.replace(mathRegex, (match, displayContent, inlineContent) => {
+    const content = displayContent || inlineContent
+    const displayMode = !!displayContent
+    const id = `math-${placeholderId++}`
+    
+    mathPlaceholders.push({
+      id,
+      content: content.trim(),
+      displayMode
+    })
+    
+    // Use special Unicode characters that won't be affected by Markdown parsing
+    return `⚡${id}⚡`
+  })
+  
+  return { textWithPlaceholders, mathPlaceholders }
+}
+
+/**
+ * Restore math placeholders with actual KaTeX render elements
+ */
+function restoreMathPlaceholders(html: string, mathPlaceholders: MathPlaceholder[]): string {
+  let restoredHtml = html
+  
+  for (const placeholder of mathPlaceholders) {
+    // Match Unicode placeholders
+    const placeholderRegex = new RegExp(`⚡${placeholder.id}⚡`, 'g')
+    const before = restoredHtml
+    // Store content directly in the element for immediate rendering
+    restoredHtml = restoredHtml.replace(placeholderRegex, `<span class="math-placeholder" data-math-content="${escapeHtml(placeholder.content)}" data-math-display="${placeholder.displayMode}">${escapeHtml(placeholder.content)}</span>`)
+    
+    // Debug: log if replacement happened
+    if (before === restoredHtml) {
+      console.warn(`Failed to replace math placeholder ${placeholder.id}`, before)
     }
-    
-    // Add math content
-    const mathContent = match[1] || match[2] // $$...$ or $...$
-    parts.push({
-      type: 'math',
-      content: mathContent.trim()
-    })
-    
-    lastIndex = mathRegex.lastIndex
   }
   
-  // Add remaining text
-  if (lastIndex < text.length) {
-    parts.push({
-      type: 'text',
-      content: text.slice(lastIndex)
-    })
-  }
-  
-  return parts
+  return restoredHtml
 }
 
-function createMathElement(mathContent: string): HTMLElement {
-  const span = document.createElement('span')
-  span.className = 'math-inline'
-  span.textContent = mathContent
+/**
+ * Helper to create regex pattern that matches both quoted and &quot; patterns
+ */
+function quotePattern(text: string): string {
+  return `(?:${text}|&quot;${text}&quot;)`
+}
+
+/**
+ * Render all math elements in the container using KaTeX
+ */
+function renderMathElements(container: HTMLElement): void {
+  const mathElements = container.querySelectorAll('.math-placeholder')
   
   // Load KaTeX if not already loaded
   if (!window.katex) {
-    loadKaTeX().then(() => renderMath(span, mathContent))
+    loadKaTeX().then(() => {
+      mathElements.forEach(el => renderMathElement(el as HTMLElement))
+    })
   } else {
-    renderMath(span, mathContent)
+    mathElements.forEach(el => renderMathElement(el as HTMLElement))
   }
-  
-  return span
 }
 
+/**
+ * Render a single math element with KaTeX
+ */
+function renderMathElement(element: HTMLElement): void {
+  const content = element.getAttribute('data-math-content') || ''
+  const displayMode = element.getAttribute('data-math-display') === 'true'
+  
+  if (window.katex) {
+    try {
+      window.katex.render(unescapeHtml(content), element, {
+        throwOnError: false,
+        displayMode
+      })
+      element.classList.remove('math-placeholder')
+      element.classList.add(displayMode ? 'math-display' : 'math-inline')
+    } catch (error) {
+      element.textContent = content
+      element.classList.add('math-error')
+    }
+  } else {
+    element.textContent = content
+  }
+}
+
+/**
+ * Convert hashtags to clickable links
+ */
+function linkifyHashtags(container: HTMLElement): void {
+  const walker = document.createTreeWalker(
+    container,
+    NodeFilter.SHOW_TEXT,
+    null
+  )
+  
+  const textNodes: Text[] = []
+  let node: Node | null
+  
+  while (node = walker.nextNode()) {
+    textNodes.push(node as Text)
+  }
+  
+  // Process text nodes and replace hashtags with links
+  for (const textNode of textNodes) {
+    const text = textNode.textContent || ''
+    const hashtagRegex = /#([a-zA-Z0-9_\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}ー]+)/gu
+    
+    if (!hashtagRegex.test(text)) continue
+    
+    // Reset regex lastIndex
+    hashtagRegex.lastIndex = 0
+    
+    const parent = textNode.parentNode
+    if (!parent) continue
+    
+    const fragment = document.createDocumentFragment()
+    let lastIndex = 0
+    let match: RegExpExecArray | null
+    
+    while ((match = hashtagRegex.exec(text)) !== null) {
+      // Add text before hashtag
+      if (match.index > lastIndex) {
+        fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.index)))
+      }
+      
+      // Create hashtag link
+      const hashtag = match[1]
+      const link = document.createElement('a')
+      link.href = `/explore?tag=${encodeURIComponent(hashtag)}`
+      link.className = 'hashtag-link'
+      link.textContent = `#${hashtag}`
+      link.target = '_blank'
+      link.rel = 'noopener noreferrer'
+      fragment.appendChild(link)
+      
+      lastIndex = match.index + match[0].length
+    }
+    
+    // Add remaining text
+    if (lastIndex < text.length) {
+      fragment.appendChild(document.createTextNode(text.slice(lastIndex)))
+    }
+    
+    parent.replaceChild(fragment, textNode)
+  }
+}
+
+/**
+ * Convert URLs to clickable links
+ */
+function linkifyUrls(container: HTMLElement): void {
+  const walker = document.createTreeWalker(
+    container,
+    NodeFilter.SHOW_TEXT,
+    null
+  )
+  
+  const textNodes: Text[] = []
+  let node: Node | null
+  
+  while (node = walker.nextNode()) {
+    textNodes.push(node as Text)
+  }
+  
+  // Process text nodes and replace URLs with links
+  for (const textNode of textNodes) {
+    const text = textNode.textContent || ''
+    
+    // Regex to match URLs starting with https:// or www.
+    const urlRegex = /(?:https?:\/\/|www\.)[^\s<>()]+/g
+    
+    if (!urlRegex.test(text)) continue
+    
+    // Reset regex lastIndex
+    urlRegex.lastIndex = 0
+    
+    const parent = textNode.parentNode
+    if (!parent) continue
+    
+    const fragment = document.createDocumentFragment()
+    let lastIndex = 0
+    let match: RegExpExecArray | null
+    
+    while ((match = urlRegex.exec(text)) !== null) {
+      // Add text before URL
+      if (match.index > lastIndex) {
+        fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.index)))
+      }
+      
+      // Create URL link
+      let url = match[0]
+      let displayUrl = url
+      
+      // Add https:// if URL starts with www.
+      if (url.startsWith('www.')) {
+        url = 'https://' + url
+      }
+      
+      const link = document.createElement('a')
+      link.href = url
+      link.className = 'url-link'
+      link.textContent = displayUrl
+      link.target = '_blank'
+      link.rel = 'noopener noreferrer'
+      fragment.appendChild(link)
+      
+      lastIndex = match.index + match[0].length
+    }
+    
+    // Add remaining text
+    if (lastIndex < text.length) {
+      fragment.appendChild(document.createTextNode(text.slice(lastIndex)))
+    }
+    
+    parent.replaceChild(fragment, textNode)
+  }
+}
+
+/**
+ * Load KaTeX from CDN
+ */
 function loadKaTeX(): Promise<void> {
   return new Promise((resolve, reject) => {
+    // Check if already loaded
+    if (window.katex) {
+      resolve()
+      return
+    }
+    
     const link = document.createElement('link')
     link.rel = 'stylesheet'
     link.href = 'https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/katex.min.css'
@@ -91,21 +320,28 @@ function loadKaTeX(): Promise<void> {
   })
 }
 
-function renderMath(element: HTMLElement, mathContent: string): void {
-  if (window.katex) {
-    try {
-      window.katex.render(mathContent, element, {
-        throwOnError: false,
-        displayMode: false
-      })
-    } catch (error) {
-      element.textContent = mathContent
-    }
-  }
+/**
+ * Escape HTML special characters
+ */
+function escapeHtml(text: string): string {
+  const div = document.createElement('div')
+  div.textContent = text
+  return div.innerHTML
+}
+
+/**
+ * Unescape HTML entities
+ */
+function unescapeHtml(html: string): string {
+  const div = document.createElement('div')
+  div.innerHTML = html
+  return div.textContent || ''
 }
 
 declare global {
   interface Window {
-    katex?: any
+    katex?: {
+      render: (text: string, element: HTMLElement, options: { throwOnError: boolean; displayMode: boolean }) => void
+    }
   }
 }
