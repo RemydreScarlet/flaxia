@@ -53,8 +53,9 @@ export function createPostHeader(props: PostHeaderProps): HTMLElement {
   // Make avatar and names clickable to navigate to profile
   const navigateToProfile = () => {
     window.history.pushState({}, '', `/profile/${props.username}`)
-    const event = new PopStateEvent('popstate', { state: {} })
-    window.dispatchEvent(event)
+    window.dispatchEvent(new CustomEvent('spaNavigate', { 
+      detail: { view: 'profile', username: props.username } 
+    }))
   }
   
   avatar.addEventListener('click', (e) => {

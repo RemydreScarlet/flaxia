@@ -376,7 +376,7 @@ export class ReplyComposer {
   private async commitReply(replyId: string | undefined, gifKey: string | undefined, text: string): Promise<{ reply: Post } | null> {
     try {
       // Extract hashtags from text
-      const hashtagRegex = /#(\w+)/g
+      const hashtagRegex = /#([a-zA-Z0-9_\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}ー]+)/gu
       const hashtags = Array.from(text.matchAll(hashtagRegex), (m: RegExpMatchArray) => m[1])
 
       const response = await fetch(`/api/posts/${this.props.postId}/replies/commit`, {

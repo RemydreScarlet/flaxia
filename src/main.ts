@@ -188,7 +188,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         loginPage = createLoginPage({
           onSuccess: () => {
-            window.history.pushState({}, '', '/home')
+            window.history.pushState({}, '', '/')
             navigateTo('timeline')
           }
         })
@@ -204,7 +204,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         registerPage = createRegisterPage({
           onSuccess: () => {
-            window.history.pushState({}, '', '/home')
+            window.history.pushState({}, '', '/')
             navigateTo('timeline')
           }
         })

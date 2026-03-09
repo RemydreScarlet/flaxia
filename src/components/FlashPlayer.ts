@@ -44,7 +44,7 @@ export async function executeFlash(
       bottom: 0;
       display: flex;
       flex-direction: column;
-      background: #000;
+      background: #ffffff;
     `
 
     // Step 2: Create HTML content with Ruffle
@@ -62,7 +62,7 @@ export async function executeFlash(
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background: #000;
+      background: #ffffff;
     }
     #player {
       width: 100%;
@@ -90,7 +90,7 @@ export async function executeFlash(
         autoplay: 'on',
         unmuteOverlay: 'visible',
         letterbox: 'off',
-        backgroundColor: '#000000',
+        backgroundColor: '#ffffff',
         allowScriptAccess: 'never',
         allowNetworking: 'none',
         maxExecutionDuration: 15,
@@ -130,7 +130,7 @@ export async function executeFlash(
       width: 100%;
       height: 100%;
       border: none;
-      background: #000;
+      background: #ffffff;
     `
 
     // Step 5: Add fullscreen button

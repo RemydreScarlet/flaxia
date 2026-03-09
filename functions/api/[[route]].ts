@@ -815,7 +815,7 @@ app.post('/api/posts/commit', async (c) => {
     }
     
     for (const tag of hashtags) {
-      if (typeof tag !== 'string' || tag.length > 20 || !/^[a-zA-Z0-9_\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]+$/u.test(tag)) {
+      if (typeof tag !== 'string' || tag.length > 20 || !/^[a-zA-Z0-9_\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}ー]+$/u.test(tag)) {
         return c.json({ error: 'Hashtags must be alphanumeric, Japanese characters, and ≤20 chars' }, 422)
       }
     }
@@ -898,7 +898,7 @@ app.post('/api/posts', async (c) => {
     const username = c.get('user')?.username || 'anonymous'
     
     // Extract hashtags from text
-    const hashtagRegex = /#(\w+)/g
+    const hashtagRegex = /#([a-zA-Z0-9_\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}ー]+)/gu
     const hashtags = Array.from(text.matchAll(hashtagRegex), (m: RegExpMatchArray) => m[1])
     
     // Check if database is available
@@ -1152,8 +1152,8 @@ app.post('/api/posts/:id/replies/prepare', async (c) => {
     
     // Store pending reply in D1
     const result = await c.env.DB.prepare(`
-      INSERT INTO posts (id, user_id, username, text, hashtags, gif_key, status, parent_id, root_id, depth, reply_count)
-      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, 0)
+      INSERT INTO posts (id, user_id, username, text, hashtags, gif_key, payload_key, swf_key, fresh_count, status, parent_id, root_id, depth, reply_count)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'pending', ?, ?, ?, 0)
     `).bind(
       replyId, 
       c.get('user')?.id || '', 
@@ -1161,6 +1161,8 @@ app.post('/api/posts/:id/replies/prepare', async (c) => {
       '', 
       '[]', 
       gifKey,
+      '',
+      '',
       postId,
       rootId,
       depth
@@ -1186,8 +1188,9 @@ app.post('/api/posts/:id/replies/prepare', async (c) => {
 
 // Step 3 — POST /api/posts/:id/replies/commit
 app.post('/api/posts/:id/replies/commit', async (c) => {
+  const postId = c.req.param('id')
+  
   try {
-    const postId = c.req.param('id')
     const { replyId, gifKey, text, hashtags } = await c.req.json()
     
     // Validate text
@@ -1201,7 +1204,7 @@ app.post('/api/posts/:id/replies/commit', async (c) => {
     }
     
     for (const tag of hashtags) {
-      if (typeof tag !== 'string' || tag.length > 20 || !/^[a-zA-Z0-9_\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]+$/u.test(tag)) {
+      if (typeof tag !== 'string' || tag.length > 20 || !/^[a-zA-Z0-9_\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}ー]+$/u.test(tag)) {
         return c.json({ error: 'Hashtags must be alphanumeric, Japanese characters, and ≤20 chars' }, 422)
       }
     }
@@ -1251,49 +1254,74 @@ app.post('/api/posts/:id/replies/commit', async (c) => {
       
       // Return the updated reply
       reply = await c.env.DB.prepare(`
-        SELECT id, user_id, username, text, hashtags, gif_key, payload_key, swf_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(p.status, 'published') as status, created_at FROM posts WHERE id = ?
+        SELECT id, user_id, username, text, hashtags, gif_key, payload_key, swf_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, 'published') as status, created_at FROM posts WHERE id = ?
       `).bind(replyId).first()
     } else {
       // Create text-only reply directly
       const depth = Math.min(Number(parentPost.depth || 0) + 1, 5)
       const rootId = parentPost.root_id || parentPost.id
       
-      const result = await c.env.DB.prepare(`
-        INSERT INTO posts (id, user_id, username, text, hashtags, gif_key, payload_key, swf_key, status, parent_id, root_id, depth, reply_count)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', ?, ?, ?, 0)
-      `).bind(
-        replyId, 
-        c.get('user')?.id || '', 
-        c.get('user')?.username || 'anonymous', 
-        text, 
-        JSON.stringify(hashtags),
-        '',
-        '',
-        '',
-        postId,
-        rootId,
-        depth
-      ).run()
-      
-      if (!result.success) {
-        return c.json({ error: 'Failed to create reply' }, 500)
+      try {
+        const result = await c.env.DB.prepare(`
+          INSERT INTO posts (id, user_id, username, text, hashtags, gif_key, payload_key, swf_key, fresh_count, status, parent_id, root_id, depth, reply_count)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'published', ?, ?, ?, 0)
+        `).bind(
+          replyId, 
+          c.get('user')?.id || '', 
+          c.get('user')?.username || 'anonymous', 
+          text, 
+          JSON.stringify(hashtags),
+          '',
+          '',
+          '',
+          postId,
+          rootId,
+          depth
+        ).run()
+        
+        if (!result.success) {
+          console.error('Failed to create reply:', result.error)
+          return c.json({ error: 'Failed to create reply' }, 500)
+        }
+        
+        // Return the created reply
+        reply = await c.env.DB.prepare(`
+          SELECT id, user_id, username, text, hashtags, gif_key, payload_key, swf_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, 'published') as status, created_at FROM posts WHERE id = ?
+        `).bind(replyId).first()
+      } catch (dbError: any) {
+        console.error('Database error creating reply:', dbError)
+        console.error('Error details:', {
+          message: dbError?.message,
+          stack: dbError?.stack,
+          cause: dbError?.cause,
+          name: dbError?.name
+        })
+        return c.json({ error: 'Database error', details: dbError?.message || 'Unknown error' }, 500)
       }
-      
-      // Return the created reply
-      reply = await c.env.DB.prepare(`
-        SELECT id, user_id, username, text, hashtags, gif_key, payload_key, swf_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(p.status, 'published') as status, created_at FROM posts WHERE id = ?
-      `).bind(replyId).first()
     }
     
     // Increment parent's reply count
-    await c.env.DB.prepare(`
-      UPDATE posts SET reply_count = reply_count + 1 WHERE id = ?
+    const incrementResult = await c.env.DB.prepare(`
+      UPDATE posts SET reply_count = COALESCE(reply_count, 0) + 1 WHERE id = ?
     `).bind(postId).run()
+    
+    if (!incrementResult.success) {
+      console.error('Failed to increment reply count for post:', postId)
+      // Don't fail the whole operation, just log the error
+    }
     
     return c.json({ reply })
   } catch (error: any) {
     console.error('Commit reply error:', error)
-    return c.json({ error: 'Internal server error' }, 500)
+    console.error('Full error details:', {
+      message: error?.message,
+      stack: error?.stack,
+      cause: error?.cause,
+      name: error?.name,
+      postId: postId || 'unknown',
+      replyId: error?.replyId || 'unknown'
+    })
+    return c.json({ error: 'Internal server error', details: error?.message || 'Unknown error' }, 500)
   }
 })
 

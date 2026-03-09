@@ -375,7 +375,7 @@ export class PostComposer {
   private async commitPost(postId: string | undefined, gifKey: string | undefined, zipKey: string | undefined, swfKey: string | undefined, text: string): Promise<{ post: any } | null> {
     try {
       // Extract hashtags from text - support Japanese and other Unicode characters
-      const hashtagRegex = /#([a-zA-Z0-9_\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]+)/gu
+      const hashtagRegex = /#([a-zA-Z0-9_\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}ー]+)/gu
       const hashtags = Array.from(text.matchAll(hashtagRegex), (m: RegExpMatchArray) => m[1])
 
       const response = await fetch('/api/posts/commit', {
