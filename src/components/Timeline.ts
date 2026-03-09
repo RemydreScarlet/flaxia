@@ -8,11 +8,13 @@ export class Timeline {
   private state: TimelineState
   private postCards: Map<string, ReturnType<typeof createPostCard>> = new Map()
   private composer!: PostComposer
+  private intersectionObserver: IntersectionObserver | null = null
+  private loadMoreSentinel: HTMLElement | null = null
 
   constructor(props: TimelineProps) {
     this.props = props
     this.state = {
-      mode: 'following',
+      mode: 'foryou',
       hashtag: '',
       posts: [],
       loading: false,
@@ -67,7 +69,7 @@ export class Timeline {
 
     const forYouBtn = document.createElement('button')
     forYouBtn.className = 'feed-toggle-btn'
-    forYouBtn.textContent = 'For You'
+    forYouBtn.textContent = 'Global'
     forYouBtn.dataset.mode = 'foryou'
     if (this.state.mode === 'foryou') {
       forYouBtn.classList.add('active')
@@ -118,16 +120,26 @@ export class Timeline {
     const container = document.createElement('div')
     container.className = 'load-more-container'
 
-    const button = document.createElement('button')
-    button.className = 'load-more-btn'
-    button.textContent = 'Load More'
-    button.disabled = this.state.loading || !this.state.hasMore
+    // Create sentinel element for intersection observer
+    this.loadMoreSentinel = document.createElement('div')
+    this.loadMoreSentinel.className = 'load-more-sentinel'
+    this.loadMoreSentinel.style.height = '100px'
+    this.loadMoreSentinel.style.width = '100%'
+    
+    // Add loading spinner (hidden by default)
+    const loadingSpinner = document.createElement('div')
+    loadingSpinner.className = 'loading-spinner'
+    loadingSpinner.innerHTML = `
+      <div class="spinner"></div>
+      <span>Loading...</span>
+    `
+    loadingSpinner.style.display = 'none'
+    loadingSpinner.style.textAlign = 'center'
+    loadingSpinner.style.padding = '1rem'
 
-    if (!this.state.hasMore) {
-      button.style.display = 'none'
-    }
-
-    container.appendChild(button)
+    container.appendChild(this.loadMoreSentinel)
+    container.appendChild(loadingSpinner)
+    
     return container
   }
 
@@ -177,11 +189,8 @@ export class Timeline {
       }
     })
 
-    // Load more
-    const loadMoreBtn = this.element.querySelector('.load-more-btn') as HTMLButtonElement
-    loadMoreBtn?.addEventListener('click', () => {
-      this.loadMorePosts()
-    })
+    // Setup intersection observer for infinite scroll
+    this.setupIntersectionObserver()
   }
 
   private handleNewPost(post: any): void {
@@ -217,12 +226,43 @@ export class Timeline {
     this.resetAndLoadPosts()
   }
 
+  private setupIntersectionObserver(): void {
+    if (!this.loadMoreSentinel) return
+
+    // Disconnect existing observer if any
+    if (this.intersectionObserver) {
+      this.intersectionObserver.disconnect()
+    }
+
+    // Create new intersection observer
+    this.intersectionObserver = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0]
+        if (entry.isIntersecting && !this.state.loading && this.state.hasMore) {
+          this.loadMorePosts()
+        }
+      },
+      {
+        root: null, // Use viewport as root
+        rootMargin: '100px', // Start loading 100px before sentinel comes into view
+        threshold: 0.1 // Trigger when 10% of sentinel is visible
+      }
+    )
+
+    // Start observing the sentinel
+    this.intersectionObserver.observe(this.loadMoreSentinel)
+  }
+
   private resetAndLoadPosts(): void {
     this.state.posts = []
     this.state.cursor = undefined
     this.state.hasMore = true
     this.postCards.clear()
     this.renderPostList()
+    
+    // Re-setup intersection observer for new content
+    this.setupIntersectionObserver()
+    
     this.loadInitialPosts()
   }
 
@@ -264,7 +304,7 @@ export class Timeline {
     if (this.state.loading || !this.state.hasMore || !this.state.cursor) return
 
     this.state.loading = true
-    this.updateLoadMoreButton()
+    this.updateLoadingSpinner()
 
     try {
       const url = this.buildApiUrl(this.state.cursor)
@@ -290,7 +330,7 @@ export class Timeline {
       console.error('Failed to load more posts:', error)
     } finally {
       this.state.loading = false
-      this.updateLoadMoreButton()
+      this.updateLoadingSpinner()
     }
   }
 
@@ -307,7 +347,7 @@ export class Timeline {
       params.set('following', 'true')
       return `/api/posts?${params.toString()}`
     } else {
-      // For You mode - same API endpoint, no following filter
+      // Global mode - same API endpoint, no following filter
       return `/api/posts?${params.toString()}`
     }
   }
@@ -358,16 +398,22 @@ export class Timeline {
   }
 
   private updateLoadMoreButton(): void {
-    const button = this.element.querySelector('.load-more-btn') as HTMLButtonElement
-    if (!button) return
+    this.updateLoadingSpinner()
+  }
 
-    button.disabled = this.state.loading
-    button.textContent = this.state.loading ? 'Loading...' : 'Load More'
+  private updateLoadingSpinner(): void {
+    const loadingSpinner = this.element.querySelector('.loading-spinner') as HTMLElement
+    if (!loadingSpinner) return
 
-    if (!this.state.hasMore) {
-      button.style.display = 'none'
+    if (this.state.loading) {
+      loadingSpinner.style.display = 'block'
     } else {
-      button.style.display = 'block'
+      loadingSpinner.style.display = 'none'
+    }
+
+    // Hide sentinel when no more posts
+    if (this.loadMoreSentinel) {
+      this.loadMoreSentinel.style.display = this.state.hasMore ? 'block' : 'none'
     }
   }
 
@@ -376,6 +422,12 @@ export class Timeline {
   }
 
   public destroy(): void {
+    // Clean up intersection observer
+    if (this.intersectionObserver) {
+      this.intersectionObserver.disconnect()
+      this.intersectionObserver = null
+    }
+    
     this.composer.destroy()
     this.postCards.forEach(card => card.destroy())
     this.postCards.clear()
