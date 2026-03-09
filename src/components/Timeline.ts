@@ -75,8 +75,14 @@ export class Timeline {
       forYouBtn.classList.add('active')
     }
 
+    const reloadBtn = document.createElement('button')
+    reloadBtn.className = 'feed-toggle-btn feed-reload-btn'
+    reloadBtn.innerHTML = '↑ Reload'
+    reloadBtn.title = 'Reload posts'
+
     container.appendChild(followingBtn)
     container.appendChild(forYouBtn)
+    container.appendChild(reloadBtn)
 
     return container
   }
@@ -148,8 +154,12 @@ export class Timeline {
     this.element.addEventListener('click', (e) => {
       const target = e.target as HTMLElement
       if (target.classList.contains('feed-toggle-btn')) {
-        const mode = (target as HTMLElement).dataset.mode as 'following' | 'foryou'
-        this.switchMode(mode)
+        if (target.classList.contains('feed-reload-btn')) {
+          this.reloadPosts()
+        } else {
+          const mode = (target as HTMLElement).dataset.mode as 'following' | 'foryou'
+          this.switchMode(mode)
+        }
       }
     })
 
@@ -223,6 +233,10 @@ export class Timeline {
     })
 
     // Reset and load posts (hashtag input is always hidden now)
+    this.resetAndLoadPosts()
+  }
+
+  private reloadPosts(): void {
     this.resetAndLoadPosts()
   }
 

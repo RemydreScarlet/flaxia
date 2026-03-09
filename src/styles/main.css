@@ -1207,6 +1207,20 @@ p {
   background: var(--accent);
 }
 
+.feed-reload-btn {
+  flex: 0.8;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.feed-reload-btn:hover {
+  color: var(--accent);
+}
+
+.feed-reload-btn:active {
+  transform: scale(0.95);
+}
+
 .hashtag-input {
   display: flex;
   gap: 0.5rem;
