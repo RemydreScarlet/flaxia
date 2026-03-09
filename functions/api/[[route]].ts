@@ -393,7 +393,34 @@ app.get('/api/users/:username', async (c) => {
       return c.json({ error: 'User not found' }, 404)
     }
     
-    return c.json({ user })
+    // Get follow counts
+    const [followersResult, followingResult] = await Promise.all([
+      c.env.DB.prepare('SELECT COUNT(*) as count FROM follows WHERE followee_id = ?').bind(user.id).first(),
+      c.env.DB.prepare('SELECT COUNT(*) as count FROM follows WHERE follower_id = ?').bind(user.id).first()
+    ])
+    
+    const followers_count = (followersResult?.count as number) || 0
+    const following_count = (followingResult?.count as number) || 0
+    
+    // Check if current user follows this user (if authenticated)
+    let is_following = false
+    const token = getSessionToken(c.req.raw)
+    const sessionData = token ? await getSession(c.env, token) : null
+    if (sessionData && sessionData.user.id !== user.id) {
+      const followResult = await c.env.DB.prepare(
+        'SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ?'
+      ).bind(sessionData.user.id, user.id).first()
+      is_following = followResult !== null
+    }
+    
+    return c.json({ 
+      user: {
+        ...user,
+        followers_count,
+        following_count,
+        is_following
+      }
+    })
   } catch (error: any) {
     console.error('Get user error:', error)
     return c.json({ error: 'Failed to get user', details: error?.message || 'Unknown error' }, 500)
@@ -649,17 +676,140 @@ app.post('/api/users/me/avatar', async (c) => {
   }
 })
 
+// POST /api/users/:username/follow - follow a user
+app.post('/api/users/:username/follow', async (c) => {
+  try {
+    const username = c.req.param('username')
+    
+    if (!username) {
+      return c.json({ error: 'Username required' }, 400)
+    }
+    
+    const token = getSessionToken(c.req.raw)
+    const sessionData = token ? await getSession(c.env, token) : null
+    if (!sessionData) {
+      return c.json({ error: 'Unauthorized' }, 401)
+    }
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    const followerId = sessionData.user.id
+    
+    // Get target user ID
+    const targetUser = await c.env.DB.prepare('SELECT id FROM users WHERE username = ?')
+      .bind(username).first()
+    
+    if (!targetUser) {
+      return c.json({ error: 'User not found' }, 404)
+    }
+    
+    const followeeId = targetUser.id
+    
+    // Can't follow yourself
+    if (followerId === followeeId) {
+      return c.json({ error: 'Cannot follow yourself' }, 400)
+    }
+    
+    // Insert follow relationship (idempotent with INSERT OR IGNORE)
+    await c.env.DB.prepare(
+      'INSERT OR IGNORE INTO follows (follower_id, followee_id) VALUES (?, ?)'
+    ).bind(followerId, followeeId).run()
+    
+    // Get updated follow counts
+    const [followersResult, followingResult] = await Promise.all([
+      c.env.DB.prepare('SELECT COUNT(*) as count FROM follows WHERE followee_id = ?').bind(followeeId).first(),
+      c.env.DB.prepare('SELECT COUNT(*) as count FROM follows WHERE follower_id = ?').bind(followerId).first()
+    ])
+    
+    return c.json({
+      following: true,
+      followers_count: (followersResult?.count as number) || 0,
+      following_count: (followingResult?.count as number) || 0
+    })
+  } catch (error: any) {
+    console.error('Follow error:', error)
+    return c.json({ error: 'Failed to follow user', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// DELETE /api/users/:username/follow - unfollow a user
+app.delete('/api/users/:username/follow', async (c) => {
+  try {
+    const username = c.req.param('username')
+    
+    if (!username) {
+      return c.json({ error: 'Username required' }, 400)
+    }
+    
+    const token = getSessionToken(c.req.raw)
+    const sessionData = token ? await getSession(c.env, token) : null
+    if (!sessionData) {
+      return c.json({ error: 'Unauthorized' }, 401)
+    }
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    const followerId = sessionData.user.id
+    
+    // Get target user ID
+    const targetUser = await c.env.DB.prepare('SELECT id FROM users WHERE username = ?')
+      .bind(username).first()
+    
+    if (!targetUser) {
+      return c.json({ error: 'User not found' }, 404)
+    }
+    
+    const followeeId = targetUser.id
+    
+    // Delete follow relationship (idempotent - safe to call even if not following)
+    await c.env.DB.prepare(
+      'DELETE FROM follows WHERE follower_id = ? AND followee_id = ?'
+    ).bind(followerId, followeeId).run()
+    
+    // Get updated follow counts
+    const [followersResult, followingResult] = await Promise.all([
+      c.env.DB.prepare('SELECT COUNT(*) as count FROM follows WHERE followee_id = ?').bind(followeeId).first(),
+      c.env.DB.prepare('SELECT COUNT(*) as count FROM follows WHERE follower_id = ?').bind(followerId).first()
+    ])
+    
+    return c.json({
+      following: false,
+      followers_count: (followersResult?.count as number) || 0,
+      following_count: (followingResult?.count as number) || 0
+    })
+  } catch (error: any) {
+    console.error('Unfollow error:', error)
+    return c.json({ error: 'Failed to unfollow user', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
 // GET /api/posts - timeline
 app.get('/api/posts', async (c) => {
   try {
     const cursor = c.req.query('cursor')
     const limit = Math.min(Number(c.req.query('limit') || '20'), 50)
     const hashtag = c.req.query('hashtag')
+    const following = c.req.query('following') === 'true'
     
     // Check if database is available
     if (!c.env.DB) {
       console.error('Database not available')
       return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    // For Following tab, require authentication
+    let currentUserId: string | null = null
+    if (following) {
+      const token = getSessionToken(c.req.raw)
+      const sessionData = token ? await getSession(c.env, token) : null
+      if (!sessionData) {
+        return c.json({ error: 'Authentication required for Following tab' }, 401)
+      }
+      currentUserId = sessionData.user.id
     }
     
     let query: string
@@ -674,8 +824,27 @@ app.get('/api/posts', async (c) => {
         query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.parent_id IS NULL AND EXISTS (SELECT 1 FROM json_each(p.hashtags) WHERE value = ?) AND p.created_at < ? ORDER BY p.created_at DESC LIMIT ?'
         params.unshift(cursor)
       }
+    } else if (following && currentUserId) {
+      // Following tab - show only posts from followed users
+      query = `SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at 
+        FROM posts p 
+        LEFT JOIN users u ON p.user_id = u.id 
+        INNER JOIN follows f ON p.user_id = f.followee_id AND f.follower_id = ?
+        WHERE p.status = 'published' AND p.parent_id IS NULL 
+        ORDER BY p.created_at DESC LIMIT ?`
+      params.push(currentUserId, limit)
+      
+      if (cursor) {
+        query = `SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at 
+          FROM posts p 
+          LEFT JOIN users u ON p.user_id = u.id 
+          INNER JOIN follows f ON p.user_id = f.followee_id AND f.follower_id = ?
+          WHERE p.status = 'published' AND p.parent_id IS NULL AND p.created_at < ?
+          ORDER BY p.created_at DESC LIMIT ?`
+        params.push(cursor)
+      }
     } else {
-      // Regular timeline query
+      // Regular timeline query (For You tab)
       query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.parent_id IS NULL ORDER BY p.created_at DESC LIMIT ?'
       params.push(limit)
       

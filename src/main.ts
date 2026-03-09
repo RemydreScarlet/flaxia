@@ -28,7 +28,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let registerPage: ReturnType<typeof createRegisterPage> | null = null
     let profilePage: ReturnType<typeof createProfilePage> | null = null
     let explorePage: ReturnType<typeof createExplorePage> | null = null
-    let currentUser: { username: string; display_name?: string; avatar_key?: string } | null = null
+    let currentUser: { username: string; id: string; display_name?: string; avatar_key?: string } | null = null
     
     // Check current user session
     const checkAuth = async () => {
@@ -37,6 +37,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (response.ok) {
           const data = await response.json() as { user: any }
           currentUser = { 
+            id: data.user.id,
             username: data.user.username,
             display_name: data.user.display_name,
             avatar_key: data.user.avatar_key

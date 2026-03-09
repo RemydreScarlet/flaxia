@@ -303,9 +303,11 @@ export class Timeline {
     }
 
     if (this.state.mode === 'following') {
+      // Following tab - filter to show only posts from followed users
+      params.set('following', 'true')
       return `/api/posts?${params.toString()}`
     } else {
-      // For You mode - same API endpoint for now, could be personalized later
+      // For You mode - same API endpoint, no following filter
       return `/api/posts?${params.toString()}`
     }
   }

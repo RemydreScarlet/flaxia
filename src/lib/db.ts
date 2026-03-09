@@ -54,31 +54,49 @@ export class Database {
     return id
   }
   
-  async toggleFresh(postId: string, userId: string): Promise<boolean> {
-    const existing = await this.db.prepare(
-      'SELECT * FROM freshs WHERE post_id = ? AND user_id = ?'
-    ).bind(postId, userId).first()
-    
-    if (existing) {
-      await this.db.prepare(
-        'DELETE FROM freshs WHERE post_id = ? AND user_id = ?'
-      ).bind(postId, userId).run()
-      
-      await this.db.prepare(
-        'UPDATE posts SET fresh_count = fresh_count - 1 WHERE id = ?'
-      ).bind(postId).run()
-      
-      return false
-    } else {
-      await this.db.prepare(
-        'INSERT INTO freshs (post_id, user_id) VALUES (?, ?)'
-      ).bind(postId, userId).run()
-      
-      await this.db.prepare(
-        'UPDATE posts SET fresh_count = fresh_count + 1 WHERE id = ?'
-      ).bind(postId).run()
-      
-      return true
+  async follow(followerId: string, followeeId: string): Promise<boolean> {
+    const result = await this.db.prepare(
+      'INSERT OR IGNORE INTO follows (follower_id, followee_id) VALUES (?, ?)'
+    ).bind(followerId, followeeId).run()
+    return result.meta.changes > 0
+  }
+
+  async unfollow(followerId: string, followeeId: string): Promise<boolean> {
+    const result = await this.db.prepare(
+      'DELETE FROM follows WHERE follower_id = ? AND followee_id = ?'
+    ).bind(followerId, followeeId).run()
+    return result.meta.changes > 0
+  }
+
+  async isFollowing(followerId: string, followeeId: string): Promise<boolean> {
+    const result = await this.db.prepare(
+      'SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ?'
+    ).bind(followerId, followeeId).first()
+    return result !== null
+  }
+
+  async getFollowCounts(userId: string): Promise<{ followers: number; following: number }> {
+    const [followersResult, followingResult] = await Promise.all([
+      this.db.prepare('SELECT COUNT(*) as count FROM follows WHERE followee_id = ?').bind(userId).first(),
+      this.db.prepare('SELECT COUNT(*) as count FROM follows WHERE follower_id = ?').bind(userId).first()
+    ])
+    return {
+      followers: (followersResult?.count as number) || 0,
+      following: (followingResult?.count as number) || 0
     }
+  }
+
+  async getFollowers(userId: string): Promise<string[]> {
+    const result = await this.db.prepare(
+      'SELECT follower_id FROM follows WHERE followee_id = ?'
+    ).bind(userId).all()
+    return (result.results as any[]).map(r => r.follower_id)
+  }
+
+  async getFollowing(userId: string): Promise<string[]> {
+    const result = await this.db.prepare(
+      'SELECT followee_id FROM follows WHERE follower_id = ?'
+    ).bind(userId).all()
+    return (result.results as any[]).map(r => r.followee_id)
   }
 }

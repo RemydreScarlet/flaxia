@@ -3,7 +3,7 @@ import { processText, renderMathElements, linkifyHashtags, linkifyUrls } from '.
 
 interface ProfilePageProps {
   username: string
-  currentUser: { username: string } | null
+  currentUser: { username: string; id: string } | null
 }
 
 export function createProfilePage({ username, currentUser }: ProfilePageProps) {
@@ -59,15 +59,27 @@ export function createProfilePage({ username, currentUser }: ProfilePageProps) {
 
   const postsStat = document.createElement('div')
   postsStat.className = 'profile-stat'
-  postsStat.innerHTML = '<span class="stat-number">0</span> Posts'
+  const postsCountSpan = document.createElement('span')
+  postsCountSpan.className = 'stat-number'
+  postsCountSpan.textContent = '0'
+  postsStat.appendChild(postsCountSpan)
+  postsStat.appendChild(document.createTextNode(' Posts'))
 
   const followersStat = document.createElement('div')
   followersStat.className = 'profile-stat'
-  followersStat.innerHTML = '<span class="stat-number">0</span> Followers'
+  const followersCountSpan = document.createElement('span')
+  followersCountSpan.className = 'stat-number'
+  followersCountSpan.textContent = '0'
+  followersStat.appendChild(followersCountSpan)
+  followersStat.appendChild(document.createTextNode(' Followers'))
 
   const followingStat = document.createElement('div')
   followingStat.className = 'profile-stat'
-  followingStat.innerHTML = '<span class="stat-number">0</span> Following'
+  const followingCountSpan = document.createElement('span')
+  followingCountSpan.className = 'stat-number'
+  followingCountSpan.textContent = '0'
+  followingStat.appendChild(followingCountSpan)
+  followingStat.appendChild(document.createTextNode(' Following'))
 
   statsRow.appendChild(postsStat)
   statsRow.appendChild(followersStat)
@@ -142,12 +154,28 @@ export function createProfilePage({ username, currentUser }: ProfilePageProps) {
           avatar.textContent = ''
         }
 
+        // Update follow counts
+        followersCountSpan.textContent = String(userData.followers_count || 0)
+        followingCountSpan.textContent = String(userData.following_count || 0)
+        
+        // Update follow button state
+        isFollowing = userData.is_following || false
+        updateFollowButton()
+
       } else {
         console.error('User not found')
       }
     } catch (error) {
       console.error('Failed to load user data:', error)
     }
+  }
+
+  // Update follow button text and state
+  const updateFollowButton = () => {
+    followButton.textContent = isFollowing ? 'Following' : 'Follow'
+    followButton.className = isFollowing 
+      ? 'profile-button profile-button--primary' 
+      : 'profile-button profile-button--secondary'
   }
 
   
@@ -171,8 +199,60 @@ export function createProfilePage({ username, currentUser }: ProfilePageProps) {
   editButton.addEventListener('click', startEdit)
 
   followButton.addEventListener('click', async () => {
-    // Stub - follow/unfollow functionality not implemented in this phase
-    console.log('Follow/Unfollow clicked (stub)')
+    if (!currentUser) {
+      // Redirect to login if not authenticated
+      window.location.href = '/login'
+      return
+    }
+
+    if (!userData) return
+
+    // Disable button during operation
+    followButton.disabled = true
+    followButton.textContent = isFollowing ? 'Unfollowing...' : 'Following...'
+
+    try {
+      if (isFollowing) {
+        // Unfollow
+        const response = await fetch(`/api/users/${username}/follow`, {
+          method: 'DELETE',
+          credentials: 'include'
+        })
+        
+        if (response.ok) {
+          const result = await response.json() as { followers_count: number; following_count: number }
+          isFollowing = false
+          followersCountSpan.textContent = String(result.followers_count)
+          followingCountSpan.textContent = String(result.following_count)
+          updateFollowButton()
+        } else {
+          console.error('Failed to unfollow:', await response.text())
+          updateFollowButton()
+        }
+      } else {
+        // Follow
+        const response = await fetch(`/api/users/${username}/follow`, {
+          method: 'POST',
+          credentials: 'include'
+        })
+        
+        if (response.ok) {
+          const result = await response.json() as { followers_count: number; following_count: number }
+          isFollowing = true
+          followersCountSpan.textContent = String(result.followers_count)
+          followingCountSpan.textContent = String(result.following_count)
+          updateFollowButton()
+        } else {
+          console.error('Failed to follow:', await response.text())
+          updateFollowButton()
+        }
+      }
+    } catch (error) {
+      console.error('Follow/unfollow error:', error)
+      updateFollowButton()
+    } finally {
+      followButton.disabled = false
+    }
   })
 
   // Load initial data
