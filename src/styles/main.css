@@ -1812,3 +1812,187 @@ p {
   width: 100%;
   height: 100px;
 }
+
+/* ==========================================
+   LEGAL PAGES STYLES
+   ========================================== */
+
+.legal-page {
+  min-height: 100vh;
+  background: var(--bg-primary);
+  padding: 2rem 1rem;
+}
+
+.legal-content-wrapper {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.legal-header {
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+.legal-wordmark {
+  font-family: monospace;
+  color: var(--accent);
+  font-size: 1.5rem;
+  font-weight: bold;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.legal-wordmark:hover {
+  opacity: 0.8;
+}
+
+.legal-content {
+  background: var(--bg-primary);
+  text-align: center;
+}
+
+.legal-title {
+  color: var(--text-primary);
+  font-size: 1.75rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  font-family: system-ui, -apple-system, sans-serif;
+  text-align: center;
+}
+
+.legal-effective-date {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-family: monospace;
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+  text-align: center;
+}
+
+.legal-body {
+  color: var(--text-primary);
+  line-height: 1.7;
+  text-align: center;
+}
+
+.legal-body h1 {
+  color: var(--text-primary);
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 2rem 0 1rem 0;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.legal-body h2 {
+  color: var(--text-primary);
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 1.5rem 0 0.75rem 0;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.legal-body h3 {
+  color: var(--text-primary);
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 1.25rem 0 0.5rem 0;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.legal-body p {
+  color: var(--text-primary);
+  margin-bottom: 1rem;
+  font-family: system-ui, -apple-system, sans-serif;
+  text-align: center;
+}
+
+.legal-body ul {
+  margin: 1rem 0;
+  padding-left: 1.5rem;
+  color: var(--text-primary);
+  text-align: center;
+  display: inline-block;
+}
+
+.legal-body li {
+  margin-bottom: 0.5rem;
+  font-family: system-ui, -apple-system, sans-serif;
+  text-align: left;
+}
+
+.legal-body a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.legal-body a:hover {
+  color: var(--accent-dark);
+}
+
+.legal-error {
+  color: var(--danger);
+  text-align: center;
+  padding: 2rem;
+  font-family: monospace;
+}
+
+/* ==========================================
+   CONSENT CHECKBOX STYLES
+   ========================================== */
+
+.consent-group {
+  margin: 1rem 0;
+}
+
+.consent-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.consent-checkbox {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.consent-text {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.4;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.consent-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.consent-link:hover {
+  text-decoration: underline;
+}
+
+/* ==========================================
+   LOGIN LEGAL NOTICE STYLES
+   ========================================== */
+
+.legal-notice {
+  text-align: center;
+  margin-top: 1rem;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.legal-notice-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.legal-notice-link:hover {
+  text-decoration: underline;
+}

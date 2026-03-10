@@ -94,6 +94,26 @@ export function createRegisterPage({ onSuccess }: RegisterProps) {
   const confirmPasswordError = document.createElement('div')
   confirmPasswordError.className = 'field-error'
 
+  // Consent checkbox
+  const consentGroup = document.createElement('div')
+  consentGroup.className = 'form-group consent-group'
+
+  const consentLabel = document.createElement('label')
+  consentLabel.className = 'consent-label'
+
+  const consentCheckbox = document.createElement('input')
+  consentCheckbox.type = 'checkbox'
+  consentCheckbox.className = 'consent-checkbox'
+  consentCheckbox.required = true
+
+  const consentText = document.createElement('span')
+  consentText.className = 'consent-text'
+  consentText.innerHTML = 'I agree to the <a href="/terms" target="_blank" rel="noopener noreferrer" class="consent-link">Terms of Service</a> and <a href="/privacy" target="_blank" rel="noopener noreferrer" class="consent-link">Privacy Policy</a>.'
+
+  consentLabel.appendChild(consentCheckbox)
+  consentLabel.appendChild(consentText)
+  consentGroup.appendChild(consentLabel)
+
   // Submit button
   const submitButton = document.createElement('button')
   submitButton.type = 'submit'
@@ -178,6 +198,11 @@ export function createRegisterPage({ onSuccess }: RegisterProps) {
       isValid = false
     }
 
+    // Consent checkbox validation
+    if (!consentCheckbox.checked) {
+      isValid = false
+    }
+
     submitButton.disabled = !isValid
   }
 
@@ -186,6 +211,7 @@ export function createRegisterPage({ onSuccess }: RegisterProps) {
   displayNameInput.addEventListener('input', validateForm)
   passwordInput.addEventListener('input', validateForm)
   confirmPasswordInput.addEventListener('input', validateForm)
+  consentCheckbox.addEventListener('change', validateForm)
 
   // Form submission
   form.addEventListener('submit', async (e) => {
@@ -263,6 +289,7 @@ export function createRegisterPage({ onSuccess }: RegisterProps) {
   form.appendChild(displayNameGroup)
   form.appendChild(passwordGroup)
   form.appendChild(confirmPasswordGroup)
+  form.appendChild(consentGroup)
   form.appendChild(submitButton)
 
   // Assemble card

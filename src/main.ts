@@ -7,6 +7,7 @@ import { createRegisterPage } from './components/RegisterPage.js'
 import { createProfilePage } from './components/ProfilePage.js'
 import { createExplorePage } from './components/ExplorePage.js'
 import { createTrendingModal } from './components/TrendingModal.js'
+import { createLegalPage } from './components/LegalPage.js'
 import { logout } from './lib/auth.js'
 
 console.log('Flaxia initialized')
@@ -18,7 +19,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('App mounted')
     
     // Routing state
-    let currentView: 'timeline' | 'thread' | 'login' | 'register' | 'profile' | 'explore' = 'timeline'
+    let currentView: 'timeline' | 'thread' | 'login' | 'register' | 'profile' | 'explore' | 'terms' | 'privacy' = 'timeline'
     let currentPostId: string | null = null
     let currentUsername: string | null = null
     let currentTag: string | null = null
@@ -28,6 +29,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let registerPage: ReturnType<typeof createRegisterPage> | null = null
     let profilePage: ReturnType<typeof createProfilePage> | null = null
     let explorePage: ReturnType<typeof createExplorePage> | null = null
+    let legalPage: ReturnType<typeof createLegalPage> | null = null
     let currentUser: { username: string; id: string; display_name?: string; avatar_key?: string } | null = null
     
     // Check current user session
@@ -53,6 +55,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Auth guard - redirect to login if not authenticated
     const requireAuth = async () => {
+      // Skip auth check for public routes by checking current URL
+      const path = window.location.pathname
+      const cleanPath = path.replace(/\/$/, '')
+      if (cleanPath === '/terms' || cleanPath === '/privacy') {
+        return true
+      }
       const isAuthenticated = await checkAuth()
       if (!isAuthenticated) {
         window.history.pushState({}, '', '/login')
@@ -80,6 +88,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (cleanPath === '/register') {
         console.log('Register route detected')
         return { view: 'register' as const, postId: null, username: null, tag: null }
+      }
+
+      // Legal pages (public)
+      if (cleanPath === '/terms') {
+        console.log('Terms route detected')
+        return { view: 'terms' as const, postId: null, username: null, tag: null }
+      }
+
+      if (cleanPath === '/privacy') {
+        console.log('Privacy route detected')
+        return { view: 'privacy' as const, postId: null, username: null, tag: null }
       }
       
       // Explore route
@@ -118,7 +137,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     
     // Navigate to view
-    const navigateTo = async (view: 'timeline' | 'thread' | 'login' | 'register' | 'profile' | 'explore', postId?: string, username?: string, tag?: string) => {
+    const navigateTo = async (view: 'timeline' | 'thread' | 'login' | 'register' | 'profile' | 'explore' | 'terms' | 'privacy', postId?: string, username?: string, tag?: string) => {
       console.log('Navigate to:', view, postId, username, tag, 'Current view:', currentView)
       
       // For auth routes, proceed directly
@@ -211,6 +230,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         })
         
         app.appendChild(registerPage.getElement())
+        return
+      }
+
+      // Handle legal pages (public, no auth required, no layout)
+      if (view === 'terms' || view === 'privacy') {
+        currentView = view
+        currentPostId = null
+        currentUsername = null
+        
+        legalPage = createLegalPage({
+          type: view
+        })
+        
+        app.appendChild(legalPage.getElement())
         return
       }
       

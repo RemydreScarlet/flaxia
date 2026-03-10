@@ -62,6 +62,11 @@ export function createLoginPage({ onSuccess }: LoginProps) {
   registerLink.className = 'auth-link'
   registerLink.innerHTML = 'Don\'t have an account? <a href="/register">Register</a>'
 
+  // Legal notice
+  const legalNotice = document.createElement('div')
+  legalNotice.className = 'legal-notice'
+  legalNotice.innerHTML = 'By logging in, you agree to our <a href="/terms" target="_blank" rel="noopener noreferrer" class="legal-notice-link">Terms of Service</a> and <a href="/privacy" target="_blank" rel="noopener noreferrer" class="legal-notice-link">Privacy Policy</a>.'
+
   // Validation
   const validateForm = () => {
     const emailValid = emailInput.value.trim() !== '' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput.value)
@@ -134,6 +139,7 @@ export function createLoginPage({ onSuccess }: LoginProps) {
   card.appendChild(logo)
   card.appendChild(heading)
   card.appendChild(form)
+  card.appendChild(legalNotice)
   card.appendChild(registerLink)
 
   // Assemble container
