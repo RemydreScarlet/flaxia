@@ -24,6 +24,8 @@ export class PostComposer {
   private charCount!: HTMLSpanElement
   private selectedFile: File | null = null
   private isSubmitting = false
+  private dragCounter = 0
+  private errorDisplay!: HTMLElement
 
   constructor(props: PostComposerProps) {
     this.props = props
@@ -79,6 +81,15 @@ export class PostComposer {
     this.submitButton = container.querySelector('.composer-submit')!
     this.charCount = container.querySelector('.composer-char-count')!
 
+    // Create error display element
+    this.errorDisplay = document.createElement('div')
+    this.errorDisplay.className = 'composer-error'
+    this.errorDisplay.style.display = 'none'
+    const body = container.querySelector('.composer-body')
+    if (body) {
+      body.insertBefore(this.errorDisplay, body.querySelector('.composer-file-preview'))
+    }
+
     // Set avatar
     const avatar = container.querySelector('.composer-avatar') as HTMLElement
     if (this.props.currentUser) {
@@ -107,6 +118,11 @@ export class PostComposer {
   }
 
   private setupEventListeners(): void {
+    // Drag and drop handlers on the outermost container
+    this.element.addEventListener('dragover', (e) => this.handleDragOver(e))
+    this.element.addEventListener('dragleave', (e) => this.handleDragLeave(e))
+    this.element.addEventListener('drop', (e) => this.handleDrop(e))
+
     // Textarea input handling
     this.textarea.addEventListener('input', () => {
       const length = this.textarea.value.length
@@ -134,7 +150,7 @@ export class PostComposer {
       this.fileInput.click()
     })
 
-    // File selection
+    // File selection - from both click and drop
     this.fileInput.addEventListener('change', (e) => {
       const file = (e.target as HTMLInputElement).files?.[0]
       if (file) {
@@ -162,25 +178,85 @@ export class PostComposer {
     })
   }
 
-  private handleFileSelection(file: File): void {
-    // Check file size
+  private validateFile(file: File): { valid: boolean; error?: string } {
     const maxSize = 10 * 1024 * 1024
     if (file.size > maxSize) {
-      const maxSizeMB = '10MB'
-      alert(`File size must be less than ${maxSizeMB}`)
+      return { valid: false, error: 'File must be under 10MB' }
+    }
+
+    // Check file extension
+    const ext = file.name.toLowerCase().split('.').pop()
+    const allowedExts = ['gif', 'jpg', 'jpeg', 'png', 'swf', 'js', 'wasm', 'zip']
+    
+    if (!ext || !allowedExts.includes(ext)) {
+      return { valid: false, error: 'Unsupported file type' }
+    }
+
+    return { valid: true }
+  }
+
+  private handleDragOver(e: DragEvent): void {
+    e.preventDefault()
+    this.dragCounter++
+    this.element.style.border = '1px dashed var(--accent)'
+    this.element.style.background = 'var(--bg-secondary)'
+  }
+
+  private handleDragLeave(e: DragEvent): void {
+    this.dragCounter--
+    if (this.dragCounter === 0) {
+      this.element.style.border = ''
+      this.element.style.background = ''
+    }
+  }
+
+  private handleDrop(e: DragEvent): void {
+    e.preventDefault()
+    this.dragCounter = 0
+    this.element.style.border = ''
+    this.element.style.background = ''
+
+    const files = e.dataTransfer?.files
+    if (files && files.length > 0) {
+      // Only process the first file
+      const file = files[0]
+      this.handleFileSelection(file)
+    }
+  }
+
+  private showError(message: string): void {
+    this.errorDisplay.textContent = message
+    this.errorDisplay.style.display = 'block'
+    this.errorDisplay.style.color = 'var(--danger)'
+    this.errorDisplay.style.fontSize = '0.875rem'
+    this.errorDisplay.style.fontFamily = 'monospace'
+    this.errorDisplay.style.marginTop = '0.5rem'
+  }
+
+  private clearError(): void {
+    this.errorDisplay.textContent = ''
+    this.errorDisplay.style.display = 'none'
+  }
+
+  private handleFileSelection(file: File): void {
+    this.clearError()
+
+    const validation = this.validateFile(file)
+    if (!validation.valid) {
+      this.showError(validation.error!)
       this.clearFileSelection()
       return
     }
 
-    // Check if file is an accepted format
-    const allowedTypes = ['image/gif', 'image/png', 'image/jpeg', 'image/jpg', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/webm', 'application/zip', 'application/x-shockwave-flash']
+    // Check if file is an accepted format (MIME type validation)
+    const allowedTypes = ['image/gif', 'image/png', 'image/jpeg', 'image/jpg', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/webm', 'application/zip', 'application/x-shockwave-flash', 'application/javascript', 'text/javascript', 'application/wasm']
     
     // Also check file extension for SWF files (browsers may not report correct MIME type)
     const isSwfByExtension = file.name.toLowerCase().endsWith('.swf')
-    const isValidType = allowedTypes.includes(file.type) || (isSwfByExtension)
+    const isValidType = allowedTypes.includes(file.type) || isSwfByExtension || file.name.toLowerCase().endsWith('.js') || file.name.toLowerCase().endsWith('.wasm') || file.name.toLowerCase().endsWith('.zip')
     
     if (!isValidType) {
-      alert('Only image files (GIF, PNG, JPG), audio files (MP3, WAV, OGG, M4A, WebM), ZIP files, and SWF files are supported')
+      this.showError('Unsupported file type')
       this.clearFileSelection()
       return
     }
@@ -194,6 +270,7 @@ export class PostComposer {
     this.selectedFile = null
     this.fileInput.value = ''
     this.hideFilePreview()
+    this.clearError()
     this.updateSubmitButton()
   }
 
