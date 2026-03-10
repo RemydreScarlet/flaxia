@@ -8,6 +8,7 @@ import { createProfilePage } from './components/ProfilePage.js'
 import { createExplorePage } from './components/ExplorePage.js'
 import { createTrendingModal } from './components/TrendingModal.js'
 import { createLegalPage } from './components/LegalPage.js'
+import { createNotificationsPage } from './components/NotificationsPage.js'
 import { logout } from './lib/auth.js'
 
 console.log('Flaxia initialized')
@@ -19,7 +20,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('App mounted')
     
     // Routing state
-    let currentView: 'timeline' | 'thread' | 'login' | 'register' | 'profile' | 'explore' | 'terms' | 'privacy' = 'timeline'
+    let currentView: 'timeline' | 'thread' | 'login' | 'register' | 'profile' | 'explore' | 'notifications' | 'terms' | 'privacy' = 'timeline'
     let currentPostId: string | null = null
     let currentUsername: string | null = null
     let currentTag: string | null = null
@@ -30,7 +31,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     let profilePage: ReturnType<typeof createProfilePage> | null = null
     let explorePage: ReturnType<typeof createExplorePage> | null = null
     let legalPage: ReturnType<typeof createLegalPage> | null = null
+    let notificationsPage: ReturnType<typeof createNotificationsPage> | null = null
     let currentUser: { username: string; id: string; display_name?: string; avatar_key?: string } | null = null
+    let unreadNotificationCount = 0
     
     // Check current user session
     const checkAuth = async () => {
@@ -51,6 +54,38 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       currentUser = null
       return false
+    }
+
+    // Fetch notifications
+    interface NotificationData {
+      notifications: Array<{
+        id: string
+        type: 'reported' | 'fresh'
+        post_id: string
+        post_text_preview: string
+        actor?: {
+          username: string
+          display_name: string
+          avatar_key: string | null
+        }
+        read: boolean
+        created_at: string
+      }>
+      unread_count: number
+    }
+
+    const fetchNotifications = async (): Promise<NotificationData> => {
+      try {
+        const response = await fetch('/api/notifications', { credentials: 'include' })
+        if (response.ok) {
+          const data = await response.json() as NotificationData
+          unreadNotificationCount = data.unread_count || 0
+          return data
+        }
+      } catch (error) {
+        console.log('Failed to fetch notifications:', error)
+      }
+      return { notifications: [], unread_count: 0 }
     }
 
     // Auth guard - redirect to login if not authenticated
@@ -125,6 +160,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         return { view: 'profile' as const, postId: null, username: profileMatch[1], tag: null }
       }
       
+      // Notifications route
+      if (cleanPath === '/notifications') {
+        console.log('Notifications route detected')
+        return { view: 'notifications' as const, postId: null, username: null, tag: null }
+      }
+      
       // Default timeline (only for root path)
       if (cleanPath === '' || cleanPath === '/') {
         console.log('Timeline route detected')
@@ -137,7 +178,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     
     // Navigate to view
-    const navigateTo = async (view: 'timeline' | 'thread' | 'login' | 'register' | 'profile' | 'explore' | 'terms' | 'privacy', postId?: string, username?: string, tag?: string) => {
+    const navigateTo = async (view: 'timeline' | 'thread' | 'login' | 'register' | 'profile' | 'explore' | 'notifications' | 'terms' | 'privacy', postId?: string, username?: string, tag?: string) => {
       console.log('Navigate to:', view, postId, username, tag, 'Current view:', currentView)
       
       // For auth routes, proceed directly
@@ -164,6 +205,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (profilePage) {
           profilePage.destroy()
           profilePage = null
+        }
+        if (notificationsPage) {
+          notificationsPage.destroy()
+          notificationsPage = null
         }
       } else {
         // Auth guard for protected routes
@@ -194,6 +239,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (profilePage) {
           profilePage.destroy()
           profilePage = null
+        }
+        if (notificationsPage) {
+          notificationsPage.destroy()
+          notificationsPage = null
         }
       }
       
@@ -261,11 +310,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Create Left Nav
         const leftNav = createLeftNav({
           activeItem: 'explore',
+          unreadCount: unreadNotificationCount,
           onNavigate: async (item) => {
             console.log('Navigate to:', item)
             if (item === 'home') {
               window.history.pushState({}, '', '/')
               navigateTo('timeline')
+            } else if (item === 'notifications') {
+              window.history.pushState({}, '', '/notifications')
+              navigateTo('notifications')
             } else if (item === 'profile') {
               if (!currentUser) {
                 window.history.pushState({}, '', '/')
@@ -320,6 +373,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Create Left Nav
         const leftNav = createLeftNav({
           activeItem: 'profile',
+          unreadCount: unreadNotificationCount,
           onNavigate: async (item) => {
             console.log('Navigate to:', item)
             if (item === 'home') {
@@ -341,6 +395,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
               })
               document.body.appendChild(trendingModal)
+            } else if (item === 'notifications') {
+              window.history.pushState({}, '', '/notifications')
+              navigateTo('notifications')
             } else if (item === 'profile') {
               if (!currentUser) {
                 window.history.pushState({}, '', '/')
@@ -380,6 +437,93 @@ document.addEventListener('DOMContentLoaded', async () => {
         return
       }
       
+      // Handle notifications page (within 3-column layout)
+      if (view === 'notifications') {
+        currentView = 'notifications'
+        currentPostId = null
+        currentUsername = null
+        currentTag = null
+        
+        // Fetch notifications
+        const notificationsData = await fetchNotifications()
+        
+        // Create main container for 3-column layout
+        const mainContainer = document.createElement('div')
+        mainContainer.className = 'main-container'
+        
+        // Create Left Nav with unread count
+        const leftNav = createLeftNav({
+          activeItem: 'notifications',
+          unreadCount: unreadNotificationCount,
+          onNavigate: async (item) => {
+            console.log('Navigate to:', item)
+            if (item === 'home') {
+              window.history.pushState({}, '', '/')
+              navigateTo('timeline')
+            } else if (item === 'explore') {
+              window.history.pushState({}, '', '/explore')
+              navigateTo('explore')
+            } else if (item === 'trending') {
+              const trendingModal = createTrendingModal({
+                onClose: () => {
+                  document.body.removeChild(trendingModal)
+                },
+                onTagClick: (tag) => {
+                  document.body.removeChild(trendingModal)
+                  window.history.pushState({}, '', `/explore?tag=${encodeURIComponent(tag)}`)
+                  navigateTo('explore', undefined, undefined, tag)
+                }
+              })
+              document.body.appendChild(trendingModal)
+            } else if (item === 'profile') {
+              if (!currentUser) {
+                window.history.pushState({}, '', '/')
+                navigateTo('timeline')
+                return
+              }
+              window.history.pushState({}, '', `/users/${currentUser.username}`)
+              navigateTo('profile', undefined, currentUser.username)
+            }
+          }
+        })
+        
+        // Create Notifications Page
+        notificationsPage = createNotificationsPage({
+          notifications: notificationsData.notifications,
+          unreadCount: notificationsData.unread_count,
+          onMarkAllRead: async () => {
+            await fetch('/api/notifications/read-all', {
+              method: 'POST',
+              credentials: 'include'
+            })
+            unreadNotificationCount = 0
+            leftNav.setUnreadCount(0)
+          },
+          onNavigateToPost: (postId) => {
+            window.history.pushState({}, '', `/thread/${postId}`)
+            navigateTo('thread', postId)
+          }
+        })
+        
+        // Create Right Panel
+        const rightPanel = createRightPanel({
+          onSearch: (query) => {
+            console.log('Search:', query)
+          },
+          onFollowUser: (userId) => {
+            console.log('Follow user:', userId)
+          }
+        })
+        
+        // Assemble layout
+        mainContainer.appendChild(leftNav.getElement())
+        mainContainer.appendChild(notificationsPage.getElement())
+        mainContainer.appendChild(rightPanel.getElement())
+        
+        app.appendChild(mainContainer)
+        return
+      }
+      
       // Create main container for timeline/thread views
       const mainContainer = document.createElement('div')
       mainContainer.className = 'main-container'
@@ -412,6 +556,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Create Left Nav
         const leftNav = createLeftNav({
           activeItem: 'home',
+          unreadCount: unreadNotificationCount,
           onNavigate: async (item) => {
             console.log('Navigate to:', item)
             if (item === 'home') {
@@ -433,6 +578,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
               })
               document.body.appendChild(trendingModal)
+            } else if (item === 'notifications') {
+              window.history.pushState({}, '', '/notifications')
+              navigateTo('notifications')
             } else if (item === 'profile') {
               if (!currentUser) {
                 window.history.pushState({}, '', '/')
@@ -494,6 +642,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // Initial navigation
     console.log('DOM Content Loaded, starting initial routing...')
+    
+    // Fetch notifications on app init (once per session)
+    await fetchNotifications()
+    
     const initialRoute = parseCurrentRoute()
     console.log('Initial route:', initialRoute)
     await navigateTo(initialRoute.view, initialRoute.postId || undefined, initialRoute.username || undefined, initialRoute.tag || undefined)

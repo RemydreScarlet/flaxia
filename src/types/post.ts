@@ -27,6 +27,8 @@ export interface PostCardProps {
   post: Post
   sandboxOrigin: string
   initialMode?: PostCardMode
+  currentUser?: { username: string; id: string; display_name?: string; avatar_key?: string } | null
+  onDelete?: (postId: string) => void
 }
 
 export interface PostHeaderProps {
@@ -68,7 +70,7 @@ export interface PostActionsProps {
 
 export interface TimelineProps {
   sandboxOrigin: string
-  currentUser?: { username: string; display_name?: string; avatar_key?: string } | null
+  currentUser?: { username: string; id: string; display_name?: string; avatar_key?: string } | null
 }
 
 export interface TimelineState {

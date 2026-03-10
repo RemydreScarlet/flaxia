@@ -1098,6 +1098,15 @@ app.post('/api/posts/:id/fresh', async (c) => {
   const postId = c.req.param('id')
   const userId = c.get('user')?.id || ''
   
+  // Get the post to check ownership for notification
+  const post = await c.env.DB.prepare(
+    'SELECT user_id FROM posts WHERE id = ? AND status = \'published\''
+  ).bind(postId).first()
+  
+  if (!post) {
+    return c.json({ error: 'Post not found' }, 404)
+  }
+  
   // Check if already freshed
   const existing = await c.env.DB.prepare(
     'SELECT * FROM freshs WHERE post_id = ? AND user_id = ?'
@@ -1123,6 +1132,19 @@ app.post('/api/posts/:id/fresh', async (c) => {
     await c.env.DB.prepare(
       'UPDATE posts SET fresh_count = fresh_count + 1 WHERE id = ?'
     ).bind(postId).run()
+    
+    // Create notification for post author (only if not self-freshing)
+    if (post.user_id !== userId) {
+      try {
+        await c.env.DB
+          .prepare('INSERT INTO notifications (id, user_id, type, post_id, actor_id) VALUES (?, ?, ?, ?, ?)')
+          .bind(nanoid(), post.user_id, 'fresh', postId, userId)
+          .run()
+      } catch (e) {
+        // Don't fail the fresh operation if notification fails
+        console.error('Failed to create fresh notification:', e)
+      }
+    }
     
     return c.json({ freshed: true })
   }
@@ -1546,6 +1568,211 @@ app.get('/api/search', async (c) => {
   } catch (error: any) {
     console.error('Search error:', error)
     return c.json({ error: 'Search failed', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// DELETE /api/posts/:id - delete post
+app.delete('/api/posts/:id', async (c) => {
+  try {
+    const postId = c.req.param('id')
+    const userId = c.get('user')?.id || ''
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    // Get the post to verify ownership and get file keys
+    const post = await c.env.DB.prepare(
+      'SELECT id, user_id, gif_key, payload_key FROM posts WHERE id = ?'
+    ).bind(postId).first() as { id: string; user_id: string; gif_key?: string; payload_key?: string } | null
+    
+    if (!post) {
+      return c.json({ error: 'Post not found' }, 404)
+    }
+    
+    // Verify ownership
+    if (post.user_id !== userId) {
+      return c.json({ error: 'Forbidden' }, 403)
+    }
+    
+    // Delete associated files from R2
+    if (c.env.BUCKET) {
+      if (post.gif_key) {
+        try {
+          await c.env.BUCKET.delete(post.gif_key)
+        } catch (e) {
+          console.error('Failed to delete gif file:', e)
+        }
+      }
+      if (post.payload_key) {
+        try {
+          await c.env.BUCKET.delete(post.payload_key)
+        } catch (e) {
+          console.error('Failed to delete payload file:', e)
+        }
+      }
+    }
+    
+    // Delete the post
+    const result = await c.env.DB.prepare('DELETE FROM posts WHERE id = ?').bind(postId).run()
+    
+    if (!result.success) {
+      return c.json({ error: 'Failed to delete post' }, 500)
+    }
+    
+    return c.json({ success: true })
+  } catch (error: any) {
+    console.error('Delete post error:', error)
+    return c.json({ error: 'Failed to delete post', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// POST /api/posts/:id/report - report post
+app.post('/api/posts/:id/report', async (c) => {
+  try {
+    const postId = c.req.param('id')
+    const userId = c.get('user')?.id || ''
+    const { reason } = await c.req.json()
+    
+    // Validate reason
+    const validReasons = ['spam', 'harassment', 'inappropriate', 'misinformation', 'other']
+    if (!reason || !validReasons.includes(reason)) {
+      return c.json({ error: 'Invalid reason' }, 400)
+    }
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    // Get the post
+    const post = await c.env.DB.prepare(
+      'SELECT id, user_id FROM posts WHERE id = ? AND status = \'published\''
+    ).bind(postId).first()
+    
+    if (!post) {
+      return c.json({ error: 'Post not found' }, 404)
+    }
+    
+    // Cannot report own post
+    if (post.user_id === userId) {
+      return c.json({ error: 'Cannot report own post' }, 403)
+    }
+    
+    // Check if already reported
+    const existingReport = await c.env.DB.prepare(
+      'SELECT id FROM reports WHERE post_id = ? AND user_id = ?'
+    ).bind(postId, userId).first()
+    
+    if (existingReport) {
+      return c.json({ error: 'Already reported' }, 409)
+    }
+    
+    // Insert report
+    const reportId = nanoid()
+    await c.env.DB.prepare(
+      'INSERT INTO reports (id, post_id, user_id, reason) VALUES (?, ?, ?, ?)'
+    ).bind(reportId, postId, userId, reason).run()
+    
+    // Check total report count and notify on every 3rd report
+    const { count } = await c.env.DB
+      .prepare('SELECT COUNT(*) as count FROM reports WHERE post_id = ?')
+      .bind(postId)
+      .first() as { count: number }
+    
+    if (count % 3 === 0) {
+      await c.env.DB
+        .prepare('INSERT INTO notifications (id, user_id, type, post_id) VALUES (?, ?, ?, ?)')
+        .bind(nanoid(), post.user_id, 'reported', postId)
+        .run()
+    }
+    
+    return c.json({ success: true })
+  } catch (error: any) {
+    console.error('Report post error:', error)
+    return c.json({ error: 'Failed to report post', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// GET /api/notifications - fetch notifications
+app.get('/api/notifications', async (c) => {
+  try {
+    const userId = c.get('user')?.id || ''
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    // Get notifications with post and actor info
+    const result = await c.env.DB.prepare(`
+      SELECT 
+        n.id,
+        n.type,
+        n.post_id,
+        n.read,
+        n.created_at,
+        SUBSTR(p.text, 1, 50) as post_text_preview,
+        u.username as actor_username,
+        u.display_name as actor_display_name,
+        u.avatar_key as actor_avatar_key
+      FROM notifications n
+      JOIN posts p ON n.post_id = p.id
+      LEFT JOIN users u ON n.actor_id = u.id
+      WHERE n.user_id = ?
+      ORDER BY n.created_at DESC
+      LIMIT 20
+    `).bind(userId).all()
+    
+    if (!result.success) {
+      return c.json({ error: 'Failed to fetch notifications' }, 500)
+    }
+    
+    // Get unread count
+    const unreadResult = await c.env.DB.prepare(
+      'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND read = 0'
+    ).bind(userId).first() as { count: number }
+    
+    // Format notifications
+    const notifications = (result.results || []).map((row: any) => ({
+      id: row.id,
+      type: row.type,
+      post_id: row.post_id,
+      post_text_preview: row.post_text_preview,
+      actor: row.actor_username ? {
+        username: row.actor_username,
+        display_name: row.actor_display_name,
+        avatar_key: row.actor_avatar_key
+      } : undefined,
+      read: row.read === 1,
+      created_at: row.created_at
+    }))
+    
+    return c.json({
+      notifications,
+      unread_count: unreadResult?.count || 0
+    })
+  } catch (error: any) {
+    console.error('Fetch notifications error:', error)
+    return c.json({ error: 'Failed to fetch notifications', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// POST /api/notifications/read-all - mark all notifications as read
+app.post('/api/notifications/read-all', async (c) => {
+  try {
+    const userId = c.get('user')?.id || ''
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    await c.env.DB.prepare(
+      'UPDATE notifications SET read = 1 WHERE user_id = ? AND read = 0'
+    ).bind(userId).run()
+    
+    return c.json({ success: true })
+  } catch (error: any) {
+    console.error('Mark all read error:', error)
+    return c.json({ error: 'Failed to mark notifications as read', details: error?.message || 'Unknown error' }, 500)
   }
 })
 

@@ -389,7 +389,13 @@ export class Timeline {
 
       const postCard = createPostCard({
         post,
-        sandboxOrigin: this.props.sandboxOrigin
+        sandboxOrigin: this.props.sandboxOrigin,
+        currentUser: this.props.currentUser,
+        onDelete: (postId) => {
+          // Remove post from state
+          this.state.posts = this.state.posts.filter(p => p.id !== postId)
+          this.postCards.delete(postId)
+        }
       })
       
       this.postCards.set(post.id, postCard)

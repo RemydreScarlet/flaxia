@@ -1,5 +1,6 @@
 export interface LeftNavProps {
   activeItem?: string
+  unreadCount?: number
   onNavigate?: (item: string) => void
 }
 
@@ -45,10 +46,26 @@ export class LeftNav {
       const navItem = document.createElement('button')
       navItem.className = `nav-item ${this.activeItem === item.id ? 'nav-item--active' : ''}`
       navItem.setAttribute('data-nav-id', item.id)
-      navItem.innerHTML = `
-        <span style="margin-right: 0.75rem;">${item.icon}</span>
-        <span>${item.label}</span>
-      `
+
+      // Base content
+      let itemContent = `<span style="margin-right: 0.75rem;">${item.icon}</span><span>${item.label}</span>`
+
+      // Add badge for notifications
+      if (item.id === 'notifications' && this.props.unreadCount && this.props.unreadCount > 0) {
+        itemContent += `<span class="nav-badge" style="
+          margin-left: auto;
+          background: var(--accent);
+          color: #000;
+          font-family: monospace;
+          font-size: 12px;
+          padding: 2px 8px;
+          border-radius: 9999px;
+          min-width: 20px;
+          text-align: center;
+        ">${this.props.unreadCount}</span>`
+      }
+
+      navItem.innerHTML = itemContent
       navItems.appendChild(navItem)
     })
 
@@ -102,6 +119,35 @@ export class LeftNav {
 
   public getElement(): HTMLElement {
     return this.element
+  }
+
+  public setUnreadCount(count: number): void {
+    const notificationsItem = this.element.querySelector('[data-nav-id="notifications"]')
+    if (!notificationsItem) return
+
+    let badge = notificationsItem.querySelector('.nav-badge')
+
+    if (count > 0) {
+      if (!badge) {
+        badge = document.createElement('span')
+        badge.className = 'nav-badge'
+        badge.setAttribute('style', `
+          margin-left: auto;
+          background: var(--accent);
+          color: #000;
+          font-family: monospace;
+          font-size: 12px;
+          padding: 2px 8px;
+          border-radius: 9999px;
+          min-width: 20px;
+          text-align: center;
+        `)
+        notificationsItem.appendChild(badge)
+      }
+      badge.textContent = count.toString()
+    } else {
+      badge?.remove()
+    }
   }
 
   public destroy(): void {

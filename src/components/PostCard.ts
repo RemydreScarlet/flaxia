@@ -17,11 +17,12 @@ export class PostCard {
   private sandboxBridge?: ReturnType<typeof useSandboxBridge>
   private replyComposer?: ReplyComposer
   private isReplyComposerOpen: boolean = false
+  private menuDropdown?: HTMLElement
 
   constructor(props: PostCardProps) {
     this.props = props
     this.mode = props.initialMode || PostCardMode.PREVIEW
-    this.isFreshed = false // TODO: Fetch from API
+    this.isFreshed = false
     this.freshCount = props.post.fresh_count
     this.replyCount = props.post.reply_count || 0
     this.element = this.createElement()
@@ -32,7 +33,16 @@ export class PostCard {
     const container = document.createElement('article')
     container.className = 'post-card'
     container.setAttribute('data-post-id', this.props.post.id)
-    container.style.cursor = 'pointer' // Indicate clickable
+    container.style.cursor = 'pointer'
+
+    // Header container with ... menu
+    const headerContainer = document.createElement('div')
+    headerContainer.style.cssText = `
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      position: relative;
+    `
 
     // Post header
     const header = createPostHeader({
@@ -41,7 +51,14 @@ export class PostCard {
       avatar_key: this.props.post.avatar_key,
       createdAt: this.props.post.created_at
     })
-    container.appendChild(header)
+    headerContainer.appendChild(header)
+
+    // ... menu button
+    const isOwnPost = this.props.currentUser?.username === this.props.post.username
+    const menuButton = this.createMenuButton(isOwnPost)
+    headerContainer.appendChild(menuButton)
+
+    container.appendChild(headerContainer)
 
     // Post text
     const text = createPostText({
@@ -284,6 +301,385 @@ export class PostCard {
     // Re-render if needed
   }
 
+  private createMenuButton(isOwnPost: boolean): HTMLElement {
+    const menuButton = document.createElement('button')
+    menuButton.className = 'post-menu-button'
+    menuButton.innerHTML = '⋯'
+    menuButton.style.cssText = `
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 18px;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 4px;
+      transition: color 0.2s ease;
+    `
+
+    menuButton.addEventListener('mouseenter', () => {
+      menuButton.style.color = 'var(--text-primary)'
+    })
+    menuButton.addEventListener('mouseleave', () => {
+      menuButton.style.color = 'var(--text-muted)'
+    })
+
+    menuButton.addEventListener('click', (e) => {
+      e.stopPropagation()
+      this.toggleMenu(isOwnPost)
+    })
+
+    return menuButton
+  }
+
+  private toggleMenu(isOwnPost: boolean): void {
+    if (this.menuDropdown) {
+      this.menuDropdown.remove()
+      this.menuDropdown = undefined
+      return
+    }
+
+    const dropdown = document.createElement('div')
+    dropdown.className = 'post-menu-dropdown'
+    dropdown.style.cssText = `
+      position: absolute;
+      top: 30px;
+      right: 0;
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      z-index: 100;
+      min-width: 120px;
+    `
+
+    if (isOwnPost) {
+      const deleteItem = document.createElement('button')
+      deleteItem.style.cssText = `
+        display: block;
+        width: 100%;
+        padding: 10px 16px;
+        background: none;
+        border: none;
+        color: var(--danger, #e74c3c);
+        text-align: left;
+        cursor: pointer;
+        font-size: 14px;
+        transition: background 0.2s;
+      `
+      deleteItem.innerHTML = '🗑 Delete'
+      deleteItem.addEventListener('mouseenter', () => {
+        deleteItem.style.background = 'var(--bg-secondary)'
+      })
+      deleteItem.addEventListener('mouseleave', () => {
+        deleteItem.style.background = 'none'
+      })
+      deleteItem.addEventListener('click', (e) => {
+        e.stopPropagation()
+        this.showDeleteConfirmation()
+        dropdown.remove()
+        this.menuDropdown = undefined
+      })
+      dropdown.appendChild(deleteItem)
+    } else {
+      const reportItem = document.createElement('button')
+      reportItem.style.cssText = `
+        display: block;
+        width: 100%;
+        padding: 10px 16px;
+        background: none;
+        border: none;
+        color: var(--text-primary);
+        text-align: left;
+        cursor: pointer;
+        font-size: 14px;
+        transition: background 0.2s;
+      `
+      reportItem.innerHTML = '🚩 Report'
+      reportItem.addEventListener('mouseenter', () => {
+        reportItem.style.background = 'var(--bg-secondary)'
+      })
+      reportItem.addEventListener('mouseleave', () => {
+        reportItem.style.background = 'none'
+      })
+      reportItem.addEventListener('click', (e) => {
+        e.stopPropagation()
+        this.showReportModal()
+        dropdown.remove()
+        this.menuDropdown = undefined
+      })
+      dropdown.appendChild(reportItem)
+    }
+
+    const headerContainer = this.element.querySelector('.post-menu-button')?.parentElement
+    if (headerContainer) {
+      headerContainer.style.position = 'relative'
+      headerContainer.appendChild(dropdown)
+    }
+
+    this.menuDropdown = dropdown
+
+    const closeMenu = (e: MouseEvent) => {
+      if (!dropdown.contains(e.target as Node)) {
+        dropdown.remove()
+        this.menuDropdown = undefined
+        document.removeEventListener('click', closeMenu)
+      }
+    }
+    setTimeout(() => document.addEventListener('click', closeMenu), 0)
+  }
+
+  private showDeleteConfirmation(): void {
+    const overlay = document.createElement('div')
+    overlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    `
+
+    const dialog = document.createElement('div')
+    dialog.style.cssText = `
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 24px;
+      max-width: 400px;
+      width: 90%;
+    `
+
+    dialog.innerHTML = `
+      <h3 style="margin: 0 0 16px 0; font-size: 18px; color: var(--text-primary);">Delete this post?</h3>
+      <p style="margin: 0 0 24px 0; color: var(--text-muted); font-size: 14px;">This cannot be undone.</p>
+      <div style="display: flex; gap: 12px; justify-content: flex-end;">
+        <button class="cancel-btn" style="
+          padding: 8px 16px;
+          background: none;
+          border: 1px solid var(--border);
+          border-radius: 4px;
+          color: var(--text-primary);
+          cursor: pointer;
+        ">Cancel</button>
+        <button class="delete-btn" style="
+          padding: 8px 16px;
+          background: var(--danger, #e74c3c);
+          border: none;
+          border-radius: 4px;
+          color: #fff;
+          cursor: pointer;
+        ">Delete</button>
+      </div>
+    `
+
+    overlay.appendChild(dialog)
+    document.body.appendChild(overlay)
+
+    dialog.querySelector('.cancel-btn')?.addEventListener('click', () => {
+      overlay.remove()
+    })
+
+    dialog.querySelector('.delete-btn')?.addEventListener('click', async () => {
+      overlay.remove()
+      await this.deletePost()
+    })
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        overlay.remove()
+      }
+    })
+  }
+
+  private async deletePost(): Promise<void> {
+    try {
+      const response = await fetch(`/api/posts/${this.props.post.id}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to delete post')
+      }
+
+      this.props.onDelete?.(this.props.post.id)
+
+      this.element.style.transition = 'opacity 0.3s, transform 0.3s'
+      this.element.style.opacity = '0'
+      this.element.style.transform = 'translateX(-100%)'
+      setTimeout(() => {
+        this.destroy()
+      }, 300)
+
+      this.showToast('Post deleted')
+    } catch (error) {
+      console.error('Delete post error:', error)
+      this.showToast('Failed to delete post', true)
+    }
+  }
+
+  private showReportModal(): void {
+    const overlay = document.createElement('div')
+    overlay.className = 'report-modal-overlay'
+    overlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    `
+
+    const dialog = document.createElement('div')
+    dialog.style.cssText = `
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 24px;
+      max-width: 400px;
+      width: 90%;
+    `
+
+    const reasons = [
+      { value: 'spam', label: 'Spam' },
+      { value: 'harassment', label: 'Harassment' },
+      { value: 'inappropriate', label: 'Inappropriate content' },
+      { value: 'misinformation', label: 'Misinformation' },
+      { value: 'other', label: 'Other' }
+    ]
+
+    dialog.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h3 style="margin: 0; font-size: 18px; color: var(--text-primary);">🚩 Report post</h3>
+        <button class="close-btn" style="
+          background: none;
+          border: none;
+          color: var(--text-muted);
+          font-size: 20px;
+          cursor: pointer;
+        ">✕</button>
+      </div>
+      <p style="margin: 0 0 16px 0; color: var(--text-muted); font-size: 14px;">Why are you reporting this post?</p>
+      <div class="reasons" style="margin-bottom: 24px;">
+        ${reasons.map(r => `
+          <label style="
+            display: flex;
+            align-items: center;
+            padding: 10px 0;
+            cursor: pointer;
+            color: var(--text-primary);
+          ">
+            <input type="radio" name="report-reason" value="${r.value}" style="margin-right: 12px;">
+            <span>${r.label}</span>
+          </label>
+        `).join('')}
+      </div>
+      <div style="display: flex; justify-content: flex-end;">
+        <button class="submit-btn" disabled style="
+          padding: 10px 24px;
+          background: var(--accent);
+          border: none;
+          border-radius: 9999px;
+          color: #000;
+          font-family: monospace;
+          font-size: 14px;
+          cursor: pointer;
+          opacity: 0.5;
+        ">Submit</button>
+      </div>
+    `
+
+    overlay.appendChild(dialog)
+    document.body.appendChild(overlay)
+
+    const submitBtn = dialog.querySelector('.submit-btn') as HTMLButtonElement
+    const closeBtn = dialog.querySelector('.close-btn')
+    const radioInputs = dialog.querySelectorAll('input[name="report-reason"]')
+
+    let selectedReason: string | null = null
+
+    radioInputs.forEach(input => {
+      input.addEventListener('change', (e) => {
+        selectedReason = (e.target as HTMLInputElement).value
+        submitBtn.disabled = false
+        submitBtn.style.opacity = '1'
+      })
+    })
+
+    closeBtn?.addEventListener('click', () => {
+      overlay.remove()
+    })
+
+    submitBtn?.addEventListener('click', async () => {
+      if (!selectedReason) return
+      overlay.remove()
+      await this.submitReport(selectedReason)
+    })
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        overlay.remove()
+      }
+    })
+  }
+
+  private async submitReport(reason: string): Promise<void> {
+    try {
+      const response = await fetch(`/api/posts/${this.props.post.id}/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ reason })
+      })
+
+      if (response.status === 409) {
+        this.showToast('You have already reported this post.')
+        return
+      }
+
+      if (!response.ok) {
+        throw new Error('Failed to submit report')
+      }
+
+      this.showToast('Report submitted. Thank you.')
+    } catch (error) {
+      console.error('Report error:', error)
+      this.showToast('Failed to submit report', true)
+    }
+  }
+
+  private showToast(message: string, isError: boolean = false): void {
+    const toast = document.createElement('div')
+    toast.style.cssText = `
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: ${isError ? 'var(--danger, #e74c3c)' : 'var(--accent)'};
+      color: ${isError ? '#fff' : '#000'};
+      padding: 12px 24px;
+      border-radius: 4px;
+      font-size: 14px;
+      z-index: 2000;
+      animation: fadeInUp 0.3s ease;
+    `
+    toast.textContent = message
+    document.body.appendChild(toast)
+
+    setTimeout(() => {
+      toast.style.animation = 'fadeOut 0.3s ease'
+      setTimeout(() => toast.remove(), 300)
+    }, 3000)
+  }
+
   public destroy(): void {
     // Cleanup sandbox bridge
     if (this.sandboxBridge) {
@@ -296,7 +692,13 @@ export class PostCard {
       this.replyComposer.destroy()
       this.replyComposer = undefined
     }
-    
+
+    // Cleanup menu dropdown
+    if (this.menuDropdown) {
+      this.menuDropdown.remove()
+      this.menuDropdown = undefined
+    }
+
     // Cleanup event listeners
     this.element.remove()
   }
