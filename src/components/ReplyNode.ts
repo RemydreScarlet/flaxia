@@ -7,6 +7,7 @@ export interface ReplyNodeProps {
   node: PostNode
   sandboxOrigin: string
   onReplyCreated: (newReply: Post) => void
+  currentUser?: { username: string; id: string; display_name?: string; avatar_key?: string } | null
 }
 
 export class ReplyNode {
@@ -36,7 +37,8 @@ export class ReplyNode {
     // Post card for this reply
     this.postCard = createPostCard({
       post: this.props.node.post,
-      sandboxOrigin: this.props.sandboxOrigin
+      sandboxOrigin: this.props.sandboxOrigin,
+      currentUser: this.props.currentUser || undefined
     })
     container.appendChild(this.postCard.getElement())
 
@@ -64,6 +66,7 @@ export class ReplyNode {
         const childReplyNode = new ReplyNode({
           node: childNode,
           sandboxOrigin: this.props.sandboxOrigin,
+          currentUser: this.props.currentUser,
           onReplyCreated: (newReply) => this.props.onReplyCreated(newReply)
         })
         this.childReplyNodes.push(childReplyNode)

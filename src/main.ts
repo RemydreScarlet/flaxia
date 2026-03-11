@@ -649,6 +649,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         threadPage = createThreadPage({
           postId,
           sandboxOrigin,
+          currentUser,
           onBack: () => {
             console.log('Back button clicked, navigating to timeline')
             window.history.pushState({}, '', '/')

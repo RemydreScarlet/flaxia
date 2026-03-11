@@ -9,6 +9,7 @@ database_id = "7c99f35f-69a0-4644-96a1-34c716a3e82d"
 
 [vars]
 SANDBOX_ORIGIN = "https://flaxia-egj.pages.dev"
+BASE_URL = "https://flaxia-egj.pages.dev"
 
 [[r2_buckets]]
 binding = "BUCKET"

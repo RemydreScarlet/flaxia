@@ -9,6 +9,7 @@ export interface ThreadPageProps {
   postId: string
   sandboxOrigin: string
   onBack: () => void
+  currentUser?: { username: string; id: string; display_name?: string; avatar_key?: string } | null
 }
 
 export class ThreadPage {
@@ -48,8 +49,43 @@ export class ThreadPage {
     // Create Left Nav
     this.leftNav = createLeftNav({
       activeItem: 'home',
-      onNavigate: (item) => {
+      currentUser: this.props.currentUser || undefined,
+      onNavigate: async (item) => {
         console.log('Navigate to:', item)
+        // Handle navigation - this will need to be passed from parent
+        if (item === 'home') {
+          window.history.pushState({}, '', '/')
+          this.props.onBack()
+        } else if (item === 'explore') {
+          window.history.pushState({}, '', '/explore')
+          window.location.reload() // Simple navigation for now
+        } else if (item === 'notifications') {
+          if (this.props.currentUser) {
+            window.history.pushState({}, '', '/notifications')
+            window.location.reload()
+          }
+        } else if (item === 'profile') {
+          if (this.props.currentUser) {
+            window.history.pushState({}, '', `/users/${this.props.currentUser.username}`)
+            window.location.reload()
+          }
+        } else if (item === 'post') {
+          // For guests, clicking Post should show sign-in prompt
+          if (!this.props.currentUser) {
+            const { showSignInPrompt } = await import('./SignInPrompt.js')
+            showSignInPrompt(
+              'post',
+              () => window.location.href = '/login',
+              () => window.location.href = '/register'
+            )
+          }
+        }
+      },
+      onSignIn: () => {
+        window.location.href = '/login'
+      },
+      onSignUp: () => {
+        window.location.href = '/register'
       }
     })
     this.leftNav.getElement().style.cssText = `
@@ -244,7 +280,8 @@ export class ThreadPage {
       // Create root post card (without reply functionality since we're on thread page)
       this.rootPostCard = createPostCard({
         post: data.root,
-        sandboxOrigin: this.props.sandboxOrigin
+        sandboxOrigin: this.props.sandboxOrigin,
+        currentUser: this.props.currentUser || undefined
       })
       content.appendChild(this.rootPostCard.getElement())
 
@@ -278,6 +315,7 @@ export class ThreadPage {
           const replyNode = createReplyNode({
             node,
             sandboxOrigin: this.props.sandboxOrigin,
+            currentUser: this.props.currentUser,
             onReplyCreated: (newReply) => this.handleReplyCreated(newReply)
           })
           this.replyNodes.push(replyNode)
