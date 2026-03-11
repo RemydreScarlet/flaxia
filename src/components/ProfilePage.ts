@@ -95,6 +95,13 @@ export function createProfilePage({ username, currentUser }: ProfilePageProps) {
   editButton.textContent = 'Edit Profile'
   editButton.style.display = currentUser?.username === username ? 'block' : 'none'
 
+  // Logout button (only for own profile)
+  const logoutButton = document.createElement('button')
+  logoutButton.className = 'profile-button profile-button--secondary'
+  logoutButton.textContent = 'Log out'
+  logoutButton.style.display = currentUser?.username === username ? 'block' : 'none'
+  logoutButton.style.marginTop = '0.5rem'
+
   // Follow/Unfollow button (only for others' profiles)
   const followButton = document.createElement('button')
   followButton.className = 'profile-button profile-button--secondary'
@@ -102,6 +109,9 @@ export function createProfilePage({ username, currentUser }: ProfilePageProps) {
   followButton.style.display = currentUser?.username === username ? 'none' : 'block'
 
   actionsRow.appendChild(editButton)
+  if (currentUser?.username === username) {
+    actionsRow.appendChild(logoutButton)
+  }
   actionsRow.appendChild(followButton)
 
 
@@ -197,6 +207,113 @@ export function createProfilePage({ username, currentUser }: ProfilePageProps) {
 
   // Event listeners
   editButton.addEventListener('click', startEdit)
+
+  // Logout functionality
+  logoutButton.addEventListener('click', () => {
+    if (!currentUser) return
+    
+    // Create confirmation modal
+    const overlay = document.createElement('div')
+    overlay.setAttribute('style', `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+    `)
+
+    const modal = document.createElement('div')
+    modal.setAttribute('style', `
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      max-width: 320px;
+      width: 90%;
+      text-align: center;
+    `)
+
+    modal.innerHTML = `
+      <h3 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.125rem;">Log out of @${currentUser.username}?</h3>
+      <div style="display: flex; gap: 0.75rem; justify-content: center;">
+        <button class="logout-cancel-btn" style="
+          padding: 0.5rem 1rem;
+          background: var(--bg-secondary);
+          color: var(--text-primary);
+          border: 1px solid var(--border);
+          border-radius: 9999px;
+          cursor: pointer;
+          font-size: 0.875rem;
+          transition: background-color 0.2s;
+        ">Cancel</button>
+        <button class="logout-confirm-btn" style="
+          padding: 0.5rem 1rem;
+          background: var(--text-primary);
+          color: var(--bg-primary);
+          border: none;
+          border-radius: 9999px;
+          cursor: pointer;
+          font-size: 0.875rem;
+          font-weight: 600;
+          transition: opacity 0.2s;
+        ">Log out</button>
+      </div>
+    `
+
+    const cancelBtn = modal.querySelector('.logout-cancel-btn') as HTMLButtonElement
+    const confirmBtn = modal.querySelector('.logout-confirm-btn') as HTMLButtonElement
+
+    cancelBtn.addEventListener('click', () => {
+      overlay.remove()
+    })
+
+    cancelBtn.addEventListener('mouseenter', () => {
+      cancelBtn.style.backgroundColor = 'var(--bg-tertiary)'
+    })
+    cancelBtn.addEventListener('mouseleave', () => {
+      cancelBtn.style.backgroundColor = 'var(--bg-secondary)'
+    })
+
+    confirmBtn.addEventListener('click', async () => {
+      try {
+        const response = await fetch('/api/auth/logout', {
+          method: 'POST',
+          credentials: 'include'
+        })
+        
+        if (response.ok) {
+          window.location.href = '/'
+        } else {
+          console.error('Logout failed')
+          overlay.remove()
+        }
+      } catch (error) {
+        console.error('Logout error:', error)
+        overlay.remove()
+      }
+    })
+
+    confirmBtn.addEventListener('mouseenter', () => {
+      confirmBtn.style.opacity = '0.8'
+    })
+    confirmBtn.addEventListener('mouseleave', () => {
+      confirmBtn.style.opacity = '1'
+    })
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        overlay.remove()
+      }
+    })
+
+    overlay.appendChild(modal)
+    document.body.appendChild(overlay)
+  })
 
   followButton.addEventListener('click', async () => {
     if (!currentUser) {

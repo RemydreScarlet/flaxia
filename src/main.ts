@@ -1,5 +1,5 @@
 import { createTimeline } from './components/Timeline.js'
-import { createLeftNav } from './components/LeftNav.js'
+import { createLeftNav, updateLeftNavUser } from './components/LeftNav.js'
 import { createRightPanel } from './components/RightPanel.js'
 import { createThreadPage } from './components/ThreadPage.js'
 import { createLoginPage } from './components/LoginPage.js'
@@ -32,6 +32,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let explorePage: ReturnType<typeof createExplorePage> | null = null
     let legalPage: ReturnType<typeof createLegalPage> | null = null
     let notificationsPage: ReturnType<typeof createNotificationsPage> | null = null
+    let leftNavInstances: Set<ReturnType<typeof createLeftNav>> = new Set()
     let currentUser: { username: string; id: string; display_name?: string; avatar_key?: string } | null = null
     let unreadNotificationCount = 0
     
@@ -47,12 +48,24 @@ document.addEventListener('DOMContentLoaded', async () => {
             display_name: data.user.display_name,
             avatar_key: data.user.avatar_key
           }
+          
+          // Update all existing LeftNav instances with new user data
+          leftNavInstances.forEach(leftNav => {
+            updateLeftNavUser(leftNav, currentUser)
+          })
+          
           return true
         }
       } catch (error) {
         console.log('Not authenticated')
       }
       currentUser = null
+      
+      // Update all existing LeftNav instances to remove user area
+      leftNavInstances.forEach(leftNav => {
+        updateLeftNavUser(leftNav, null)
+      })
+      
       return false
     }
 
@@ -311,6 +324,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const leftNav = createLeftNav({
           activeItem: 'explore',
           unreadCount: unreadNotificationCount,
+          currentUser: currentUser || undefined,
           onNavigate: async (item) => {
             console.log('Navigate to:', item)
             if (item === 'home') {
@@ -330,6 +344,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
           }
         })
+        
+        leftNavInstances.add(leftNav)
         
         // Create Explore Page (as main content)
         const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://flaxiausercontent.com'
@@ -374,6 +390,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const leftNav = createLeftNav({
           activeItem: 'profile',
           unreadCount: unreadNotificationCount,
+          currentUser: currentUser || undefined,
           onNavigate: async (item) => {
             console.log('Navigate to:', item)
             if (item === 'home') {
@@ -409,6 +426,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
           }
         })
+        
+        leftNavInstances.add(leftNav)
         
         // Create Profile Page (as main content)
         profilePage = createProfilePage({
@@ -455,6 +474,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const leftNav = createLeftNav({
           activeItem: 'notifications',
           unreadCount: unreadNotificationCount,
+          currentUser: currentUser || undefined,
           onNavigate: async (item) => {
             console.log('Navigate to:', item)
             if (item === 'home') {
@@ -486,6 +506,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
           }
         })
+        
+        leftNavInstances.add(leftNav)
         
         // Create Notifications Page
         notificationsPage = createNotificationsPage({
@@ -557,6 +579,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const leftNav = createLeftNav({
           activeItem: 'home',
           unreadCount: unreadNotificationCount,
+          currentUser: currentUser || undefined,
           onNavigate: async (item) => {
             console.log('Navigate to:', item)
             if (item === 'home') {
@@ -592,6 +615,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
           }
         })
+        
+        leftNavInstances.add(leftNav)
         
         // Create Timeline
         const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://flaxiausercontent.com'

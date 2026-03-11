@@ -561,8 +561,9 @@ p {
   }
   
   .nav-logo,
-  .nav-post-button {
-    display: none;
+  .nav-post-button,
+  .nav-user-area {
+    display: none !important;
   }
   
   .nav-items {
