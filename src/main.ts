@@ -9,7 +9,6 @@ import { createExplorePage } from './components/ExplorePage.js'
 import { createTrendingModal } from './components/TrendingModal.js'
 import { createLegalPage } from './components/LegalPage.js'
 import { createNotificationsPage } from './components/NotificationsPage.js'
-import { logout } from './lib/auth.js'
 
 console.log('Flaxia initialized')
 

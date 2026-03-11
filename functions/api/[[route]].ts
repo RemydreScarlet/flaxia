@@ -2,10 +2,12 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { User, getSession, getSessionToken, setSessionCookie, clearSessionCookie, registerUser, loginUser, deleteSession } from '../lib/auth'
 import { nanoid } from 'nanoid'
+import { checkRateLimit, rateLimitResponse } from '../../src/lib/rate-limit'
 
 type Bindings = {
   DB: D1Database
   BUCKET: R2Bucket
+  RATE_LIMIT: KVNamespace
   SANDBOX_ORIGIN: string
 }
 
@@ -285,6 +287,14 @@ app.get('/api/me', async (c) => {
 
 // POST /api/auth/register - user registration
 app.post('/api/auth/register', async (c) => {
+  const ip = c.req.header('CF-Connecting-IP') ?? 'unknown'
+  const rl = await checkRateLimit(c.env.RATE_LIMIT, {
+    key: `register:${ip}`,
+    limit: 3,
+    windowSeconds: 3600
+  })
+  if (!rl.allowed) return rateLimitResponse(c, rl.resetIn, 3)
+
   try {
     const { email, password, username, display_name } = await c.req.json()
     
@@ -332,6 +342,14 @@ app.post('/api/auth/register', async (c) => {
 
 // POST /api/auth/login - user login
 app.post('/api/auth/login', async (c) => {
+  const ip = c.req.header('CF-Connecting-IP') ?? 'unknown'
+  const rl = await checkRateLimit(c.env.RATE_LIMIT, {
+    key: `login:${ip}`,
+    limit: 20,
+    windowSeconds: 3600
+  })
+  if (!rl.allowed) return rateLimitResponse(c, rl.resetIn, 20)
+
   try {
     const { email, password } = await c.req.json()
     
@@ -1057,6 +1075,13 @@ app.post('/api/posts/commit', requireAuth, async (c) => {
 
 // POST /api/posts - create post (protected)
 app.post('/api/posts', requireAuth, async (c) => {
+  const rl = await checkRateLimit(c.env.RATE_LIMIT, {
+    key: `post:${c.get('user')?.id}`,
+    limit: 5,
+    windowSeconds: 60
+  })
+  if (!rl.allowed) return rateLimitResponse(c, rl.resetIn, 5)
+
   try {
     const { text, payloadKey, gifKey } = await c.req.json()
     
@@ -1097,6 +1122,13 @@ app.post('/api/posts', requireAuth, async (c) => {
 
 // POST /api/posts/:id/fresh - toggle Fresh! (protected)
 app.post('/api/posts/:id/fresh', requireAuth, async (c) => {
+  const rl = await checkRateLimit(c.env.RATE_LIMIT, {
+    key: `fresh:${c.get('user')?.id}`,
+    limit: 10,
+    windowSeconds: 60
+  })
+  if (!rl.allowed) return rateLimitResponse(c, rl.resetIn, 10)
+
   const postId = c.req.param('id')
   const userId = c.get('user')?.id || ''
   
@@ -1631,6 +1663,13 @@ app.delete('/api/posts/:id', requireAuth, async (c) => {
 
 // POST /api/posts/:id/report - report post (protected)
 app.post('/api/posts/:id/report', requireAuth, async (c) => {
+  const rl = await checkRateLimit(c.env.RATE_LIMIT, {
+    key: `report:${c.get('user')?.id}`,
+    limit: 10,
+    windowSeconds: 60
+  })
+  if (!rl.allowed) return rateLimitResponse(c, rl.resetIn, 10)
+
   try {
     const postId = c.req.param('id')
     const userId = c.get('user')?.id || ''

@@ -12,7 +12,7 @@ export async function onRequest(context: { request: Request; env: Env; next: () 
   const { request, env, next } = context
   const userAgent = request.headers.get('user-agent') || ''
   const baseUrl = env.BASE_URL ?? 'https://flaxia-egj.pages.dev'
-  const defaultImage = `${baseUrl}/og-default.png`
+  const defaultImage = `${baseUrl}/og-default-v2.png`
 
   if (!isCrawler(userAgent)) {
     return next()
