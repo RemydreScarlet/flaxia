@@ -581,11 +581,11 @@ p {
     border-radius: 0;
   }
   
-  .nav-item span:first-child {
+  .nav-item span:not(.nav-badge):first-child {
     margin-right: 0;
   }
   
-  .nav-item span:last-child {
+  .nav-item span:not(.nav-badge):not(:first-child) {
     display: none;
   }
 }
@@ -1927,6 +1927,69 @@ p {
   text-align: center;
   padding: 2rem;
   font-family: monospace;
+}
+
+/* Legal Tables */
+.legal-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5rem 0;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.legal-table th {
+  background: var(--bg-secondary);
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border);
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.legal-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.legal-table tr:last-child td {
+  border-bottom: none;
+}
+
+.legal-table tbody tr:hover {
+  background: var(--bg-secondary);
+}
+
+/* Code blocks in legal pages */
+.legal-body pre {
+  background: var(--bg-secondary);
+  padding: 1rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  margin: 1rem 0;
+  border: 1px solid var(--border);
+}
+
+.legal-body code {
+  background: var(--bg-secondary);
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  font-family: 'Courier New', Consolas, monospace;
+  font-size: 0.875em;
+  color: var(--accent-dark);
+}
+
+.legal-body pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: 0.875rem;
+  color: var(--text-primary);
 }
 
 /* ==========================================

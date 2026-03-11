@@ -80,14 +80,31 @@ export function createLegalPage({ type }: LegalPageProps) {
     }
   }
 
-  // Simple markdown to HTML converter
+  // Enhanced markdown to HTML converter with table support
   const markdownToHtml = (markdown: string): string => {
     let html = markdown
 
-    // Escape HTML
+    // Escape HTML first
     html = html.replace(/&/g, '&amp;')
     html = html.replace(/</g, '&lt;')
     html = html.replace(/>/g, '&gt;')
+
+    // Code blocks (must be before inline code)
+    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+
+    // Tables
+    html = html.replace(/\|(.+)\|[\r\n]+\|[-\s\|]+\|[\r\n]+((?:\|.+[\r\n?]+)+)/g, (match, header, body) => {
+      const headerCells = header.split('|').map((cell: string) => cell.trim()).filter((cell: string) => cell)
+      const headerHtml = headerCells.map((cell: string) => `<th>${cell}</th>`).join('')
+      
+      const rows = body.trim().split('\n')
+      const bodyHtml = rows.map((row: string) => {
+        const cells = row.split('|').map((cell: string) => cell.trim()).filter((cell: string) => cell)
+        return `<tr>${cells.map((cell: string) => `<td>${cell}</td>`).join('')}</tr>`
+      }).join('')
+      
+      return `<table class="legal-table"><thead><tr>${headerHtml}</tr></thead><tbody>${bodyHtml}</tbody></table>`
+    })
 
     // Headers
     html = html.replace(/^####\s+(.+)$/gm, '<h4>$1</h4>')
@@ -100,38 +117,83 @@ export function createLegalPage({ type }: LegalPageProps) {
     html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
 
+    // Inline code
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>')
+
     // Links
     html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
 
-    // Lists
+    // Lists (both bullet and numbered)
+    html = html.replace(/^\s*\d+\.\s+(.+)$/gm, '<li>$1</li>')
     html = html.replace(/^\s*-\s+(.+)$/gm, '<li>$1</li>')
-    html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+    
+    // Wrap lists in proper tags
+    html = html.replace(/(<li>.*<\/li>\n?)+/g, (match) => {
+      if (match.includes('1.') || match.includes('2.') || match.includes('3.')) {
+        return '<ol>' + match + '</ol>'
+      }
+      return '<ul>' + match + '</ul>'
+    })
+    
+    // Clean up nested lists
     html = html.replace(/<\/ul>\s*<ul>/g, '')
+    html = html.replace(/<\/ol>\s*<ol>/g, '')
 
     // Paragraphs (must be last)
     const lines = html.split('\n')
     let inList = false
+    let inTable = false
+    let inCode = false
+    let inHeader = false
+    
     const processedLines = lines.map(line => {
-      if (line.trim() === '') return ''
-      if (line.startsWith('<h') || line.startsWith('<ul') || line.startsWith('<li') || line.startsWith('</ul')) {
-        inList = line.startsWith('<ul')
+      const trimmedLine = line.trim()
+      
+      // Skip empty lines
+      if (trimmedLine === '') return ''
+      
+      // Check if we're in special blocks
+      if (trimmedLine.startsWith('<table>')) inTable = true
+      if (trimmedLine.startsWith('</table>')) { inTable = false; return line }
+      if (trimmedLine.startsWith('<pre>')) inCode = true
+      if (trimmedLine.startsWith('</pre>')) { inCode = false; return line }
+      if (trimmedLine.startsWith('<h')) inHeader = true
+      
+      // If we're in special blocks, return as-is
+      if (inTable || inCode || inHeader) {
+        inHeader = !trimmedLine.endsWith('>')
         return line
       }
-      if (inList && line.startsWith('<li')) {
+      
+      // Handle lists
+      if (trimmedLine.startsWith('<ul>') || trimmedLine.startsWith('<ol>') || trimmedLine.startsWith('<li>')) {
+        inList = true
         return line
       }
+      if (trimmedLine.startsWith('</ul>') || trimmedLine.startsWith('</ol>')) {
+        inList = false
+        return line
+      }
+      if (inList && trimmedLine.startsWith('<li>')) {
+        return line
+      }
+      
+      // Reset list state
       inList = false
-      if (!line.startsWith('<')) {
+      
+      // Wrap non-tagged lines in paragraphs
+      if (!trimmedLine.startsWith('<')) {
         return `<p>${line}</p>`
       }
+      
       return line
     })
 
     html = processedLines.join('\n')
 
-    // Clean up empty paragraphs
+    // Clean up empty paragraphs and excessive whitespace
     html = html.replace(/<p><\/p>/g, '')
-    html = html.replace(/\n{2,}/g, '\n')
+    html = html.replace(/\n{3,}/g, '\n\n')
 
     return html
   }
