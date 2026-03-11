@@ -234,32 +234,34 @@ app.get('/api/swf/:postId', async (c) => {
   }
 })
 
-// Auth middleware - only for API routes
+// Auth middleware - sets user context (null if not authenticated)
 app.use('/api/*', async (c, next) => {
-  // Skip auth for public routes
-  if ((c.req.method === 'GET' && c.req.path === '/api/me') || 
-      (c.req.method === 'PUT' && c.req.path.startsWith('/api/upload/')) ||
+  // Skip auth for specific public routes that don't need user context at all
+  if ((c.req.method === 'PUT' && c.req.path.startsWith('/api/upload/')) ||
       (c.req.method === 'GET' && c.req.path.startsWith('/api/images/')) ||
       (c.req.method === 'GET' && c.req.path.startsWith('/api/audio/')) ||
       (c.req.method === 'GET' && c.req.path.startsWith('/api/zip/')) ||
-      (c.req.method === 'GET' && c.req.path.startsWith('/api/swf/')) ||
-      (c.req.method === 'GET' && c.req.path.startsWith('/api/users/')) ||
-      (c.req.path.startsWith('/api/auth/'))) {
+      (c.req.method === 'GET' && c.req.path.startsWith('/api/swf/'))) {
     await next()
     return
   }
   
-  // Validate session with custom auth
+  // Get session if available, otherwise set user to null
   const token = getSessionToken(c.req.raw)
   const sessionData = token ? await getSession(c.env, token) : null
-  if (!sessionData) {
-    return c.json({ error: 'Unauthorized' }, 401)
-  }
   
-  // Set user in context
-  c.set('user', sessionData.user)
+  // Set user in context (null if not authenticated)
+  c.set('user', sessionData?.user || null)
   await next()
 })
+
+// Helper middleware to require authentication for protected routes
+const requireAuth = async (c: any, next: any) => {
+  if (!c.get('user')) {
+    return c.json({ error: 'Unauthorized' }, 401)
+  }
+  await next()
+}
 
 app.use('/*', cors())
 
@@ -351,8 +353,8 @@ app.post('/api/auth/login', async (c) => {
   }
 })
 
-// POST /api/auth/logout - user logout
-app.post('/api/auth/logout', async (c) => {
+// POST /api/auth/logout - user logout (protected)
+app.post('/api/auth/logout', requireAuth, async (c) => {
   try {
     const token = getSessionToken(c.req.raw)
     if (token) {
@@ -427,8 +429,8 @@ app.get('/api/users/:username', async (c) => {
   }
 })
 
-// PATCH /api/users/me - update current user profile
-app.patch('/api/users/me', async (c) => {
+// PATCH /api/users/me - update current user profile (protected)
+app.patch('/api/users/me', requireAuth, async (c) => {
   try {
     const token = getSessionToken(c.req.raw)
     const sessionData = token ? await getSession(c.env, token) : null
@@ -557,8 +559,8 @@ app.patch('/api/users/me', async (c) => {
   }
 })
 
-// DELETE /api/users/me - delete current user account
-app.delete('/api/users/me', async (c) => {
+// DELETE /api/users/me - delete current user account (protected)
+app.delete('/api/users/me', requireAuth, async (c) => {
   try {
     const token = getSessionToken(c.req.raw)
     const sessionData = token ? await getSession(c.env, token) : null
@@ -591,8 +593,8 @@ app.delete('/api/users/me', async (c) => {
   }
 })
 
-// POST /api/users/me/avatar - upload avatar
-app.post('/api/users/me/avatar', async (c) => {
+// POST /api/users/me/avatar - upload avatar (protected)
+app.post('/api/users/me/avatar', requireAuth, async (c) => {
   try {
     const token = getSessionToken(c.req.raw)
     const sessionData = token ? await getSession(c.env, token) : null
@@ -676,8 +678,8 @@ app.post('/api/users/me/avatar', async (c) => {
   }
 })
 
-// POST /api/users/:username/follow - follow a user
-app.post('/api/users/:username/follow', async (c) => {
+// POST /api/users/:username/follow - follow a user (protected)
+app.post('/api/users/:username/follow', requireAuth, async (c) => {
   try {
     const username = c.req.param('username')
     
@@ -734,8 +736,8 @@ app.post('/api/users/:username/follow', async (c) => {
   }
 })
 
-// DELETE /api/users/:username/follow - unfollow a user
-app.delete('/api/users/:username/follow', async (c) => {
+// DELETE /api/users/:username/follow - unfollow a user (protected)
+app.delete('/api/users/:username/follow', requireAuth, async (c) => {
   try {
     const username = c.req.param('username')
     
@@ -868,8 +870,8 @@ app.get('/api/posts', async (c) => {
   }
 })
 
-// Step 1 — POST /api/posts/prepare
-app.post('/api/posts/prepare', async (c) => {
+// Step 1 — POST /api/posts/prepare (protected)
+app.post('/api/posts/prepare', requireAuth, async (c) => {
   try {
     const { filename, contentType: initialContentType } = await c.req.json()
     
@@ -968,8 +970,8 @@ app.post('/api/posts/prepare', async (c) => {
   }
 })
 
-// Step 3 — POST /api/posts/commit
-app.post('/api/posts/commit', async (c) => {
+// Step 3 — POST /api/posts/commit (protected)
+app.post('/api/posts/commit', requireAuth, async (c) => {
   try {
     const { postId, gifKey, zipKey, swfKey, text, hashtags } = await c.req.json()
     
@@ -1053,8 +1055,8 @@ app.post('/api/posts/commit', async (c) => {
   }
 })
 
-// POST /api/posts - create post
-app.post('/api/posts', async (c) => {
+// POST /api/posts - create post (protected)
+app.post('/api/posts', requireAuth, async (c) => {
   try {
     const { text, payloadKey, gifKey } = await c.req.json()
     
@@ -1093,8 +1095,8 @@ app.post('/api/posts', async (c) => {
   }
 })
 
-// POST /api/posts/:id/fresh - toggle Fresh!
-app.post('/api/posts/:id/fresh', async (c) => {
+// POST /api/posts/:id/fresh - toggle Fresh! (protected)
+app.post('/api/posts/:id/fresh', requireAuth, async (c) => {
   const postId = c.req.param('id')
   const userId = c.get('user')?.id || ''
   
@@ -1290,8 +1292,8 @@ app.get('/api/posts/:id/thread', async (c) => {
   }
 })
 
-// Step 1 — POST /api/posts/:id/replies/prepare
-app.post('/api/posts/:id/replies/prepare', async (c) => {
+// Step 1 — POST /api/posts/:id/replies/prepare (protected)
+app.post('/api/posts/:id/replies/prepare', requireAuth, async (c) => {
   try {
     const postId = c.req.param('id')
     const { filename, contentType } = await c.req.json()
@@ -1377,8 +1379,8 @@ app.post('/api/posts/:id/replies/prepare', async (c) => {
   }
 })
 
-// Step 3 — POST /api/posts/:id/replies/commit
-app.post('/api/posts/:id/replies/commit', async (c) => {
+// Step 3 — POST /api/posts/:id/replies/commit (protected)
+app.post('/api/posts/:id/replies/commit', requireAuth, async (c) => {
   const postId = c.req.param('id')
   
   try {
@@ -1571,8 +1573,8 @@ app.get('/api/search', async (c) => {
   }
 })
 
-// DELETE /api/posts/:id - delete post
-app.delete('/api/posts/:id', async (c) => {
+// DELETE /api/posts/:id - delete post (protected)
+app.delete('/api/posts/:id', requireAuth, async (c) => {
   try {
     const postId = c.req.param('id')
     const userId = c.get('user')?.id || ''
@@ -1627,8 +1629,8 @@ app.delete('/api/posts/:id', async (c) => {
   }
 })
 
-// POST /api/posts/:id/report - report post
-app.post('/api/posts/:id/report', async (c) => {
+// POST /api/posts/:id/report - report post (protected)
+app.post('/api/posts/:id/report', requireAuth, async (c) => {
   try {
     const postId = c.req.param('id')
     const userId = c.get('user')?.id || ''
@@ -1693,8 +1695,8 @@ app.post('/api/posts/:id/report', async (c) => {
   }
 })
 
-// GET /api/notifications - fetch notifications
-app.get('/api/notifications', async (c) => {
+// GET /api/notifications - fetch notifications (protected)
+app.get('/api/notifications', requireAuth, async (c) => {
   try {
     const userId = c.get('user')?.id || ''
     
@@ -1756,8 +1758,8 @@ app.get('/api/notifications', async (c) => {
   }
 })
 
-// POST /api/notifications/read-all - mark all notifications as read
-app.post('/api/notifications/read-all', async (c) => {
+// POST /api/notifications/read-all - mark all notifications as read (protected)
+app.post('/api/notifications/read-all', requireAuth, async (c) => {
   try {
     const userId = c.get('user')?.id || ''
     

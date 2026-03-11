@@ -2,6 +2,8 @@ export interface LeftNavProps {
   activeItem?: string
   unreadCount?: number
   onNavigate?: (item: string) => void
+  onSignIn?: () => void
+  onSignUp?: () => void
   currentUser?: {
     id: string
     username: string
@@ -33,62 +35,82 @@ export class LeftNav {
     const logo = document.createElement('div')
     logo.className = 'nav-logo'
     logo.innerHTML = `
-      <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 2rem;">
+      <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 2rem; cursor: pointer;">
         <span style="font-size: 1.5rem;">🌿</span>
         <span style="font-size: 1.25rem; font-weight: 600; color: var(--accent);">Flaxia</span>
       </div>
     `
+    logo.addEventListener('click', () => {
+      this.props.onNavigate?.('home')
+    })
 
-    // Navigation items
+    // Navigation items - different for guests vs logged-in users
     const navItems = document.createElement('div')
     navItems.className = 'nav-items'
     
-    const items = [
-      { id: 'home', label: 'Home', icon: '🏠' },
-      { id: 'explore', label: 'Explore', icon: '🔍' },
-      { id: 'trending', label: 'Trending', icon: '📈' },
-      { id: 'notifications', label: 'Notifications', icon: '🔔' },
-      { id: 'profile', label: 'Profile', icon: '👤' }
-    ]
+    if (this.props.currentUser) {
+      // Full navigation for logged-in users
+      const items = [
+        { id: 'home', label: 'Home', icon: '🏠' },
+        { id: 'explore', label: 'Explore', icon: '🔍' },
+        { id: 'trending', label: 'Trending', icon: '📈' },
+        { id: 'notifications', label: 'Notifications', icon: '🔔' },
+        { id: 'profile', label: 'Profile', icon: '👤' }
+      ]
 
-    items.forEach(item => {
-      const navItem = document.createElement('button')
-      navItem.className = `nav-item ${this.activeItem === item.id ? 'nav-item--active' : ''}`
-      navItem.setAttribute('data-nav-id', item.id)
+      items.forEach(item => {
+        const navItem = document.createElement('button')
+        navItem.className = `nav-item ${this.activeItem === item.id ? 'nav-item--active' : ''}`
+        navItem.setAttribute('data-nav-id', item.id)
 
-      // Base content
-      let itemContent = `<span style="margin-right: 0.75rem;">${item.icon}</span><span>${item.label}</span>`
+        // Base content
+        let itemContent = `<span style="margin-right: 0.75rem;">${item.icon}</span><span>${item.label}</span>`
 
-      // Add badge for notifications
-      if (item.id === 'notifications' && this.props.unreadCount && this.props.unreadCount > 0) {
-        itemContent += `<span class="nav-badge" style="
-          margin-left: auto;
-          background: var(--accent);
-          color: #000;
-          font-family: monospace;
-          font-size: 12px;
-          padding: 2px 8px;
-          border-radius: 9999px;
-          min-width: 20px;
-          text-align: center;
-        ">${this.props.unreadCount}</span>`
-      }
+        // Add badge for notifications
+        if (item.id === 'notifications' && this.props.unreadCount && this.props.unreadCount > 0) {
+          itemContent += `<span class="nav-badge" style="
+            margin-left: auto;
+            background: var(--accent);
+            color: #000;
+            font-family: monospace;
+            font-size: 12px;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            min-width: 20px;
+            text-align: center;
+          ">${this.props.unreadCount}</span>`
+        }
 
-      navItem.innerHTML = itemContent
-      navItems.appendChild(navItem)
-    })
+        navItem.innerHTML = itemContent
+        navItems.appendChild(navItem)
+      })
+    } else {
+      // Simplified navigation for guests
+      const items = [
+        { id: 'home', label: 'Home', icon: '🏠' },
+        { id: 'explore', label: 'Explore', icon: '🔍' }
+      ]
 
-    // Post button
-    const postButton = document.createElement('button')
-    postButton.className = 'nav-post-button'
-    postButton.innerHTML = 'Post'
+      items.forEach(item => {
+        const navItem = document.createElement('button')
+        navItem.className = `nav-item ${this.activeItem === item.id ? 'nav-item--active' : ''}`
+        navItem.setAttribute('data-nav-id', item.id)
+        navItem.innerHTML = `<span style="margin-right: 0.75rem;">${item.icon}</span><span>${item.label}</span>`
+        navItems.appendChild(navItem)
+      })
+    }
 
     nav.appendChild(logo)
     nav.appendChild(navItems)
-    nav.appendChild(postButton)
 
-    // Add user area at the bottom if current user is available
     if (this.props.currentUser) {
+      // Post button for logged-in users
+      const postButton = document.createElement('button')
+      postButton.className = 'nav-post-button'
+      postButton.innerHTML = 'Post'
+      nav.appendChild(postButton)
+
+      // Add user area at the bottom
       this.userAreaElement = this.createUserArea()
       nav.appendChild(this.userAreaElement)
       
@@ -96,6 +118,72 @@ export class LeftNav {
       if (window.innerWidth <= 768) {
         this.userAreaElement.style.display = 'none'
       }
+    } else {
+      // Sign in and Sign up buttons for guests
+      const authButtons = document.createElement('div')
+      authButtons.className = 'nav-auth-buttons'
+      authButtons.style.cssText = `
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        margin-top: 1rem;
+      `
+
+      // Sign in button
+      const signInButton = document.createElement('button')
+      signInButton.className = 'nav-signin-button'
+      signInButton.textContent = 'Sign in'
+      signInButton.style.cssText = `
+        padding: 0.75rem 1.5rem;
+        background: var(--text-primary);
+        color: var(--bg-primary);
+        border: none;
+        border-radius: 9999px;
+        cursor: pointer;
+        font-size: 0.875rem;
+        font-weight: 600;
+        transition: opacity 0.2s;
+      `
+      signInButton.addEventListener('mouseenter', () => {
+        signInButton.style.opacity = '0.8'
+      })
+      signInButton.addEventListener('mouseleave', () => {
+        signInButton.style.opacity = '1'
+      })
+      signInButton.addEventListener('click', () => {
+        this.props.onSignIn?.()
+      })
+
+      // Sign up button
+      const signUpButton = document.createElement('button')
+      signUpButton.className = 'nav-signup-button'
+      signUpButton.textContent = 'Sign up'
+      signUpButton.style.cssText = `
+        padding: 0.75rem 1.5rem;
+        background: transparent;
+        color: var(--accent);
+        border: 1px solid var(--accent);
+        border-radius: 9999px;
+        cursor: pointer;
+        font-size: 0.875rem;
+        font-weight: 600;
+        transition: all 0.2s;
+      `
+      signUpButton.addEventListener('mouseenter', () => {
+        signUpButton.style.background = 'var(--accent)'
+        signUpButton.style.color = '#000'
+      })
+      signUpButton.addEventListener('mouseleave', () => {
+        signUpButton.style.background = 'transparent'
+        signUpButton.style.color = 'var(--accent)'
+      })
+      signUpButton.addEventListener('click', () => {
+        this.props.onSignUp?.()
+      })
+
+      authButtons.appendChild(signInButton)
+      authButtons.appendChild(signUpButton)
+      nav.appendChild(authButtons)
     }
 
     return nav
@@ -451,7 +539,66 @@ export function updateLeftNavUser(leftNav: LeftNav, currentUser: {
     existingUserArea.remove()
   }
   
-    // Add new user area if user is available
+  // Remove existing auth buttons if present (guest state)
+  const existingAuthButtons = leftNav.getElement().querySelector('.nav-auth-buttons')
+  if (existingAuthButtons) {
+    existingAuthButtons.remove()
+  }
+  
+  // Remove existing post button
+  const existingPostButton = leftNav.getElement().querySelector('.nav-post-button')
+  if (existingPostButton) {
+    existingPostButton.remove()
+  }
+  
+  // Rebuild navigation items
+  const navItems = leftNav.getElement().querySelector('.nav-items')
+  if (navItems) {
+    navItems.innerHTML = ''
+    
+    if (currentUser) {
+      // Full navigation for logged-in users
+      const items = [
+        { id: 'home', label: 'Home', icon: '🏠' },
+        { id: 'explore', label: 'Explore', icon: '🔍' },
+        { id: 'trending', label: 'Trending', icon: '📈' },
+        { id: 'notifications', label: 'Notifications', icon: '🔔' },
+        { id: 'profile', label: 'Profile', icon: '👤' }
+      ]
+
+      items.forEach(item => {
+        const navItem = document.createElement('button')
+        navItem.className = `nav-item ${(leftNav as any).activeItem === item.id ? 'nav-item--active' : ''}`
+        navItem.setAttribute('data-nav-id', item.id)
+        navItem.innerHTML = `<span style="margin-right: 0.75rem;">${item.icon}</span><span>${item.label}</span>`
+        navItem.addEventListener('click', () => {
+          (leftNav as any).setActiveItem(item.id)
+          ;(leftNav as any).props.onNavigate?.(item.id)
+        })
+        navItems.appendChild(navItem)
+      })
+    } else {
+      // Simplified navigation for guests
+      const items = [
+        { id: 'home', label: 'Home', icon: '🏠' },
+        { id: 'explore', label: 'Explore', icon: '🔍' }
+      ]
+
+      items.forEach(item => {
+        const navItem = document.createElement('button')
+        navItem.className = `nav-item ${(leftNav as any).activeItem === item.id ? 'nav-item--active' : ''}`
+        navItem.setAttribute('data-nav-id', item.id)
+        navItem.innerHTML = `<span style="margin-right: 0.75rem;">${item.icon}</span><span>${item.label}</span>`
+        navItem.addEventListener('click', () => {
+          (leftNav as any).setActiveItem(item.id)
+          ;(leftNav as any).props.onNavigate?.(item.id)
+        })
+        navItems.appendChild(navItem)
+      })
+    }
+  }
+  
+  // Add new user area if user is available
   if (currentUser) {
     const userAreaElement = (leftNav as any).createUserArea()
     leftNav.getElement().appendChild(userAreaElement)
@@ -467,5 +614,80 @@ export function updateLeftNavUser(leftNav: LeftNav, currentUser: {
       e.stopPropagation()
       ;(leftNav as any).togglePopupMenu()
     })
+    
+    // Add post button
+    const postButton = document.createElement('button')
+    postButton.className = 'nav-post-button'
+    postButton.innerHTML = 'Post'
+    postButton.addEventListener('click', () => {
+      ;(leftNav as any).props.onNavigate?.('post')
+    })
+    
+    // Insert post button before user area
+    leftNav.getElement().insertBefore(postButton, userAreaElement)
+  } else {
+    // Add auth buttons for guests
+    const authButtons = document.createElement('div')
+    authButtons.className = 'nav-auth-buttons'
+    authButtons.style.cssText = `
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin-top: 1rem;
+    `
+
+    const signInButton = document.createElement('button')
+    signInButton.className = 'nav-signin-button'
+    signInButton.textContent = 'Sign in'
+    signInButton.style.cssText = `
+      padding: 0.75rem 1.5rem;
+      background: var(--text-primary);
+      color: var(--bg-primary);
+      border: none;
+      border-radius: 9999px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 600;
+      transition: opacity 0.2s;
+    `
+    signInButton.addEventListener('mouseenter', () => {
+      signInButton.style.opacity = '0.8'
+    })
+    signInButton.addEventListener('mouseleave', () => {
+      signInButton.style.opacity = '1'
+    })
+    signInButton.addEventListener('click', () => {
+      ;(leftNav as any).props.onSignIn?.()
+    })
+
+    const signUpButton = document.createElement('button')
+    signUpButton.className = 'nav-signup-button'
+    signUpButton.textContent = 'Sign up'
+    signUpButton.style.cssText = `
+      padding: 0.75rem 1.5rem;
+      background: transparent;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      border-radius: 9999px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 600;
+      transition: all 0.2s;
+    `
+    signUpButton.addEventListener('mouseenter', () => {
+      signUpButton.style.background = 'var(--accent)'
+      signUpButton.style.color = '#000'
+    })
+    signUpButton.addEventListener('mouseleave', () => {
+      signUpButton.style.background = 'transparent'
+      signUpButton.style.color = 'var(--accent)'
+    })
+    signUpButton.addEventListener('click', () => {
+      ;(leftNav as any).props.onSignUp?.()
+    })
+
+    authButtons.appendChild(signInButton)
+    authButtons.appendChild(signUpButton)
+    leftNav.getElement().appendChild(authButtons)
   }
 }

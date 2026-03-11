@@ -5,6 +5,7 @@ import { createPostStage, updatePostStage } from './PostStage.js'
 import { createPostActions } from './PostActions.js'
 import { createReplyComposer, ReplyComposer } from './ReplyComposer.js'
 import { useSandboxBridge } from '../lib/sandbox-bridge.js'
+import { showSignInPrompt } from './SignInPrompt.js'
 
 export class PostCard {
   private element: HTMLElement
@@ -170,6 +171,16 @@ export class PostCard {
   }
 
   private async handleFreshToggle(): Promise<void> {
+    // Check if user is logged in
+    if (!this.props.currentUser) {
+      showSignInPrompt(
+        'fresh',
+        () => window.location.href = '/login',
+        () => window.location.href = '/register'
+      )
+      return
+    }
+
     const previousFreshed = this.isFreshed
     const previousCount = this.freshCount
 
@@ -207,6 +218,16 @@ export class PostCard {
   }
 
   private handleReplyToggle(): void {
+    // Check if user is logged in
+    if (!this.props.currentUser) {
+      showSignInPrompt(
+        'reply',
+        () => window.location.href = '/login',
+        () => window.location.href = '/register'
+      )
+      return
+    }
+
     // Emit custom event for thread view toggle (legacy, now handled inline)
     const event = new CustomEvent('replyToggle', {
       detail: { postId: this.props.post.id }
@@ -403,9 +424,18 @@ export class PostCard {
       })
       reportItem.addEventListener('click', (e) => {
         e.stopPropagation()
-        this.showReportModal()
         dropdown.remove()
         this.menuDropdown = undefined
+        // Check if user is logged in before showing report modal
+        if (!this.props.currentUser) {
+          showSignInPrompt(
+            'report',
+            () => window.location.href = '/login',
+            () => window.location.href = '/register'
+          )
+          return
+        }
+        this.showReportModal()
       })
       dropdown.appendChild(reportItem)
     }

@@ -101,20 +101,55 @@ document.addEventListener('DOMContentLoaded', async () => {
       return { notifications: [], unread_count: 0 }
     }
 
-    // Auth guard - redirect to login if not authenticated
+    // Auth guard - redirect to login if not authenticated (only for protected routes)
     const requireAuth = async () => {
-      // Skip auth check for public routes by checking current URL
+      const isAuthenticated = await checkAuth()
+      
+      // Check if current route is public (accessible to guests)
       const path = window.location.pathname
       const cleanPath = path.replace(/\/$/, '')
-      if (cleanPath === '/terms' || cleanPath === '/privacy') {
+      const urlParams = new URLSearchParams(window.location.search)
+      
+      // Public routes that don't require authentication:
+      // - / (home/timeline)
+      // - /explore (with or without tag parameter)
+      // - /users/:username (profile pages)
+      // - /thread/:id (thread pages)
+      // - /terms, /privacy (legal pages)
+      // - /login, /register (auth pages)
+      const isPublicRoute = 
+        cleanPath === '' || 
+        cleanPath === '/' ||
+        cleanPath === '/explore' ||
+        cleanPath === '/login' ||
+        cleanPath === '/register' ||
+        cleanPath === '/terms' ||
+        cleanPath === '/privacy' ||
+        cleanPath.startsWith('/users/') ||
+        cleanPath.startsWith('/thread/')
+      
+      // Allow public routes for everyone
+      if (isPublicRoute) {
         return true
       }
-      const isAuthenticated = await checkAuth()
+      
+      // For /notifications, redirect to home if not authenticated
+      if (cleanPath === '/notifications') {
+        if (!isAuthenticated) {
+          window.history.pushState({}, '', '/')
+          navigateTo('timeline')
+          return false
+        }
+        return true
+      }
+      
+      // For all other protected routes, redirect to login if not authenticated
       if (!isAuthenticated) {
         window.history.pushState({}, '', '/login')
         navigateTo('login')
         return false
       }
+      
       return true
     }
 
@@ -149,7 +184,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return { view: 'privacy' as const, postId: null, username: null, tag: null }
       }
       
-      // Explore route
+      // Explore route - public, no auth required
       const exploreMatch = cleanPath.match(/^\/explore$/)
       if (exploreMatch) {
         const urlParams = new URLSearchParams(window.location.search)
@@ -158,14 +193,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         return { view: 'explore' as const, postId: null, username: null, tag }
       }
       
-      // Thread route (check before profile)
+      // Thread route (check before profile) - public, no auth required
       const threadMatch = cleanPath.match(/^\/thread\/([^\/]+)$/)
       if (threadMatch) {
         console.log('Thread route detected, postId:', threadMatch[1])
         return { view: 'thread' as const, postId: threadMatch[1], username: null, tag: null }
       }
       
-      // Profile route - matches /users/:username
+      // Profile route - matches /users/:username - public, no auth required
       const profileMatch = cleanPath.match(/^\/users\/([^\/]+)$/)
       console.log('Profile match test:', profileMatch, 'cleanPath:', cleanPath)
       if (profileMatch && profileMatch[1]) {
@@ -173,13 +208,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         return { view: 'profile' as const, postId: null, username: profileMatch[1], tag: null }
       }
       
-      // Notifications route
+      // Notifications route - requires auth
       if (cleanPath === '/notifications') {
         console.log('Notifications route detected')
         return { view: 'notifications' as const, postId: null, username: null, tag: null }
       }
       
-      // Default timeline (only for root path)
+      // Default timeline (only for root path) - public, no auth required
       if (cleanPath === '' || cleanPath === '/') {
         console.log('Timeline route detected')
         return { view: 'timeline' as const, postId: null, username: null, tag: null }
@@ -341,7 +376,25 @@ document.addEventListener('DOMContentLoaded', async () => {
               }
               window.history.pushState({}, '', `/users/${currentUser.username}`)
               navigateTo('profile', undefined, currentUser.username)
+            } else if (item === 'post') {
+              // For guests, clicking Post should show sign-in prompt
+              if (!currentUser) {
+                const { showSignInPrompt } = await import('./components/SignInPrompt.js')
+                showSignInPrompt(
+                  'post',
+                  () => window.location.href = '/login',
+                  () => window.location.href = '/register'
+                )
+              }
             }
+          },
+          onSignIn: () => {
+            window.history.pushState({}, '', '/login')
+            navigateTo('login')
+          },
+          onSignUp: () => {
+            window.history.pushState({}, '', '/register')
+            navigateTo('register')
           }
         })
         
@@ -423,7 +476,25 @@ document.addEventListener('DOMContentLoaded', async () => {
               }
               window.history.pushState({}, '', `/users/${currentUser.username}`)
               navigateTo('profile', undefined, currentUser.username)
+            } else if (item === 'post') {
+              // For guests, clicking Post should show sign-in prompt
+              if (!currentUser) {
+                const { showSignInPrompt } = await import('./components/SignInPrompt.js')
+                showSignInPrompt(
+                  'post',
+                  () => window.location.href = '/login',
+                  () => window.location.href = '/register'
+                )
+              }
             }
+          },
+          onSignIn: () => {
+            window.history.pushState({}, '', '/login')
+            navigateTo('login')
+          },
+          onSignUp: () => {
+            window.history.pushState({}, '', '/register')
+            navigateTo('register')
           }
         })
         
@@ -503,7 +574,25 @@ document.addEventListener('DOMContentLoaded', async () => {
               }
               window.history.pushState({}, '', `/users/${currentUser.username}`)
               navigateTo('profile', undefined, currentUser.username)
+            } else if (item === 'post') {
+              // For guests, clicking Post should show sign-in prompt
+              if (!currentUser) {
+                const { showSignInPrompt } = await import('./components/SignInPrompt.js')
+                showSignInPrompt(
+                  'post',
+                  () => window.location.href = '/login',
+                  () => window.location.href = '/register'
+                )
+              }
             }
+          },
+          onSignIn: () => {
+            window.history.pushState({}, '', '/login')
+            navigateTo('login')
+          },
+          onSignUp: () => {
+            window.history.pushState({}, '', '/register')
+            navigateTo('register')
           }
         })
         
@@ -612,7 +701,25 @@ document.addEventListener('DOMContentLoaded', async () => {
               }
               window.history.pushState({}, '', `/users/${currentUser.username}`)
               navigateTo('profile', undefined, currentUser.username)
+            } else if (item === 'post') {
+              // For guests, clicking Post should show sign-in prompt
+              if (!currentUser) {
+                const { showSignInPrompt } = await import('./components/SignInPrompt.js')
+                showSignInPrompt(
+                  'post',
+                  () => window.location.href = '/login',
+                  () => window.location.href = '/register'
+                )
+              }
             }
+          },
+          onSignIn: () => {
+            window.history.pushState({}, '', '/login')
+            navigateTo('login')
+          },
+          onSignUp: () => {
+            window.history.pushState({}, '', '/register')
+            navigateTo('register')
           }
         })
         

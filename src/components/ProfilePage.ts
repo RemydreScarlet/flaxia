@@ -1,5 +1,6 @@
 import { createEditProfileModal } from './EditProfileModal.js'
 import { processText, renderMathElements, linkifyHashtags, linkifyUrls } from './PostText.js'
+import { showSignInPrompt } from './SignInPrompt.js'
 
 interface ProfilePageProps {
   username: string
@@ -317,8 +318,12 @@ export function createProfilePage({ username, currentUser }: ProfilePageProps) {
 
   followButton.addEventListener('click', async () => {
     if (!currentUser) {
-      // Redirect to login if not authenticated
-      window.location.href = '/login'
+      // Show sign-in prompt for guests
+      showSignInPrompt(
+        'follow',
+        () => window.location.href = '/login',
+        () => window.location.href = '/register'
+      )
       return
     }
 

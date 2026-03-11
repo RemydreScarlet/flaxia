@@ -1,6 +1,7 @@
 import { Post, TimelineProps, TimelineState } from '../types/post.js'
 import { createPostCard } from './PostCard.js'
 import { createPostComposer, PostComposer } from './PostComposer.js'
+import { showSignInPrompt, SignInPromptAction } from './SignInPrompt.js'
 
 export class Timeline {
   private element: HTMLElement
@@ -33,12 +34,14 @@ export class Timeline {
     const feedToggle = this.createFeedToggle()
     container.appendChild(feedToggle)
 
-    // Post composer pinned directly below tabs
-    this.composer = createPostComposer({
-      onPostCreated: (post) => this.handleNewPost(post),
-      currentUser: this.props.currentUser
-    })
-    container.appendChild(this.composer.getElement())
+    // Post composer pinned directly below tabs (only for logged-in users)
+    if (this.props.currentUser) {
+      this.composer = createPostComposer({
+        onPostCreated: (post) => this.handleNewPost(post),
+        currentUser: this.props.currentUser
+      })
+      container.appendChild(this.composer.getElement())
+    }
 
     // Hashtag input (hidden by default)
     const hashtagInput = this.createHashtagInput()
@@ -59,12 +62,16 @@ export class Timeline {
     const container = document.createElement('div')
     container.className = 'feed-toggle'
 
-    const followingBtn = document.createElement('button')
-    followingBtn.className = 'feed-toggle-btn'
-    followingBtn.textContent = 'Following'
-    followingBtn.dataset.mode = 'following'
-    if (this.state.mode === 'following') {
-      followingBtn.classList.add('active')
+    // Only show Following tab for logged-in users
+    if (this.props.currentUser) {
+      const followingBtn = document.createElement('button')
+      followingBtn.className = 'feed-toggle-btn'
+      followingBtn.textContent = 'Following'
+      followingBtn.dataset.mode = 'following'
+      if (this.state.mode === 'following') {
+        followingBtn.classList.add('active')
+      }
+      container.appendChild(followingBtn)
     }
 
     const forYouBtn = document.createElement('button')
@@ -80,7 +87,6 @@ export class Timeline {
     reloadBtn.innerHTML = '↑ Reload'
     reloadBtn.title = 'Reload posts'
 
-    container.appendChild(followingBtn)
     container.appendChild(forYouBtn)
     container.appendChild(reloadBtn)
 
@@ -448,7 +454,9 @@ export class Timeline {
       this.intersectionObserver = null
     }
     
-    this.composer.destroy()
+    if (this.composer) {
+      this.composer.destroy()
+    }
     this.postCards.forEach(card => card.destroy())
     this.postCards.clear()
     this.element.remove()
