@@ -376,16 +376,6 @@ document.addEventListener('DOMContentLoaded', async () => {
               }
               window.history.pushState({}, '', `/users/${currentUser.username}`)
               navigateTo('profile', undefined, currentUser.username)
-            } else if (item === 'post') {
-              // For guests, clicking Post should show sign-in prompt
-              if (!currentUser) {
-                const { showSignInPrompt } = await import('./components/SignInPrompt.js')
-                showSignInPrompt(
-                  'post',
-                  () => window.location.href = '/login',
-                  () => window.location.href = '/register'
-                )
-              }
             }
           },
           onSignIn: () => {
@@ -476,16 +466,6 @@ document.addEventListener('DOMContentLoaded', async () => {
               }
               window.history.pushState({}, '', `/users/${currentUser.username}`)
               navigateTo('profile', undefined, currentUser.username)
-            } else if (item === 'post') {
-              // For guests, clicking Post should show sign-in prompt
-              if (!currentUser) {
-                const { showSignInPrompt } = await import('./components/SignInPrompt.js')
-                showSignInPrompt(
-                  'post',
-                  () => window.location.href = '/login',
-                  () => window.location.href = '/register'
-                )
-              }
             }
           },
           onSignIn: () => {
@@ -574,16 +554,6 @@ document.addEventListener('DOMContentLoaded', async () => {
               }
               window.history.pushState({}, '', `/users/${currentUser.username}`)
               navigateTo('profile', undefined, currentUser.username)
-            } else if (item === 'post') {
-              // For guests, clicking Post should show sign-in prompt
-              if (!currentUser) {
-                const { showSignInPrompt } = await import('./components/SignInPrompt.js')
-                showSignInPrompt(
-                  'post',
-                  () => window.location.href = '/login',
-                  () => window.location.href = '/register'
-                )
-              }
             }
           },
           onSignIn: () => {
@@ -702,16 +672,6 @@ document.addEventListener('DOMContentLoaded', async () => {
               }
               window.history.pushState({}, '', `/users/${currentUser.username}`)
               navigateTo('profile', undefined, currentUser.username)
-            } else if (item === 'post') {
-              // For guests, clicking Post should show sign-in prompt
-              if (!currentUser) {
-                const { showSignInPrompt } = await import('./components/SignInPrompt.js')
-                showSignInPrompt(
-                  'post',
-                  () => window.location.href = '/login',
-                  () => window.location.href = '/register'
-                )
-              }
             }
           },
           onSignIn: () => {

@@ -69,16 +69,6 @@ export class ThreadPage {
             window.history.pushState({}, '', `/users/${this.props.currentUser.username}`)
             window.location.reload()
           }
-        } else if (item === 'post') {
-          // For guests, clicking Post should show sign-in prompt
-          if (!this.props.currentUser) {
-            const { showSignInPrompt } = await import('./SignInPrompt.js')
-            showSignInPrompt(
-              'post',
-              () => window.location.href = '/login',
-              () => window.location.href = '/register'
-            )
-          }
         }
       },
       onSignIn: () => {
@@ -232,8 +222,7 @@ export class ThreadPage {
           border-right: none;
           max-width: 100%;
         }
-        .thread-page .nav-logo,
-        .thread-page .nav-post-button {
+        .thread-page .nav-logo {
           display: none;
         }
         .thread-page .nav-items {

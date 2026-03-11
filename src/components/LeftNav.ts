@@ -104,12 +104,6 @@ export class LeftNav {
     nav.appendChild(navItems)
 
     if (this.props.currentUser) {
-      // Post button for logged-in users
-      const postButton = document.createElement('button')
-      postButton.className = 'nav-post-button'
-      postButton.innerHTML = 'Post'
-      nav.appendChild(postButton)
-
       // Add user area at the bottom
       this.userAreaElement = this.createUserArea()
       nav.appendChild(this.userAreaElement)
@@ -202,14 +196,6 @@ export class LeftNav {
       })
     })
 
-    // Post button
-    const postButton = this.element.querySelector('.nav-post-button')
-    if (postButton) {
-      postButton.addEventListener('click', () => {
-        this.props.onNavigate?.('post')
-      })
-    }
-
     // User area click handler
     if (this.userAreaElement) {
       this.userAreaElement.addEventListener('click', (e) => {
@@ -256,37 +242,11 @@ export class LeftNav {
   }
 
   public setUnreadCount(count: number): void {
-    const notificationsItem = this.element.querySelector('[data-nav-id="notifications"]')
-    if (!notificationsItem) return
-
-    let badge = notificationsItem.querySelector('.nav-badge')
-
-    if (count > 0) {
-      if (!badge) {
-        badge = document.createElement('span')
-        badge.className = 'nav-badge'
-        badge.setAttribute('style', `
-          margin-left: auto;
-          background: var(--accent);
-          color: #000;
-          font-family: monospace;
-          font-size: 12px;
-          padding: 2px 8px;
-          border-radius: 9999px;
-          min-width: 20px;
-          text-align: center;
-        `)
-        notificationsItem.appendChild(badge)
-      }
-      badge.textContent = count.toString()
-    } else {
-      badge?.remove()
-    }
   }
 
   public destroy(): void {
+    // Clean up event listeners and remove element
     this.element.remove()
-    this.closePopupMenu()
   }
 
   private createUserArea(): HTMLElement {
@@ -545,12 +505,6 @@ export function updateLeftNavUser(leftNav: LeftNav, currentUser: {
     existingAuthButtons.remove()
   }
   
-  // Remove existing post button
-  const existingPostButton = leftNav.getElement().querySelector('.nav-post-button')
-  if (existingPostButton) {
-    existingPostButton.remove()
-  }
-  
   // Rebuild navigation items
   const navItems = leftNav.getElement().querySelector('.nav-items')
   if (navItems) {
@@ -614,17 +568,6 @@ export function updateLeftNavUser(leftNav: LeftNav, currentUser: {
       e.stopPropagation()
       ;(leftNav as any).togglePopupMenu()
     })
-    
-    // Add post button
-    const postButton = document.createElement('button')
-    postButton.className = 'nav-post-button'
-    postButton.innerHTML = 'Post'
-    postButton.addEventListener('click', () => {
-      ;(leftNav as any).props.onNavigate?.('post')
-    })
-    
-    // Insert post button before user area
-    leftNav.getElement().insertBefore(postButton, userAreaElement)
   } else {
     // Add auth buttons for guests
     const authButtons = document.createElement('div')
