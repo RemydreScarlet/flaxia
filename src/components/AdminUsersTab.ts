@@ -7,7 +7,7 @@ export interface AdminUser {
 }
 
 export interface AdminUsersTabProps {
-  onNavigateToTab: (tab: 'alerts' | 'hidden' | 'users') => void
+  onNavigateToTab: (tab: 'alerts' | 'hidden' | 'users' | 'ads') => void
   adminUsernames?: string[]
 }
 

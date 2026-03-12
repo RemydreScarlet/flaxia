@@ -13,7 +13,7 @@ export interface AdminAlert {
 }
 
 export interface AdminAlertsTabProps {
-  onNavigateToTab: (tab: 'alerts' | 'hidden' | 'users') => void
+  onNavigateToTab: (tab: 'alerts' | 'hidden' | 'users' | 'ads') => void
 }
 
 export function createAdminAlertsTab({ onNavigateToTab }: AdminAlertsTabProps) {

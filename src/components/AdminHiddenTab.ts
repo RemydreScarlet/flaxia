@@ -10,7 +10,7 @@ export interface HiddenPost {
 }
 
 export interface AdminHiddenTabProps {
-  onNavigateToTab: (tab: 'alerts' | 'hidden' | 'users') => void
+  onNavigateToTab: (tab: 'alerts' | 'hidden' | 'users' | 'ads') => void
 }
 
 export function createAdminHiddenTab({ onNavigateToTab }: AdminHiddenTabProps) {

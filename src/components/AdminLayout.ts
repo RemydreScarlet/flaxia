@@ -1,6 +1,6 @@
 export interface AdminLayoutProps {
-  activeTab: 'alerts' | 'hidden' | 'users'
-  onTabChange: (tab: 'alerts' | 'hidden' | 'users') => void
+  activeTab: 'alerts' | 'hidden' | 'users' | 'ads'
+  onTabChange: (tab: 'alerts' | 'hidden' | 'users' | 'ads') => void
 }
 
 export function createAdminLayout({ activeTab, onTabChange }: AdminLayoutProps) {
@@ -55,10 +55,11 @@ export function createAdminLayout({ activeTab, onTabChange }: AdminLayoutProps) 
       padding: 16px 0;
     `
 
-    const tabs: { id: 'alerts' | 'hidden' | 'users'; label: string }[] = [
+    const tabs: { id: 'alerts' | 'hidden' | 'users' | 'ads'; label: string }[] = [
       { id: 'alerts', label: 'Alerts' },
       { id: 'hidden', label: 'Hidden posts' },
-      { id: 'users', label: 'Users' }
+      { id: 'users', label: 'Users' },
+      { id: 'ads', label: 'Ads' }
     ]
 
     tabs.forEach(tab => {

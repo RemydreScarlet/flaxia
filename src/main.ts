@@ -13,6 +13,7 @@ import { createAdminLayout } from './components/AdminLayout.js'
 import { createAdminAlertsTab } from './components/AdminAlertsTab.js'
 import { createAdminHiddenTab } from './components/AdminHiddenTab.js'
 import { createAdminUsersTab } from './components/AdminUsersTab.js'
+import { createAdminAdsTab } from './components/AdminAdsTab.js'
 
 console.log('Flaxia initialized')
 
@@ -40,6 +41,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let adminAlertsTab: any = null
     let adminHiddenTab: any = null
     let adminUsersTab: any = null
+    let adminAdsTab: any = null
     let leftNavInstances: Set<any> = new Set()
     let currentUser: { username: string; id: string; display_name?: string; avatar_key?: string } | null = null
     let unreadNotificationCount = 0
@@ -388,7 +390,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           notificationsPage = null
         }
 
-        const onTabChange = async (tab: 'alerts' | 'hidden' | 'users') => {
+        const onTabChange = async (tab: 'alerts' | 'hidden' | 'users' | 'ads') => {
           currentAdminTab = tab
           window.history.pushState({}, '', `/admin/${tab}`)
           renderAdminTab(tab)
@@ -401,7 +403,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         app.appendChild(adminLayout.getElement())
 
-        const renderAdminTab = async (tab: 'alerts' | 'hidden' | 'users') => {
+        const renderAdminTab = async (tab: 'alerts' | 'hidden' | 'users' | 'ads') => {
           if (!adminLayout) return
 
           if (tab === 'alerts') {
@@ -437,6 +439,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             const usersElement = adminUsersTab.getElement()
             if (usersElement) {
               adminLayout.updateMainContent(usersElement)
+            }
+          } else if (tab === 'ads') {
+            adminAdsTab = createAdminAdsTab({
+              onNavigateToTab: onTabChange
+            })
+            const adsElement = adminAdsTab.getElement()
+            if (adsElement) {
+              adminLayout.updateMainContent(adsElement)
             }
           }
         }

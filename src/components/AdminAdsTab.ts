@@ -1,0 +1,760 @@
+export interface AdminAd {
+  id: string
+  title: string
+  body_text: string
+  click_url: string | null
+  payload_key: string | null
+  payload_type: 'zip' | 'swf' | 'gif' | 'image' | null
+  impressions: number
+  clicks: number
+  active: number
+  created_at: string
+  ctr?: number
+  avg_interaction_ms?: number
+}
+
+export interface AdminAdsTabProps {
+  onNavigateToTab: (tab: 'alerts' | 'hidden' | 'users' | 'ads') => void
+}
+
+export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
+  let element: HTMLElement
+  let ads: AdminAd[] = []
+  let everyN = 8
+  let modalOpen = false
+  let editingAd: AdminAd | null = null
+
+  // Create container immediately
+  element = document.createElement('div')
+  element.style.cssText = 'max-width: 1200px;'
+
+  const fetchAds = async () => {
+    try {
+      const response = await fetch('/api/admin/ads', { credentials: 'include' })
+      if (response.status === 403) {
+        return null
+      }
+      if (!response.ok) {
+        throw new Error('Failed to fetch ads')
+      }
+      const data = await response.json()
+      return (data as { ads: AdminAd[] }).ads || []
+    } catch (error) {
+      console.error('Fetch ads error:', error)
+      return []
+    }
+  }
+
+  const fetchConfig = async () => {
+    try {
+      const response = await fetch('/api/admin/ads/config', { credentials: 'include' })
+      if (response.status === 403) {
+        return 8
+      }
+      if (!response.ok) {
+        throw new Error('Failed to fetch config')
+      }
+      const data = await response.json()
+      return (data as { every_n: number }).every_n || 8
+    } catch (error) {
+      console.error('Fetch config error:', error)
+      return 8
+    }
+  }
+
+  const updateAdActive = async (adId: string, active: boolean) => {
+    try {
+      const response = await fetch(`/api/admin/ads/${adId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: active ? 1 : 0 }),
+        credentials: 'include'
+      })
+      if (!response.ok) {
+        throw new Error('Failed to update ad')
+      }
+      return true
+    } catch (error) {
+      console.error('Update ad error:', error)
+      return false
+    }
+  }
+
+  const deleteAd = async (adId: string) => {
+    try {
+      const response = await fetch(`/api/admin/ads/${adId}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      })
+      if (!response.ok) {
+        throw new Error('Failed to delete ad')
+      }
+      return true
+    } catch (error) {
+      console.error('Delete ad error:', error)
+      return false
+    }
+  }
+
+  const saveConfig = async (newEveryN: number) => {
+    try {
+      const response = await fetch('/api/admin/ads/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ every_n: newEveryN }),
+        credentials: 'include'
+      })
+      if (!response.ok) {
+        throw new Error('Failed to save config')
+      }
+      return true
+    } catch (error) {
+      console.error('Save config error:', error)
+      return false
+    }
+  }
+
+  const formatDate = (dateStr: string): string => {
+    const date = new Date(dateStr)
+    return date.toLocaleDateString()
+  }
+
+  const getFormatLabel = (payloadType: string | null): string => {
+    switch (payloadType) {
+      case 'zip': return 'ZIP'
+      case 'swf': return 'SWF'
+      case 'gif': return 'GIF'
+      case 'image': return 'Image'
+      default: return '—'
+    }
+  }
+
+  const createSettingsSection = () => {
+    const section = document.createElement('div')
+    section.style.cssText = `
+      background: #1e293b;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 24px;
+    `
+
+    const title = document.createElement('h3')
+    title.textContent = 'Global settings'
+    title.style.cssText = `
+      color: #f1f5f9;
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    `
+    section.appendChild(title)
+
+    const form = document.createElement('div')
+    form.style.cssText = 'display: flex; align-items: center; gap: 12px;'
+
+    const label = document.createElement('label')
+    label.textContent = 'every_n:'
+    label.style.cssText = 'color: #94a3b8; font-size: 14px;'
+    form.appendChild(label)
+
+    const input = document.createElement('input')
+    input.type = 'number'
+    input.min = '1'
+    input.value = everyN.toString()
+    input.style.cssText = `
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #f1f5f9;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 14px;
+      width: 80px;
+    `
+
+    const saveBtn = document.createElement('button')
+    saveBtn.textContent = 'Save'
+    saveBtn.style.cssText = `
+      background: #22c55e;
+      color: #f1f5f9;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.2s;
+    `
+    saveBtn.addEventListener('click', async () => {
+      const newEveryN = parseInt(input.value)
+      if (newEveryN >= 1) {
+        const success = await saveConfig(newEveryN)
+        if (success) {
+          everyN = newEveryN
+          showMessage('Settings saved successfully', 'success')
+        } else {
+          showMessage('Failed to save settings', 'error')
+        }
+      } else {
+        showMessage('every_n must be at least 1', 'error')
+      }
+    })
+
+    form.appendChild(input)
+    form.appendChild(saveBtn)
+    section.appendChild(form)
+
+    const messageDiv = document.createElement('div')
+    messageDiv.id = 'config-message'
+    messageDiv.style.cssText = `
+      margin-top: 12px;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 14px;
+      display: none;
+    `
+    section.appendChild(messageDiv)
+
+    const showMessage = (text: string, type: 'success' | 'error') => {
+      messageDiv.textContent = text
+      messageDiv.style.display = 'block'
+      messageDiv.style.background = type === 'success' ? '#065f46' : '#dc2626'
+      messageDiv.style.color = '#f1f5f9'
+      setTimeout(() => {
+        messageDiv.style.display = 'none'
+      }, 3000)
+    }
+
+    return section
+  }
+
+  const createAdsTable = () => {
+    const section = document.createElement('div')
+    section.style.cssText = 'margin-bottom: 24px;'
+
+    const title = document.createElement('h3')
+    title.textContent = 'Ad list'
+    title.style.cssText = `
+      color: #f1f5f9;
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    `
+    section.appendChild(title)
+
+    const newAdBtn = document.createElement('button')
+    newAdBtn.textContent = '+ New Ad'
+    newAdBtn.style.cssText = `
+      background: #22c55e;
+      color: #f1f5f9;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: background 0.2s;
+    `
+    newAdBtn.addEventListener('click', () => {
+      editingAd = null
+      modalOpen = true
+      render()
+    })
+
+    title.appendChild(newAdBtn)
+
+    if (ads.length === 0) {
+      const empty = document.createElement('div')
+      empty.textContent = 'No ads created yet'
+      empty.style.cssText = 'color: #64748b; font-size: 14px; padding: 24px; text-align: center; background: #1e293b; border-radius: 8px;'
+      section.appendChild(empty)
+      return section
+    }
+
+    const table = document.createElement('div')
+    table.style.cssText = `
+      background: #1e293b;
+      border-radius: 8px;
+      overflow: hidden;
+    `
+
+    // Header
+    const header = document.createElement('div')
+    header.style.cssText = `
+      display: grid;
+      grid-template-columns: 2fr 1fr 80px 100px 100px 80px 120px;
+      gap: 1px;
+      background: #0f172a;
+      padding: 12px 16px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #94a3b8;
+    `
+    header.innerHTML = `
+      <div>Title</div>
+      <div>Format</div>
+      <div>Active</div>
+      <div>Impressions</div>
+      <div>Clicks</div>
+      <div>CTR</div>
+      <div>Actions</div>
+    `
+    table.appendChild(header)
+
+    // Rows
+    ads.forEach(ad => {
+      const row = document.createElement('div')
+      row.style.cssText = `
+        display: grid;
+        grid-template-columns: 2fr 1fr 80px 100px 100px 80px 120px;
+        gap: 1px;
+        background: #1e293b;
+        padding: 12px 16px;
+        font-size: 14px;
+        align-items: center;
+      `
+
+      const title = document.createElement('div')
+      title.textContent = ad.title
+      title.style.cssText = 'color: #f1f5f9; font-weight: 500; overflow: hidden; text-overflow: ellipsis;'
+      title.title = ad.title
+      row.appendChild(title)
+
+      const format = document.createElement('div')
+      format.textContent = getFormatLabel(ad.payload_type)
+      format.style.cssText = 'color: #94a3b8;'
+      row.appendChild(format)
+
+      const active = document.createElement('button')
+      active.textContent = ad.active ? '✓' : '✗'
+      active.style.cssText = `
+        background: ${ad.active ? '#065f46' : '#dc2626'};
+        color: #f1f5f9;
+        border: none;
+        padding: 4px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+        transition: background 0.2s;
+      `
+      active.addEventListener('click', async () => {
+        const newActive = !ad.active
+        const success = await updateAdActive(ad.id, newActive)
+        if (success) {
+          ad.active = newActive ? 1 : 0
+          active.textContent = newActive ? '✓' : '✗'
+          active.style.background = newActive ? '#065f46' : '#dc2626'
+        }
+      })
+      row.appendChild(active)
+
+      const impressions = document.createElement('div')
+      impressions.textContent = ad.impressions.toString()
+      impressions.style.cssText = 'color: #94a3b8;'
+      row.appendChild(impressions)
+
+      const clicks = document.createElement('div')
+      clicks.textContent = ad.clicks.toString()
+      clicks.style.cssText = 'color: #94a3b8;'
+      row.appendChild(clicks)
+
+      const ctr = document.createElement('div')
+      const ctrValue = ad.impressions > 0 ? ((ad.clicks / ad.impressions) * 100).toFixed(2) : '—'
+      ctr.textContent = ad.impressions > 0 ? `${ctrValue}%` : '—'
+      ctr.style.cssText = 'color: #94a3b8;'
+      row.appendChild(ctr)
+
+      const actions = document.createElement('div')
+      actions.style.cssText = 'display: flex; gap: 8px;'
+
+      const editBtn = document.createElement('button')
+      editBtn.textContent = 'Edit'
+      editBtn.style.cssText = `
+        background: #334155;
+        color: #f1f5f9;
+        border: none;
+        padding: 4px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+        transition: background 0.2s;
+      `
+      editBtn.addEventListener('click', () => {
+        editingAd = ad
+        modalOpen = true
+        render()
+      })
+      actions.appendChild(editBtn)
+
+      const deleteBtn = document.createElement('button')
+      deleteBtn.textContent = 'Delete'
+      deleteBtn.style.cssText = `
+        background: #dc2626;
+        color: #f1f5f9;
+        border: none;
+        padding: 4px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+        transition: background 0.2s;
+      `
+      deleteBtn.addEventListener('click', async () => {
+        if (confirm(`Delete ad "${ad.title}"? This cannot be undone.`)) {
+          const success = await deleteAd(ad.id)
+          if (success) {
+            ads = ads.filter(a => a.id !== ad.id)
+            render()
+          }
+        }
+      })
+      actions.appendChild(deleteBtn)
+
+      row.appendChild(actions)
+      table.appendChild(row)
+    })
+
+    section.appendChild(table)
+    return section
+  }
+
+  const createModal = () => {
+    const modal = document.createElement('div')
+    modal.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    `
+
+    const content = document.createElement('div')
+    content.style.cssText = `
+      background: #1e293b;
+      border-radius: 8px;
+      padding: 24px;
+      max-width: 500px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+    `
+
+    const header = document.createElement('div')
+    header.style.cssText = `
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    `
+
+    const title = document.createElement('h3')
+    title.textContent = editingAd ? 'Edit Ad' : 'Create New Ad'
+    title.style.cssText = `
+      color: #f1f5f9;
+      font-size: 20px;
+      font-weight: 600;
+      margin: 0;
+    `
+
+    const closeBtn = document.createElement('button')
+    closeBtn.textContent = '×'
+    closeBtn.style.cssText = `
+      background: none;
+      border: none;
+      color: #94a3b8;
+      font-size: 24px;
+      cursor: pointer;
+      padding: 0;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    `
+    closeBtn.addEventListener('click', () => {
+      modalOpen = false
+      editingAd = null
+      render()
+    })
+
+    header.appendChild(title)
+    header.appendChild(closeBtn)
+    content.appendChild(header)
+
+    const form = document.createElement('div')
+    form.style.cssText = 'display: flex; flex-direction: column; gap: 16px;'
+
+    // Title field
+    const titleField = document.createElement('div')
+    titleField.style.cssText = 'display: flex; flex-direction: column; gap: 8px;'
+
+    const titleLabel = document.createElement('label')
+    titleLabel.textContent = 'Title'
+    titleLabel.style.cssText = 'color: #f1f5f9; font-size: 14px; font-weight: 500;'
+    titleField.appendChild(titleLabel)
+
+    const titleInput = document.createElement('input')
+    titleInput.type = 'text'
+    titleInput.value = editingAd?.title || ''
+    titleInput.required = true
+    titleInput.style.cssText = `
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #f1f5f9;
+      padding: 12px;
+      border-radius: 4px;
+      font-size: 14px;
+    `
+
+    const titleCounter = document.createElement('span')
+    titleCounter.style.cssText = 'color: #64748b; font-size: 12px; margin-top: 4px;'
+    titleCounter.textContent = `${titleInput.value.length}/200`
+
+    titleInput.addEventListener('input', () => {
+      titleCounter.textContent = `${titleInput.value.length}/200`
+    })
+
+    titleField.appendChild(titleInput)
+    titleField.appendChild(titleCounter)
+    form.appendChild(titleField)
+
+    // Body text field
+    const bodyField = document.createElement('div')
+    bodyField.style.cssText = 'display: flex; flex-direction: column; gap: 8px;'
+
+    const bodyLabel = document.createElement('label')
+    bodyLabel.textContent = 'Body text'
+    bodyLabel.style.cssText = 'color: #f1f5f9; font-size: 14px; font-weight: 500;'
+    bodyField.appendChild(bodyLabel)
+
+    const bodyTextarea = document.createElement('textarea')
+    bodyTextarea.value = editingAd?.body_text || ''
+    bodyTextarea.maxLength = 200
+    bodyTextarea.rows = 4
+    bodyTextarea.style.cssText = `
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #f1f5f9;
+      padding: 12px;
+      border-radius: 4px;
+      font-size: 14px;
+      resize: vertical;
+      font-family: inherit;
+    `
+
+    const bodyCounter = document.createElement('span')
+    bodyCounter.style.cssText = 'color: #64748b; font-size: 12px; margin-top: 4px;'
+    bodyCounter.textContent = `${bodyTextarea.value.length}/200`
+
+    bodyTextarea.addEventListener('input', () => {
+      bodyCounter.textContent = `${bodyTextarea.value.length}/200`
+    })
+
+    bodyField.appendChild(bodyTextarea)
+    bodyField.appendChild(bodyCounter)
+    form.appendChild(bodyField)
+
+    // Click URL field
+    const urlField = document.createElement('div')
+    urlField.style.cssText = 'display: flex; flex-direction: column; gap: 8px;'
+
+    const urlLabel = document.createElement('label')
+    urlLabel.textContent = 'Click URL (optional)'
+    urlLabel.style.cssText = 'color: #f1f5f9; font-size: 14px; font-weight: 500;'
+    urlField.appendChild(urlLabel)
+
+    const urlInput = document.createElement('input')
+    urlInput.type = 'url'
+    urlInput.value = editingAd?.click_url || ''
+    urlInput.placeholder = 'https://example.com'
+    urlInput.style.cssText = `
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #f1f5f9;
+      padding: 12px;
+      border-radius: 4px;
+      font-size: 14px;
+    `
+
+    urlField.appendChild(urlInput)
+    form.appendChild(urlField)
+
+    // Payload field
+    const payloadField = document.createElement('div')
+    payloadField.style.cssText = 'display: flex; flex-direction: column; gap: 8px;'
+
+    const payloadLabel = document.createElement('label')
+    payloadLabel.textContent = 'Payload (optional)'
+    payloadLabel.style.cssText = 'color: #f1f5f9; font-size: 14px; font-weight: 500;'
+    payloadField.appendChild(payloadLabel)
+
+    const payloadInput = document.createElement('input')
+    payloadInput.type = 'file'
+    payloadInput.accept = '.zip,.swf,.gif,.png,.jpg,.jpeg'
+    payloadInput.style.cssText = `
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #f1f5f9;
+      padding: 8px;
+      border-radius: 4px;
+      font-size: 14px;
+    `
+
+    if (editingAd?.payload_key) {
+      const currentFile = document.createElement('div')
+      currentFile.textContent = `Current file: ${editingAd.payload_key}`
+      currentFile.style.cssText = 'color: #64748b; font-size: 12px; margin-top: 4px;'
+      payloadField.appendChild(currentFile)
+    }
+
+    payloadField.appendChild(payloadInput)
+    form.appendChild(payloadField)
+
+    // Stats row for edit mode
+    if (editingAd) {
+      const statsRow = document.createElement('div')
+      statsRow.style.cssText = `
+        background: #0f172a;
+        border-radius: 4px;
+        padding: 12px;
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr 1fr;
+        gap: 16px;
+        font-size: 13px;
+        color: #94a3b8;
+      `
+      statsRow.innerHTML = `
+        <div>Impressions: <strong style="color: #f1f5f9;">${editingAd.impressions}</strong></div>
+        <div>Clicks: <strong style="color: #f1f5f9;">${editingAd.clicks}</strong></div>
+        <div>CTR: <strong style="color: #f1f5f9;">${editingAd.impressions > 0 ? ((editingAd.clicks / editingAd.impressions) * 100).toFixed(2) : '—'}%</strong></div>
+        <div>Avg interaction time: <strong style="color: #f1f5f9;">${editingAd.avg_interaction_ms ? Math.round(editingAd.avg_interaction_ms) + 'ms' : '—'}</strong></div>
+      `
+      form.appendChild(statsRow)
+    }
+
+    content.appendChild(form)
+
+    // Submit button
+    const submitBtn = document.createElement('button')
+    submitBtn.textContent = editingAd ? 'Update Ad' : 'Create Ad'
+    submitBtn.style.cssText = `
+      background: #22c55e;
+      color: #f1f5f9;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      margin-top: 8px;
+      transition: background 0.2s;
+    `
+    submitBtn.addEventListener('click', async () => {
+      const title = titleInput.value.trim()
+      const bodyText = bodyTextarea.value.trim()
+      const clickUrl = urlInput.value.trim() || null
+
+      if (!title || !bodyText) {
+        alert('Title and body text are required')
+        return
+      }
+
+      try {
+        if (editingAd) {
+          // Update existing ad
+          const response = await fetch(`/api/admin/ads/${editingAd.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title, body_text: bodyText, click_url: clickUrl }),
+            credentials: 'include'
+          })
+          if (!response.ok) {
+            throw new Error('Failed to update ad')
+          }
+        } else {
+          // Create new ad
+          const formData = new FormData()
+          formData.append('title', title)
+          formData.append('body_text', bodyText)
+          if (clickUrl) formData.append('click_url', clickUrl)
+          if (payloadInput.files?.[0]) formData.append('payload', payloadInput.files[0])
+
+          const response = await fetch('/api/admin/ads', {
+            method: 'POST',
+            body: formData,
+            credentials: 'include'
+          })
+          if (!response.ok) {
+            throw new Error('Failed to create ad')
+          }
+        }
+
+        modalOpen = false
+        editingAd = null
+        await refreshAds()
+        render()
+      } catch (error) {
+        console.error('Submit ad error:', error)
+        alert('Failed to save ad')
+      }
+    })
+
+    content.appendChild(submitBtn)
+    modal.appendChild(content)
+
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        modalOpen = false
+        editingAd = null
+        render()
+      }
+    })
+
+    return modal
+  }
+
+  const refreshAds = async () => {
+    ads = await fetchAds() || []
+  }
+
+  const render = async () => {
+    element.innerHTML = ''
+
+    // Settings section
+    element.appendChild(createSettingsSection())
+
+    // Ads table
+    element.appendChild(createAdsTable())
+
+    // Modal
+    if (modalOpen) {
+      element.appendChild(createModal())
+    }
+  }
+
+  const init = async () => {
+    everyN = await fetchConfig()
+    await refreshAds()
+    await render()
+  }
+
+  // Start initialization but don't wait for it
+  init()
+
+  return {
+    getElement: () => element,
+    refresh: async () => {
+      await refreshAds()
+      await render()
+    },
+    destroy: () => {
+      if (element && element.parentNode) {
+        element.parentNode.removeChild(element)
+      }
+    }
+  }
+}

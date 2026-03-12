@@ -32,7 +32,8 @@ let activeHandle: ZipExecutorHandle | null = null
 
 export async function executeZip(
   postId: string,
-  containerEl: HTMLElement
+  containerEl: HTMLElement,
+  url?: string  // if provided, fetch from this URL instead of /api/zip/${postId}
 ): Promise<ZipExecutorHandle> {
   // Clean up any existing execution
   if (activeHandle) {
@@ -42,7 +43,7 @@ export async function executeZip(
 
   try {
     // Step 1: Fetch ZIP
-    const response = await fetch(`/api/zip/${postId}`)
+    const response = await fetch(url || `/api/zip/${postId}`)
     if (!response.ok) {
       throw new Error('ZIP download failed')
     }

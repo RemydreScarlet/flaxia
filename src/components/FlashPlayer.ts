@@ -25,7 +25,8 @@ async function loadRuffle(): Promise<any> {
 
 export async function executeFlash(
   postId: string,
-  containerEl: HTMLElement
+  containerEl: HTMLElement,
+  url?: string  // if provided, fetch from this URL instead of /api/swf/${postId}
 ): Promise<FlashPlayerHandle> {
   // Clean up any existing execution
   if (activeHandle) {
@@ -48,6 +49,7 @@ export async function executeFlash(
     `
 
     // Step 2: Create HTML content with Ruffle
+    const swfUrl = url || `/api/swf/${postId}`
     const htmlContent = `
 <!DOCTYPE html>
 <html>
@@ -104,8 +106,8 @@ export async function executeFlash(
       container.appendChild(player);
       
       // Load the SWF file
-      const swfUrl = window.location.origin + '/api/swf/${postId}';
-      player.load(swfUrl).catch(error => {
+      const swfUrlFinal = window.location.origin + "${swfUrl}";
+      player.load(swfUrlFinal).catch(error => {
         console.error('Failed to load SWF:', error);
         container.innerHTML = '<div style="color: white; text-align: center; padding: 20px;">Failed to load Flash content</div>';
       });

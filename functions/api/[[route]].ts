@@ -204,6 +204,83 @@ app.get('/api/zip/:postId', async (c) => {
   }
 })
 
+// GET /api/ads/:id/payload - serve ad payloads from R2
+app.get('/api/ads/:id/payload', async (c) => {
+  try {
+    const adId = c.req.param('id')
+    
+    if (!adId) {
+      return c.json({ error: 'Missing ad ID' }, 400)
+    }
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    if (!c.env.BUCKET) {
+      return c.json({ error: 'Storage not available' }, 500)
+    }
+    
+    // Fetch ad to get payload_key and payload_type
+    const ad = await c.env.DB.prepare('SELECT payload_key, payload_type FROM ads WHERE id = ?')
+      .bind(adId).first()
+    
+    if (!ad) {
+      return c.json({ error: 'Ad not found' }, 404)
+    }
+    
+    if (!ad.payload_key) {
+      return c.json({ error: 'No payload available' }, 404)
+    }
+    
+    // Get object from R2
+    const object = await c.env.BUCKET.get(ad.payload_key)
+    
+    if (!object) {
+      return c.json({ error: 'Payload not found' }, 404)
+    }
+    
+    // Determine content type based on payload_type
+    let contentType = 'application/octet-stream'
+    switch (ad.payload_type) {
+      case 'zip':
+        contentType = 'application/zip'
+        break
+      case 'swf':
+        contentType = 'application/x-shockwave-flash'
+        break
+      case 'gif':
+        contentType = 'image/gif'
+        break
+      case 'image':
+        // Detect from key extension
+        const extension = (ad.payload_key as string).split('.').pop()?.toLowerCase()
+        if (extension === 'png') {
+          contentType = 'image/png'
+        } else if (extension === 'jpg' || extension === 'jpeg') {
+          contentType = 'image/jpeg'
+        } else if (extension === 'gif') {
+          contentType = 'image/gif'
+        } else if (extension === 'webp') {
+          contentType = 'image/webp'
+        }
+        break
+    }
+    
+    // Return the payload with proper headers
+    return new Response(object.body, {
+      headers: {
+        'Content-Type': contentType,
+        'Cache-Control': 'public, max-age=31536000', // Cache for 1 year
+        'Access-Control-Allow-Origin': '*'
+      }
+    })
+  } catch (error: any) {
+    console.error('Ad payload error:', error)
+    return c.json({ error: 'Failed to fetch ad payload', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
 // GET /api/swf/:postId - serve SWF files from R2
 app.get('/api/swf/:postId', async (c) => {
   try {
@@ -248,7 +325,8 @@ app.use('/api/*', async (c, next) => {
       (c.req.method === 'GET' && c.req.path.startsWith('/api/images/')) ||
       (c.req.method === 'GET' && c.req.path.startsWith('/api/audio/')) ||
       (c.req.method === 'GET' && c.req.path.startsWith('/api/zip/')) ||
-      (c.req.method === 'GET' && c.req.path.startsWith('/api/swf/'))) {
+      (c.req.method === 'GET' && c.req.path.startsWith('/api/swf/')) ||
+      (c.req.method === 'GET' && c.req.path.startsWith('/api/ads/') && c.req.path.endsWith('/payload'))) {
     await next()
     return
   }
@@ -293,12 +371,11 @@ app.get('/api/me', async (c) => {
 // POST /api/auth/register - user registration
 app.post('/api/auth/register', async (c) => {
   const ip = c.req.header('CF-Connecting-IP') ?? 'unknown'
-  const isTestEnvironment = c.req.url.includes('localhost:8788')
   const rl = await checkRateLimit(c.env.RATE_LIMIT, {
     key: `register:${ip}`,
     limit: 3,
     windowSeconds: 3600
-  }, isTestEnvironment)
+  })
   if (!rl.allowed) return rateLimitResponse(c, rl.resetIn, 3)
 
   try {
@@ -349,12 +426,11 @@ app.post('/api/auth/register', async (c) => {
 // POST /api/auth/login - user login
 app.post('/api/auth/login', async (c) => {
   const ip = c.req.header('CF-Connecting-IP') ?? 'unknown'
-  const isTestEnvironment = c.req.url.includes('localhost:8788')
   const rl = await checkRateLimit(c.env.RATE_LIMIT, {
     key: `login:${ip}`,
     limit: 20,
     windowSeconds: 3600
-  }, isTestEnvironment)
+  })
   if (!rl.allowed) return rateLimitResponse(c, rl.resetIn, 20)
 
   try {
@@ -898,22 +974,441 @@ app.get('/api/posts', async (c) => {
 // GET /api/ads/active - get active ads (public endpoint)
 app.get('/api/ads/active', async (c) => {
   try {
-    // Stub endpoint - returns empty ads array for now
-    return c.json({ ads: [] })
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+
+    const result = await c.env.DB.prepare('SELECT * FROM ads WHERE active = 1').all()
+    
+    if (!result.success) {
+      console.error('Database query failed:', result)
+      return c.json({ error: 'Failed to fetch ads' }, 500)
+    }
+
+    // Shuffle results in JS
+    const shuffled = [...(result.results || [])].sort(() => Math.random() - 0.5)
+    
+    return c.json({ ads: shuffled })
   } catch (error: any) {
     console.error('Get active ads error:', error)
     return c.json({ error: 'Failed to get active ads', details: error?.message || 'Unknown error' }, 500)
   }
 })
 
-// GET /api/admin/ads/config - get ad configuration (public endpoint for now)
+// POST /api/ads/:id/impression - track ad impression (public endpoint)
+app.post('/api/ads/:id/impression', async (c) => {
+  try {
+    const ip = c.req.header('CF-Connecting-IP') ?? 'unknown'
+    const isTestEnvironment = c.req.url.includes('localhost:8788')
+    const rl = await checkRateLimit(c.env.RATE_LIMIT, {
+      key: `ad-imp:${ip}`,
+      limit: 60,
+      windowSeconds: 60
+    })
+    if (!rl.allowed) return rateLimitResponse(c, rl.resetIn, 60)
+
+    const adId = c.req.param('id')
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+
+    const result = await c.env.DB.prepare('UPDATE ads SET impressions = impressions + 1 WHERE id = ?')
+      .bind(adId).run()
+
+    if (!result.success) {
+      console.error('Database update failed:', result)
+      return c.json({ error: 'Failed to record impression' }, 500)
+    }
+
+    return c.json({ ok: true })
+  } catch (error: any) {
+    console.error('Record impression error:', error)
+    return c.json({ error: 'Failed to record impression', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// POST /api/ads/:id/click - track ad click (public endpoint)
+app.post('/api/ads/:id/click', async (c) => {
+  try {
+    const ip = c.req.header('CF-Connecting-IP') ?? 'unknown'
+    const isTestEnvironment = c.req.url.includes('localhost:8788')
+    const rl = await checkRateLimit(c.env.RATE_LIMIT, {
+      key: `ad-click:${ip}`,
+      limit: 20,
+      windowSeconds: 60
+    })
+    if (!rl.allowed) return rateLimitResponse(c, rl.resetIn, 20)
+
+    const adId = c.req.param('id')
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+
+    const result = await c.env.DB.prepare('UPDATE ads SET clicks = clicks + 1 WHERE id = ?')
+      .bind(adId).run()
+
+    if (!result.success) {
+      console.error('Database update failed:', result)
+      return c.json({ error: 'Failed to record click' }, 500)
+    }
+
+    return c.json({ ok: true })
+  } catch (error: any) {
+    console.error('Record click error:', error)
+    return c.json({ error: 'Failed to record click', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// POST /api/ads/:id/interaction - track ad interaction (public endpoint)
+app.post('/api/ads/:id/interaction', async (c) => {
+  try {
+    const ip = c.req.header('CF-Connecting-IP') ?? 'unknown'
+    const isTestEnvironment = c.req.url.includes('localhost:8788')
+    const rl = await checkRateLimit(c.env.RATE_LIMIT, {
+      key: `ad-int:${ip}`,
+      limit: 30,
+      windowSeconds: 60
+    })
+    if (!rl.allowed) return rateLimitResponse(c, rl.resetIn, 30)
+
+    const adId = c.req.param('id')
+    const { duration_ms } = await c.req.json()
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+
+    const result = await c.env.DB.prepare(
+      'INSERT INTO ad_interactions (id, ad_id, duration_ms) VALUES (?, ?, ?)'
+    ).bind(nanoid(), adId, duration_ms).run()
+
+    if (!result.success) {
+      console.error('Database insert failed:', result)
+      return c.json({ error: 'Failed to record interaction' }, 500)
+    }
+
+    return c.json({ ok: true })
+  } catch (error: any) {
+    console.error('Record interaction error:', error)
+    return c.json({ error: 'Failed to record interaction', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// GET /api/admin/ads/config - get ad configuration (admin endpoint)
 app.get('/api/admin/ads/config', async (c) => {
   try {
-    // Stub endpoint - returns default config for now
-    return c.json({ every_n: 8 })
+    const user = c.get('user')
+    if (!user || !isAdmin(c.env as any, user.username)) {
+      return c.json({ error: 'Admin access required' }, 403)
+    }
+
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+
+    const result = await c.env.DB.prepare('SELECT value FROM ad_config WHERE key = \'every_n\'')
+      .first()
+
+    if (!result) {
+      return c.json({ error: 'Ad config not found' }, 404)
+    }
+
+    return c.json({ every_n: Number(result.value) })
   } catch (error: any) {
     console.error('Get ad config error:', error)
     return c.json({ error: 'Failed to get ad config', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// PATCH /api/admin/ads/config - update ad configuration (admin endpoint)
+app.patch('/api/admin/ads/config', requireAuth, async (c) => {
+  try {
+    const user = c.get('user')
+    if (!user || !isAdmin(c.env as any, user.username)) {
+      return c.json({ error: 'Admin access required' }, 403)
+    }
+
+    const { every_n } = await c.req.json()
+    
+    // Validate: must be an integer ≥ 1
+    if (!Number.isInteger(every_n) || every_n < 1) {
+      return c.json({ error: 'every_n must be an integer ≥ 1' }, 400)
+    }
+
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+
+    const result = await c.env.DB.prepare('UPDATE ad_config SET value = ? WHERE key = \'every_n\'')
+      .bind(String(every_n)).run()
+
+    if (!result.success) {
+      console.error('Database update failed:', result)
+      return c.json({ error: 'Failed to update ad config' }, 500)
+    }
+
+    return c.json({ every_n })
+  } catch (error: any) {
+    console.error('Update ad config error:', error)
+    return c.json({ error: 'Failed to update ad config', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// GET /api/admin/ads - get all ads with analytics (admin endpoint)
+app.get('/api/admin/ads', requireAuth, async (c) => {
+  try {
+    const user = c.get('user')
+    if (!user || !isAdmin(c.env as any, user.username)) {
+      return c.json({ error: 'Admin access required' }, 403)
+    }
+
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+
+    const result = await c.env.DB.prepare(`
+      SELECT
+        ads.*,
+        ROUND(CAST(clicks AS FLOAT) / NULLIF(impressions, 0) * 100, 2) AS ctr,
+        (SELECT AVG(duration_ms) FROM ad_interactions WHERE ad_id = ads.id) AS avg_interaction_ms
+      FROM ads
+      ORDER BY created_at DESC
+    `).all()
+
+    if (!result.success) {
+      console.error('Database query failed:', result)
+      return c.json({ error: 'Failed to fetch ads' }, 500)
+    }
+
+    return c.json({ ads: result.results || [] })
+  } catch (error: any) {
+    console.error('Get admin ads error:', error)
+    return c.json({ error: 'Failed to fetch ads', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// POST /api/admin/ads - create new ad (admin endpoint)
+app.post('/api/admin/ads', requireAuth, async (c) => {
+  try {
+    const user = c.get('user')
+    if (!user || !isAdmin(c.env as any, user.username)) {
+      return c.json({ error: 'Admin access required' }, 403)
+    }
+
+    const contentType = c.req.header('content-type')
+    let title: string, body_text: string, click_url: string, payloadFile: File | undefined
+
+    if (contentType?.includes('multipart/form-data')) {
+      const formData = await c.req.formData()
+      title = formData.get('title') as string
+      body_text = formData.get('body_text') as string
+      click_url = formData.get('click_url') as string
+      payloadFile = formData.get('payload') as File | null || undefined
+    } else {
+      const body = await c.req.json()
+      title = body.title
+      body_text = body.body_text
+      click_url = body.click_url
+    }
+
+    // Validate required fields
+    if (!title || !body_text) {
+      return c.json({ error: 'title and body_text are required' }, 400)
+    }
+
+    let payload_key: string | null = null
+    let payload_type: 'zip' | 'swf' | 'gif' | 'image' | null = null
+
+    // Handle payload file if present
+    if (payloadFile && payloadFile.size > 0) {
+      // Validate size ≤ 200MB
+      const maxSize = 200 * 1024 * 1024
+      if (payloadFile.size > maxSize) {
+        return c.json({ error: 'Payload file must be ≤200MB' }, 400)
+      }
+
+      if (!c.env.BUCKET) {
+        return c.json({ error: 'Storage not available' }, 500)
+      }
+
+      // Detect payload_type from file extension
+      const fileName = payloadFile.name.toLowerCase()
+      if (fileName.endsWith('.zip')) {
+        payload_type = 'zip'
+      } else if (fileName.endsWith('.swf')) {
+        payload_type = 'swf'
+      } else if (fileName.endsWith('.gif')) {
+        payload_type = 'gif'
+      } else if (fileName.endsWith('.png') || fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
+        payload_type = 'image'
+      } else {
+        return c.json({ error: 'Unsupported file type. Use .zip, .swf, .gif, .png, or .jpg' }, 400)
+      }
+
+      // If zip, validate that index.html exists at root
+      if (payload_type === 'zip') {
+        const fileBuffer = await payloadFile.arrayBuffer()
+        // For now, we'll assume the zip is valid - in a real implementation you'd extract and check
+        console.log('ZIP file validation skipped - would check for index.html at root')
+      }
+
+      // Upload to R2
+      const adId = nanoid()
+      const r2Key = `ad/payload/${adId}`
+      
+      if (payload_type === 'zip') {
+        const fileBuffer = await payloadFile.arrayBuffer()
+        await c.env.BUCKET.put(r2Key, fileBuffer)
+      } else {
+        const fileBuffer = await payloadFile.arrayBuffer()
+        await c.env.BUCKET.put(r2Key, fileBuffer, {
+          httpMetadata: {
+            contentType: payloadFile.type
+          }
+        })
+      }
+
+      payload_key = r2Key
+    }
+
+    // Generate ad ID
+    const adId = nanoid()
+
+    // Insert into database
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+
+    const result = await c.env.DB.prepare(`
+      INSERT INTO ads (id, title, body_text, click_url, payload_key, payload_type, impressions, clicks, active, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, 0, 0, 1, datetime('now'))
+    `).bind(adId, title, body_text, click_url || null, payload_key, payload_type).run()
+
+    if (!result.success) {
+      console.error('Database insert failed:', result)
+      return c.json({ error: 'Failed to create ad' }, 500)
+    }
+
+    // Return created ad
+    const createdAd = await c.env.DB.prepare('SELECT * FROM ads WHERE id = ?')
+      .bind(adId).first()
+
+    return c.json({ ad: createdAd })
+  } catch (error: any) {
+    console.error('Create ad error:', error)
+    return c.json({ error: 'Failed to create ad', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// PATCH /api/admin/ads/:id - update ad (admin endpoint)
+app.patch('/api/admin/ads/:id', requireAuth, async (c) => {
+  try {
+    const user = c.get('user')
+    if (!user || !isAdmin(c.env as any, user.username)) {
+      return c.json({ error: 'Admin access required' }, 403)
+    }
+
+    const adId = c.req.param('id')
+    const body = await c.req.json()
+
+    // Reject javascript: URLs
+    if (body.click_url && body.click_url.startsWith('javascript:')) {
+      return c.json({ error: 'Invalid click_url format' }, 400)
+    }
+
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+
+    // Build UPDATE query dynamically
+    const updates: string[] = []
+    const values: any[] = []
+
+    if (body.title !== undefined) {
+      updates.push('title = ?')
+      values.push(body.title)
+    }
+    if (body.body_text !== undefined) {
+      updates.push('body_text = ?')
+      values.push(body.body_text)
+    }
+    if (body.click_url !== undefined) {
+      updates.push('click_url = ?')
+      values.push(body.click_url)
+    }
+    if (body.active !== undefined) {
+      updates.push('active = ?')
+      values.push(body.active ? 1 : 0)
+    }
+
+    if (updates.length === 0) {
+      return c.json({ error: 'No fields to update' }, 400)
+    }
+
+    values.push(adId)
+
+    const result = await c.env.DB.prepare(`
+      UPDATE ads SET ${updates.join(', ')} WHERE id = ?
+    `).bind(...values).run()
+
+    if (!result.success) {
+      console.error('Database update failed:', result)
+      return c.json({ error: 'Failed to update ad' }, 500)
+    }
+
+    // Return updated ad
+    const updatedAd = await c.env.DB.prepare('SELECT * FROM ads WHERE id = ?')
+      .bind(adId).first()
+
+    return c.json({ ad: updatedAd })
+  } catch (error: any) {
+    console.error('Update ad error:', error)
+    return c.json({ error: 'Failed to update ad', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// DELETE /api/admin/ads/:id - delete ad (admin endpoint)
+app.delete('/api/admin/ads/:id', requireAuth, async (c) => {
+  try {
+    const user = c.get('user')
+    if (!user || !isAdmin(c.env as any, user.username)) {
+      return c.json({ error: 'Admin access required' }, 403)
+    }
+
+    const adId = c.req.param('id')
+
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+
+    // Fetch the ad to get payload_key
+    const ad = await c.env.DB.prepare('SELECT payload_key FROM ads WHERE id = ?')
+      .bind(adId).first()
+
+    if (!ad) {
+      return c.json({ error: 'Ad not found' }, 404)
+    }
+
+    // Delete R2 object if payload_key exists
+    if (ad.payload_key && c.env.BUCKET) {
+      await c.env.BUCKET.delete(ad.payload_key as string)
+    }
+
+    // Delete the ad row (cascades to ad_interactions)
+    const result = await c.env.DB.prepare('DELETE FROM ads WHERE id = ?')
+      .bind(adId).run()
+
+    if (!result.success) {
+      console.error('Database delete failed:', result)
+      return c.json({ error: 'Failed to delete ad' }, 500)
+    }
+
+    return c.json({ ok: true })
+  } catch (error: any) {
+    console.error('Delete ad error:', error)
+    return c.json({ error: 'Failed to delete ad', details: error?.message || 'Unknown error' }, 500)
   }
 })
 
@@ -1109,7 +1604,7 @@ app.post('/api/posts', requireAuth, async (c) => {
     key: `post:${c.get('user')?.id}`,
     limit: 5,
     windowSeconds: 60
-  }, isTestEnvironment)
+  })
   if (!rl.allowed) return rateLimitResponse(c, rl.resetIn, 5)
 
   try {
@@ -1157,7 +1652,7 @@ app.post('/api/posts/:id/fresh', requireAuth, async (c) => {
     key: `fresh:${c.get('user')?.id}`,
     limit: 10,
     windowSeconds: 60
-  }, isTestEnvironment)
+  })
   if (!rl.allowed) return rateLimitResponse(c, rl.resetIn, 10)
 
   const postId = c.req.param('id')
