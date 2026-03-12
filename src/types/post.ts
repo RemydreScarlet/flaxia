@@ -1,3 +1,17 @@
+export type ReportCategory =
+  | 'spam'
+  | 'harassment'
+  | 'inappropriate'
+  | 'misinformation'
+  | 'other'
+  | 'hate_speech'
+  | 'copyright'
+  | 'csam'
+  | 'malware'
+  | 'privacy'
+
+export type NotificationType = 'fresh' | 'reported' | 'warned' | 'hidden'
+
 export interface Post {
   id: string
   user_id: string
@@ -15,6 +29,7 @@ export interface Post {
   root_id?: string
   depth: number
   status: string
+  hidden: number
   created_at: string
 }
 

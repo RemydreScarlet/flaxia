@@ -9,6 +9,10 @@ import { createExplorePage } from './components/ExplorePage.js'
 import { createTrendingModal } from './components/TrendingModal.js'
 import { createLegalPage } from './components/LegalPage.js'
 import { createNotificationsPage } from './components/NotificationsPage.js'
+import { createAdminLayout } from './components/AdminLayout.js'
+import { createAdminAlertsTab } from './components/AdminAlertsTab.js'
+import { createAdminHiddenTab } from './components/AdminHiddenTab.js'
+import { createAdminUsersTab } from './components/AdminUsersTab.js'
 
 console.log('Flaxia initialized')
 
@@ -19,21 +23,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('App mounted')
     
     // Routing state
-    let currentView: 'timeline' | 'thread' | 'login' | 'register' | 'profile' | 'explore' | 'notifications' | 'terms' | 'privacy' = 'timeline'
+    let currentView: 'timeline' | 'thread' | 'login' | 'register' | 'profile' | 'explore' | 'notifications' | 'terms' | 'privacy' | 'admin' = 'timeline'
     let currentPostId: string | null = null
     let currentUsername: string | null = null
     let currentTag: string | null = null
-    let timeline: ReturnType<typeof createTimeline> | null = null
-    let threadPage: ReturnType<typeof createThreadPage> | null = null
-    let loginPage: ReturnType<typeof createLoginPage> | null = null
-    let registerPage: ReturnType<typeof createRegisterPage> | null = null
-    let profilePage: ReturnType<typeof createProfilePage> | null = null
-    let explorePage: ReturnType<typeof createExplorePage> | null = null
-    let legalPage: ReturnType<typeof createLegalPage> | null = null
-    let notificationsPage: ReturnType<typeof createNotificationsPage> | null = null
-    let leftNavInstances: Set<ReturnType<typeof createLeftNav>> = new Set()
+    let currentAdminTab: 'alerts' | 'hidden' | 'users' = 'alerts'
+    let timeline: any = null
+    let threadPage: any = null
+    let loginPage: any = null
+    let registerPage: any = null
+    let profilePage: any = null
+    let explorePage: any = null
+    let legalPage: any = null
+    let notificationsPage: any = null
+    let adminLayout: any = null
+    let adminAlertsTab: any = null
+    let adminHiddenTab: any = null
+    let adminUsersTab: any = null
+    let leftNavInstances: Set<any> = new Set()
     let currentUser: { username: string; id: string; display_name?: string; avatar_key?: string } | null = null
     let unreadNotificationCount = 0
+    let adminUsernames: string[] = []
     
     // Check current user session
     const checkAuth = async () => {
@@ -72,7 +82,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     interface NotificationData {
       notifications: Array<{
         id: string
-        type: 'reported' | 'fresh'
+        type: 'reported' | 'fresh' | 'warned' | 'hidden'
         post_id: string
         post_text_preview: string
         actor?: {
@@ -212,7 +222,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log('Notifications route detected')
         return { view: 'notifications' as const, postId: null, username: null, tag: null }
       }
-      
+
+      // Admin route - requires auth
+      const adminMatch = cleanPath.match(/^\/admin(\/alerts|\/hidden|\/users)?$/)
+      if (adminMatch) {
+        console.log('Admin route detected')
+        const tab = adminMatch[1] ? adminMatch[1].replace('/', '') as 'alerts' | 'hidden' | 'users' : 'alerts'
+        return { view: 'admin' as const, postId: null, username: null, tag: null, adminTab: tab }
+      }
+
       // Default timeline (only for root path) - public, no auth required
       if (cleanPath === '' || cleanPath === '/') {
         console.log('Timeline route detected')
@@ -225,8 +243,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     
     // Navigate to view
-    const navigateTo = async (view: 'timeline' | 'thread' | 'login' | 'register' | 'profile' | 'explore' | 'notifications' | 'terms' | 'privacy', postId?: string, username?: string, tag?: string) => {
-      console.log('Navigate to:', view, postId, username, tag, 'Current view:', currentView)
+    const navigateTo = async (view: 'timeline' | 'thread' | 'login' | 'register' | 'profile' | 'explore' | 'notifications' | 'terms' | 'privacy' | 'admin', postId?: string, username?: string, tag?: string, adminTab?: 'alerts' | 'hidden' | 'users') => {
+      console.log('Navigate to:', view, postId, username, tag, 'Current view:', currentView, 'adminTab:', adminTab)
       
       // For auth routes, proceed directly
       if (view === 'login' || view === 'register') {
@@ -342,7 +360,92 @@ document.addEventListener('DOMContentLoaded', async () => {
         app.appendChild(legalPage.getElement())
         return
       }
-      
+
+      // Handle admin page (separate layout, no Left Nav)
+      if (view === 'admin') {
+        currentView = 'admin'
+        currentAdminTab = adminTab || 'alerts'
+
+        // Cleanup regular views
+        if (timeline) {
+          timeline.destroy()
+          timeline = null
+        }
+        if (threadPage) {
+          threadPage.destroy()
+          threadPage = null
+        }
+        if (profilePage) {
+          profilePage.destroy()
+          profilePage = null
+        }
+        if (explorePage) {
+          explorePage.destroy()
+          explorePage = null
+        }
+        if (notificationsPage) {
+          notificationsPage.destroy()
+          notificationsPage = null
+        }
+
+        const onTabChange = async (tab: 'alerts' | 'hidden' | 'users') => {
+          currentAdminTab = tab
+          window.history.pushState({}, '', `/admin/${tab}`)
+          renderAdminTab(tab)
+        }
+
+        adminLayout = createAdminLayout({
+          activeTab: currentAdminTab,
+          onTabChange
+        })
+
+        app.appendChild(adminLayout.getElement())
+
+        const renderAdminTab = async (tab: 'alerts' | 'hidden' | 'users') => {
+          if (!adminLayout) return
+
+          if (tab === 'alerts') {
+            adminAlertsTab = createAdminAlertsTab({
+              onNavigateToTab: onTabChange
+            })
+            const alertsElement = adminAlertsTab.getElement()
+            if (alertsElement) {
+              adminLayout.updateMainContent(alertsElement)
+            }
+
+            // Check for access denied
+            try {
+              const response = await fetch('/api/admin/alerts', { credentials: 'include' })
+              if (response.status === 403) {
+                adminLayout.setAccessDenied()
+              }
+            } catch (e) {
+              console.error('Failed to check admin access:', e)
+            }
+          } else if (tab === 'hidden') {
+            adminHiddenTab = createAdminHiddenTab({
+              onNavigateToTab: onTabChange
+            })
+            const hiddenElement = adminHiddenTab.getElement()
+            if (hiddenElement) {
+              adminLayout.updateMainContent(hiddenElement)
+            }
+          } else if (tab === 'users') {
+            adminUsersTab = createAdminUsersTab({
+              onNavigateToTab: onTabChange
+            })
+            const usersElement = adminUsersTab.getElement()
+            if (usersElement) {
+              adminLayout.updateMainContent(usersElement)
+            }
+          }
+        }
+
+        // Render initial tab
+        renderAdminTab(currentAdminTab)
+        return
+      }
+
       // Handle explore page (within 3-column layout)
       if (view === 'explore') {
         currentView = 'explore'
@@ -723,13 +826,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Handle browser back/forward
     window.addEventListener('popstate', async (e) => {
       const route = parseCurrentRoute()
-      await navigateTo(route.view, route.postId || undefined, route.username || undefined, route.tag || undefined)
+      await navigateTo(route.view, route.postId || undefined, route.username || undefined, route.tag || undefined, route.adminTab || undefined)
     })
     
     // Handle SPA navigation events
     window.addEventListener('spaNavigate', async (e: any) => {
       const detail = e.detail
-      await navigateTo(detail.view, detail.postId, detail.username, detail.tag)
+      await navigateTo(detail.view, detail.postId, detail.username, detail.tag, detail.adminTab)
     })
     
     // Initial navigation
@@ -740,6 +843,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     const initialRoute = parseCurrentRoute()
     console.log('Initial route:', initialRoute)
-    await navigateTo(initialRoute.view, initialRoute.postId || undefined, initialRoute.username || undefined, initialRoute.tag || undefined)
+    await navigateTo(initialRoute.view, initialRoute.postId || undefined, initialRoute.username || undefined, initialRoute.tag || undefined, initialRoute.adminTab || undefined)
   }
 })

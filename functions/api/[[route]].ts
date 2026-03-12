@@ -3,12 +3,17 @@ import { cors } from 'hono/cors'
 import { User, getSession, getSessionToken, setSessionCookie, clearSessionCookie, registerUser, loginUser, deleteSession } from '../lib/auth'
 import { nanoid } from 'nanoid'
 import { checkRateLimit, rateLimitResponse } from '../../src/lib/rate-limit'
+import { isAdmin } from '../../src/lib/admin'
+import type { ReportCategory } from '../../src/types/post'
 
 type Bindings = {
   DB: D1Database
+  DB_TEST: D1Database
   BUCKET: R2Bucket
   RATE_LIMIT: KVNamespace
   SANDBOX_ORIGIN: string
+  BASE_URL: string
+  ADMIN_USERNAMES: string
 }
 
 type Variables = {
@@ -288,11 +293,12 @@ app.get('/api/me', async (c) => {
 // POST /api/auth/register - user registration
 app.post('/api/auth/register', async (c) => {
   const ip = c.req.header('CF-Connecting-IP') ?? 'unknown'
+  const isTestEnvironment = c.req.url.includes('localhost:8788')
   const rl = await checkRateLimit(c.env.RATE_LIMIT, {
     key: `register:${ip}`,
     limit: 3,
     windowSeconds: 3600
-  })
+  }, isTestEnvironment)
   if (!rl.allowed) return rateLimitResponse(c, rl.resetIn, 3)
 
   try {
@@ -343,11 +349,12 @@ app.post('/api/auth/register', async (c) => {
 // POST /api/auth/login - user login
 app.post('/api/auth/login', async (c) => {
   const ip = c.req.header('CF-Connecting-IP') ?? 'unknown'
+  const isTestEnvironment = c.req.url.includes('localhost:8788')
   const rl = await checkRateLimit(c.env.RATE_LIMIT, {
     key: `login:${ip}`,
     limit: 20,
     windowSeconds: 3600
-  })
+  }, isTestEnvironment)
   if (!rl.allowed) return rateLimitResponse(c, rl.resetIn, 20)
 
   try {
@@ -837,11 +844,11 @@ app.get('/api/posts', async (c) => {
     
     if (hashtag) {
       // Filter by hashtag using json_each
-      query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.parent_id IS NULL AND EXISTS (SELECT 1 FROM json_each(p.hashtags) WHERE value = ?) ORDER BY p.created_at DESC LIMIT ?'
+      query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.hidden = 0 AND p.parent_id IS NULL AND EXISTS (SELECT 1 FROM json_each(p.hashtags) WHERE value = ?) ORDER BY p.created_at DESC LIMIT ?'
       params.push(hashtag, limit)
       
       if (cursor) {
-        query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.parent_id IS NULL AND EXISTS (SELECT 1 FROM json_each(p.hashtags) WHERE value = ?) AND p.created_at < ? ORDER BY p.created_at DESC LIMIT ?'
+        query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.hidden = 0 AND p.parent_id IS NULL AND EXISTS (SELECT 1 FROM json_each(p.hashtags) WHERE value = ?) AND p.created_at < ? ORDER BY p.created_at DESC LIMIT ?'
         params.unshift(cursor)
       }
     } else if (following && currentUserId) {
@@ -850,7 +857,7 @@ app.get('/api/posts', async (c) => {
         FROM posts p 
         LEFT JOIN users u ON p.user_id = u.id 
         INNER JOIN follows f ON p.user_id = f.followee_id AND f.follower_id = ?
-        WHERE p.status = 'published' AND p.parent_id IS NULL 
+        WHERE p.status = 'published' AND p.hidden = 0 AND p.parent_id IS NULL 
         ORDER BY p.created_at DESC LIMIT ?`
       params.push(currentUserId, limit)
       
@@ -859,17 +866,17 @@ app.get('/api/posts', async (c) => {
           FROM posts p 
           LEFT JOIN users u ON p.user_id = u.id 
           INNER JOIN follows f ON p.user_id = f.followee_id AND f.follower_id = ?
-          WHERE p.status = 'published' AND p.parent_id IS NULL AND p.created_at < ?
+          WHERE p.status = 'published' AND p.hidden = 0 AND p.parent_id IS NULL AND p.created_at < ?
           ORDER BY p.created_at DESC LIMIT ?`
         params.push(cursor)
       }
     } else {
       // Regular timeline query (For You tab)
-      query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.parent_id IS NULL ORDER BY p.created_at DESC LIMIT ?'
+      query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.hidden = 0 AND p.parent_id IS NULL ORDER BY p.created_at DESC LIMIT ?'
       params.push(limit)
       
       if (cursor) {
-        query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.parent_id IS NULL AND p.created_at < ? ORDER BY p.created_at DESC LIMIT ?'
+        query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.hidden = 0 AND p.parent_id IS NULL AND p.created_at < ? ORDER BY p.created_at DESC LIMIT ?'
         params.unshift(cursor)
       }
     }
@@ -1075,11 +1082,12 @@ app.post('/api/posts/commit', requireAuth, async (c) => {
 
 // POST /api/posts - create post (protected)
 app.post('/api/posts', requireAuth, async (c) => {
+  const isTestEnvironment = c.req.url.includes('localhost:8788')
   const rl = await checkRateLimit(c.env.RATE_LIMIT, {
     key: `post:${c.get('user')?.id}`,
     limit: 5,
     windowSeconds: 60
-  })
+  }, isTestEnvironment)
   if (!rl.allowed) return rateLimitResponse(c, rl.resetIn, 5)
 
   try {
@@ -1122,11 +1130,12 @@ app.post('/api/posts', requireAuth, async (c) => {
 
 // POST /api/posts/:id/fresh - toggle Fresh! (protected)
 app.post('/api/posts/:id/fresh', requireAuth, async (c) => {
+  const isTestEnvironment = c.req.url.includes('localhost:8788')
   const rl = await checkRateLimit(c.env.RATE_LIMIT, {
     key: `fresh:${c.get('user')?.id}`,
     limit: 10,
     windowSeconds: 60
-  })
+  }, isTestEnvironment)
   if (!rl.allowed) return rateLimitResponse(c, rl.resetIn, 10)
 
   const postId = c.req.param('id')
@@ -1661,8 +1670,85 @@ app.delete('/api/posts/:id', requireAuth, async (c) => {
   }
 })
 
-// POST /api/posts/:id/report - report post (protected)
-app.post('/api/posts/:id/report', requireAuth, async (c) => {
+// GET /api/posts/:id - get single post
+app.get('/api/posts/:id', async (c) => {
+  try {
+    const postId = c.req.param('id')
+
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+
+    const post = await c.env.DB.prepare(
+      'SELECT * FROM posts WHERE id = ?'
+    ).bind(postId).first() as any | null
+
+    if (!post) {
+      return c.json({ error: 'Not found' }, 404)
+    }
+
+    // Check if post is hidden - allow admin bypass
+    if (post.hidden && !isAdmin(c.env as unknown as Env, c.get('user')?.username ?? '')) {
+      return c.json({ error: 'Gone' }, 410)
+    }
+
+    return c.json(post)
+  } catch (error: any) {
+    console.error('Get post error:', error)
+    return c.json({ error: 'Failed to get post', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// Helper function to get threshold for a category
+function getThreshold(category: ReportCategory): number {
+  const thresholds: Record<ReportCategory, number> = {
+    spam: 3,
+    harassment: 3,
+    inappropriate: 3,
+    misinformation: 3,
+    other: 3,
+    hate_speech: 3,
+    copyright: 1,
+    csam: 1,
+    malware: 1,
+    privacy: 3
+  }
+  return thresholds[category]
+}
+
+// Helper function to get priority for a category
+function getPriority(category: ReportCategory): 'critical' | 'high' | 'normal' {
+  if (category === 'csam' || category === 'malware') {
+    return 'critical'
+  }
+  if (category === 'copyright') {
+    return 'high'
+  }
+  return 'normal'
+}
+
+// Helper function to insert notification
+async function insertNotification(db: D1Database, userId: string, type: 'fresh' | 'reported' | 'warned' | 'hidden', postId: string, actorId?: string) {
+  const messages: Record<string, string> = {
+    fresh: 'fresed your post',
+    reported: 'reported your post',
+    warned: 'Your post has been reported for {category}. It may be removed if it violates our ToS.',
+    hidden: 'Your post has been removed due to a {category} report.'
+  }
+  await db.prepare(
+    'INSERT INTO notifications (id, user_id, type, post_id, actor_id) VALUES (?, ?, ?, ?, ?)'
+  ).bind(nanoid(), userId, type, postId, actorId || null).run()
+}
+
+// Helper function to insert admin alert
+async function insertAdminAlert(db: D1Database, postId: string, category: ReportCategory, priority: 'critical' | 'high' | 'normal') {
+  await db.prepare(
+    'INSERT INTO admin_alerts (id, post_id, category, priority) VALUES (?, ?, ?, ?)'
+  ).bind(nanoid(), postId, category, priority).run()
+}
+
+// POST /api/report - unified report endpoint (protected)
+app.post('/api/report', requireAuth, async (c) => {
   const rl = await checkRateLimit(c.env.RATE_LIMIT, {
     key: `report:${c.get('user')?.id}`,
     limit: 10,
@@ -1671,66 +1757,290 @@ app.post('/api/posts/:id/report', requireAuth, async (c) => {
   if (!rl.allowed) return rateLimitResponse(c, rl.resetIn, 10)
 
   try {
-    const postId = c.req.param('id')
     const userId = c.get('user')?.id || ''
-    const { reason } = await c.req.json()
-    
-    // Validate reason
-    const validReasons = ['spam', 'harassment', 'inappropriate', 'misinformation', 'other']
-    if (!reason || !validReasons.includes(reason)) {
-      return c.json({ error: 'Invalid reason' }, 400)
+    const username = c.get('user')?.username || ''
+    const { post_id, category, dmca } = await c.req.json() as {
+      post_id: string
+      category: ReportCategory
+      dmca?: {
+        work_description: string
+        reporter_email: string
+        sworn: boolean
+      }
     }
-    
+
+    // Validate category
+    const validCategories: ReportCategory[] = ['spam', 'harassment', 'inappropriate', 'misinformation', 'other', 'hate_speech', 'copyright', 'csam', 'malware', 'privacy']
+    if (!category || !validCategories.includes(category)) {
+      return c.json({ error: 'Invalid category' }, 400)
+    }
+
+    // DMCA validation
+    if (category === 'copyright') {
+      if (!dmca) {
+        return c.json({ error: 'DMCA information required for copyright reports' }, 400)
+      }
+      if (!dmca.sworn) {
+        return c.json({ error: 'You must swear that this report is made in good faith' }, 400)
+      }
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (!emailRegex.test(dmca.reporter_email)) {
+        return c.json({ error: 'Invalid email format' }, 400)
+      }
+    }
+
     if (!c.env.DB) {
       return c.json({ error: 'Database not available' }, 500)
     }
-    
+
     // Get the post
     const post = await c.env.DB.prepare(
-      'SELECT id, user_id FROM posts WHERE id = ? AND status = \'published\''
-    ).bind(postId).first()
-    
+      'SELECT id, user_id FROM posts WHERE id = ? AND hidden = 0'
+    ).bind(post_id).first() as { id: string; user_id: string } | null
+
     if (!post) {
       return c.json({ error: 'Post not found' }, 404)
     }
-    
+
     // Cannot report own post
     if (post.user_id === userId) {
       return c.json({ error: 'Cannot report own post' }, 403)
     }
-    
-    // Check if already reported
+
+    // Check for duplicate report
     const existingReport = await c.env.DB.prepare(
       'SELECT id FROM reports WHERE post_id = ? AND user_id = ?'
-    ).bind(postId, userId).first()
-    
+    ).bind(post_id, userId).first()
+
     if (existingReport) {
       return c.json({ error: 'Already reported' }, 409)
     }
-    
-    // Insert report
+
+    // Insert report with optional DMCA fields
     const reportId = nanoid()
-    await c.env.DB.prepare(
-      'INSERT INTO reports (id, post_id, user_id, reason) VALUES (?, ?, ?, ?)'
-    ).bind(reportId, postId, userId, reason).run()
-    
-    // Check total report count and notify on every 3rd report
-    const { count } = await c.env.DB
-      .prepare('SELECT COUNT(*) as count FROM reports WHERE post_id = ?')
-      .bind(postId)
-      .first() as { count: number }
-    
-    if (count % 3 === 0) {
-      await c.env.DB
-        .prepare('INSERT INTO notifications (id, user_id, type, post_id) VALUES (?, ?, ?, ?)')
-        .bind(nanoid(), post.user_id, 'reported', postId)
-        .run()
+    if (dmca && category === 'copyright') {
+      await c.env.DB.prepare(
+        'INSERT INTO reports (id, post_id, user_id, category, dmca_work_description, dmca_reporter_email, dmca_sworn, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      ).bind(reportId, post_id, userId, category, dmca.work_description, dmca.reporter_email, dmca.sworn ? 1 : 0, 'pending').run()
+    } else {
+      await c.env.DB.prepare(
+        'INSERT INTO reports (id, post_id, user_id, category, status) VALUES (?, ?, ?, ?, ?)'
+      ).bind(reportId, post_id, userId, category, 'pending').run()
     }
-    
+
+    // Process based on category
+    if (category === 'csam' || category === 'malware') {
+      // Immediate hide - no threshold check
+      await c.env.DB.prepare('UPDATE posts SET hidden = 1 WHERE id = ?').bind(post_id).run()
+      await insertNotification(c.env.DB, post.user_id, 'hidden', post_id)
+      await insertAdminAlert(c.env.DB, post_id, category, 'critical')
+    } else {
+      const threshold = getThreshold(category)
+      const { count } = await c.env.DB
+        .prepare('SELECT COUNT(*) as count FROM reports WHERE post_id = ? AND category = ?')
+        .bind(post_id, category)
+        .first() as { count: number }
+
+      if (count >= threshold) {
+        await c.env.DB.prepare('UPDATE reports SET status = ? WHERE post_id = ?').bind('warned', post_id).run()
+        await insertNotification(c.env.DB, post.user_id, 'warned', post_id)
+        
+        // Also hide the post and send hidden notification when threshold is reached
+        await c.env.DB.prepare('UPDATE posts SET hidden = 1 WHERE id = ?').bind(post_id).run()
+        await insertNotification(c.env.DB, post.user_id, 'hidden', post_id)
+        
+        const priority = getPriority(category)
+        await insertAdminAlert(c.env.DB, post_id, category, priority)
+      }
+    }
+
+    return c.json({ success: true, report_id: reportId })
+  } catch (error: any) {
+    console.error('Report error:', error)
+    return c.json({ error: 'Failed to report post', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// Admin middleware helper
+const requireAdmin = async (c: any, next: any) => {
+  const username = c.get('user')?.username
+  if (!username || !isAdmin(c.env, username)) {
+    return c.json({ error: 'Forbidden' }, 403)
+  }
+  await next()
+}
+
+// GET /api/admin/alerts - get unresolved admin alerts (admin only)
+app.get('/api/admin/alerts', requireAuth, requireAdmin, async (c) => {
+  try {
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+
+    const result = await c.env.DB.prepare(`
+      SELECT id, post_id, category, priority, resolved, created_at
+      FROM admin_alerts
+      WHERE resolved = 0
+      ORDER BY CASE priority
+        WHEN 'critical' THEN 1
+        WHEN 'high' THEN 2
+        WHEN 'normal' THEN 3
+      END, created_at DESC
+    `).all()
+
+    return c.json({ alerts: result.results || [] })
+  } catch (error: any) {
+    console.error('Fetch admin alerts error:', error)
+    return c.json({ error: 'Failed to fetch alerts', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// POST /api/admin/alerts/:id/resolve - mark alert as resolved (admin only)
+app.post('/api/admin/alerts/:id/resolve', requireAuth, requireAdmin, async (c) => {
+  try {
+    const alertId = c.req.param('id')
+
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+
+    await c.env.DB.prepare('UPDATE admin_alerts SET resolved = 1 WHERE id = ?').bind(alertId).run()
+
     return c.json({ success: true })
   } catch (error: any) {
-    console.error('Report post error:', error)
-    return c.json({ error: 'Failed to report post', details: error?.message || 'Unknown error' }, 500)
+    console.error('Resolve alert error:', error)
+    return c.json({ error: 'Failed to resolve alert', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// POST /api/admin/posts/:id/hide - manually hide a post (admin only)
+app.post('/api/admin/posts/:id/hide', requireAuth, requireAdmin, async (c) => {
+  try {
+    const postId = c.req.param('id')
+
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+
+    const post = await c.env.DB.prepare('SELECT id, user_id FROM posts WHERE id = ?').bind(postId).first()
+
+    if (!post) {
+      return c.json({ error: 'Post not found' }, 404)
+    }
+
+    await c.env.DB.prepare('UPDATE posts SET hidden = 1 WHERE id = ?').bind(postId).run()
+
+    return c.json({ success: true })
+  } catch (error: any) {
+    console.error('Hide post error:', error)
+    return c.json({ error: 'Failed to hide post', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// POST /api/admin/posts/:id/unhide - restore a hidden post (admin only)
+app.post('/api/admin/posts/:id/unhide', requireAuth, requireAdmin, async (c) => {
+  try {
+    const postId = c.req.param('id')
+
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+
+    const post = await c.env.DB.prepare('SELECT id, user_id FROM posts WHERE id = ?').bind(postId).first()
+
+    if (!post) {
+      return c.json({ error: 'Post not found' }, 404)
+    }
+
+    await c.env.DB.prepare('UPDATE posts SET hidden = 0 WHERE id = ?').bind(postId).run()
+
+    return c.json({ success: true })
+  } catch (error: any) {
+    console.error('Unhide post error:', error)
+    return c.json({ error: 'Failed to unhide post', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// GET /api/admin/posts/hidden - get hidden posts (admin only)
+app.get('/api/admin/posts/hidden', requireAuth, requireAdmin, async (c) => {
+  try {
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+
+    const result = await c.env.DB.prepare(`
+      SELECT posts.*, users.username, users.display_name
+      FROM posts
+      JOIN users ON posts.user_id = users.id
+      WHERE posts.hidden = 1
+      ORDER BY posts.created_at DESC
+    `).all()
+
+    return c.json({ posts: result.results || [] })
+  } catch (error: any) {
+    console.error('Fetch hidden posts error:', error)
+    return c.json({ error: 'Failed to fetch hidden posts', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// GET /api/admin/users - get all users (admin only)
+app.get('/api/admin/users', requireAuth, requireAdmin, async (c) => {
+  try {
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+
+    const result = await c.env.DB.prepare(`
+      SELECT id, username, display_name, email, created_at
+      FROM users
+      ORDER BY created_at DESC
+    `).all()
+
+    return c.json({ users: result.results || [] })
+  } catch (error: any) {
+    console.error('Fetch users error:', error)
+    return c.json({ error: 'Failed to fetch users', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// DELETE /api/admin/users/:id - delete a user account (admin only)
+app.delete('/api/admin/users/:id', requireAuth, requireAdmin, async (c) => {
+  try {
+    const targetUserId = c.req.param('id')
+    const adminUsername = c.get('user')?.username
+
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+
+    // Get the target user
+    const targetUser = await c.env.DB.prepare(
+      'SELECT id, username FROM users WHERE id = ?'
+    ).bind(targetUserId).first() as { id: string; username: string } | null
+
+    if (!targetUser) {
+      return c.json({ error: 'User not found' }, 404)
+    }
+
+    // Check if trying to delete an admin
+    if (isAdmin(c.env as unknown as Env, targetUser.username)) {
+      return c.json({ error: 'Cannot delete admin accounts' }, 403)
+    }
+
+    // Delete the user (posts remain with user_id intact)
+    const result = await c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(targetUserId).run()
+
+    if (!result.success) {
+      return c.json({ error: 'Failed to delete account' }, 500)
+    }
+
+    // Invalidate all sessions for this user (simplified - in production, use session table)
+    // For now, we just delete the user row
+
+    return c.json({ success: true })
+  } catch (error: any) {
+    console.error('Delete user error:', error)
+    return c.json({ error: 'Failed to delete user', details: error?.message || 'Unknown error' }, 500)
   }
 })
 
@@ -1815,6 +2125,30 @@ app.post('/api/notifications/read-all', requireAuth, async (c) => {
     console.error('Mark all read error:', error)
     return c.json({ error: 'Failed to mark notifications as read', details: error?.message || 'Unknown error' }, 500)
   }
+})
+
+// POST /api/test/reset - reset database for testing (only allowed in test environment)
+app.post('/api/test/reset', async (c) => {
+  // Allow reset if we're using the test database binding or BASE_URL is localhost
+  const isTestEnvironment = c.env.BASE_URL === 'http://localhost:8788' || 
+                           c.req.url.includes('localhost:8788')
+  
+  if (!isTestEnvironment) {
+    return c.json({ error: 'Forbidden' }, 403)
+  }
+  
+  // Use DB_TEST if available, otherwise fall back to DB
+  const db = c.env.DB_TEST || c.env.DB
+  
+  await db.batch([
+    db.prepare('DELETE FROM notifications'),
+    db.prepare('DELETE FROM reports'),
+    db.prepare('DELETE FROM freshs'),
+    db.prepare('DELETE FROM follows'),
+    db.prepare('DELETE FROM posts'),
+    db.prepare('DELETE FROM users'),
+  ])
+  return c.json({ ok: true })
 })
 
 // Export for Cloudflare Pages Functions

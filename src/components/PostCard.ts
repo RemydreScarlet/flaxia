@@ -574,15 +574,22 @@ export class PostCard {
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 24px;
-      max-width: 400px;
+      max-width: 420px;
       width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
     `
 
-    const reasons = [
+    const categories = [
       { value: 'spam', label: 'Spam' },
       { value: 'harassment', label: 'Harassment' },
+      { value: 'hate_speech', label: 'Hate speech' },
       { value: 'inappropriate', label: 'Inappropriate content' },
       { value: 'misinformation', label: 'Misinformation' },
+      { value: 'privacy', label: 'Privacy violation' },
+      { value: 'copyright', label: 'Copyright infringement (DMCA)' },
+      { value: 'malware', label: 'Malware / malicious content' },
+      { value: 'csam', label: 'CSAM' },
       { value: 'other', label: 'Other' }
     ]
 
@@ -598,8 +605,8 @@ export class PostCard {
         ">✕</button>
       </div>
       <p style="margin: 0 0 16px 0; color: var(--text-muted); font-size: 14px;">Why are you reporting this post?</p>
-      <div class="reasons" style="margin-bottom: 24px;">
-        ${reasons.map(r => `
+      <div class="categories" style="margin-bottom: 24px;">
+        ${categories.map(c => `
           <label style="
             display: flex;
             align-items: center;
@@ -607,10 +614,43 @@ export class PostCard {
             cursor: pointer;
             color: var(--text-primary);
           ">
-            <input type="radio" name="report-reason" value="${r.value}" style="margin-right: 12px;">
-            <span>${r.label}</span>
+            <input type="radio" name="report-category" value="${c.value}" style="margin-right: 12px;">
+            <span>${c.label}</span>
           </label>
         `).join('')}
+      </div>
+      <div class="dmca-section" style="display: none; margin-bottom: 24px; padding: 16px; background: var(--bg-secondary); border-radius: 8px;">
+        <h4 style="margin: 0 0 12px 0; font-size: 14px; color: var(--text-primary);">DMCA Information</h4>
+        <div style="margin-bottom: 12px;">
+          <label style="display: block; margin-bottom: 4px; font-size: 12px; color: var(--text-muted);">Describe the copyrighted work:</label>
+          <input type="text" class="dmca-work" style="
+            width: 100%;
+            padding: 8px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 14px;
+            box-sizing: border-box;
+          " placeholder="e.g., My original artwork, My song, etc.">
+        </div>
+        <div style="margin-bottom: 12px;">
+          <label style="display: block; margin-bottom: 4px; font-size: 12px; color: var(--text-muted);">Your email address:</label>
+          <input type="email" class="dmca-email" style="
+            width: 100%;
+            padding: 8px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 14px;
+            box-sizing: border-box;
+          " placeholder="your@email.com">
+        </div>
+        <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer;">
+          <input type="checkbox" class="dmca-sworn" style="margin-top: 2px;">
+          <span style="font-size: 12px; color: var(--text-muted);">I swear that this report is made in good faith and under penalty of perjury.</span>
+        </label>
       </div>
       <div style="display: flex; justify-content: flex-end;">
         <button class="submit-btn" disabled style="
@@ -632,16 +672,55 @@ export class PostCard {
 
     const submitBtn = dialog.querySelector('.submit-btn') as HTMLButtonElement
     const closeBtn = dialog.querySelector('.close-btn')
-    const radioInputs = dialog.querySelectorAll('input[name="report-reason"]')
+    const radioInputs = dialog.querySelectorAll('input[name="report-category"]')
+    const dmcaSection = dialog.querySelector('.dmca-section') as HTMLElement
+    const dmcaWorkInput = dialog.querySelector('.dmca-work') as HTMLInputElement
+    const dmcaEmailInput = dialog.querySelector('.dmca-email') as HTMLInputElement
+    const dmcaSwornCheckbox = dialog.querySelector('.dmca-sworn') as HTMLInputElement
 
-    let selectedReason: string | null = null
+    let selectedCategory: string | null = null
 
     radioInputs.forEach(input => {
       input.addEventListener('change', (e) => {
-        selectedReason = (e.target as HTMLInputElement).value
+        selectedCategory = (e.target as HTMLInputElement).value
         submitBtn.disabled = false
         submitBtn.style.opacity = '1'
+
+        // Show/hide DMCA section
+        if (selectedCategory === 'copyright') {
+          dmcaSection.style.display = 'block'
+        } else {
+          dmcaSection.style.display = 'none'
+        }
       })
+    })
+
+    const checkSubmitEnabled = () => {
+      if (!selectedCategory) {
+        return false
+      }
+      if (selectedCategory === 'copyright') {
+        const workDescription = dmcaWorkInput.value.trim()
+        const email = dmcaEmailInput.value.trim()
+        const sworn = dmcaSwornCheckbox.checked
+        return workDescription.length > 0 && email.length > 0 && sworn
+      }
+      return true
+    }
+
+    dmcaWorkInput?.addEventListener('input', () => {
+      submitBtn.disabled = !checkSubmitEnabled()
+      submitBtn.style.opacity = checkSubmitEnabled() ? '1' : '0.5'
+    })
+
+    dmcaEmailInput?.addEventListener('input', () => {
+      submitBtn.disabled = !checkSubmitEnabled()
+      submitBtn.style.opacity = checkSubmitEnabled() ? '1' : '0.5'
+    })
+
+    dmcaSwornCheckbox?.addEventListener('change', () => {
+      submitBtn.disabled = !checkSubmitEnabled()
+      submitBtn.style.opacity = checkSubmitEnabled() ? '1' : '0.5'
     })
 
     closeBtn?.addEventListener('click', () => {
@@ -649,9 +728,19 @@ export class PostCard {
     })
 
     submitBtn?.addEventListener('click', async () => {
-      if (!selectedReason) return
+      if (!selectedCategory) return
+
+      let dmcaData: { work_description: string; reporter_email: string; sworn: boolean } | undefined
+      if (selectedCategory === 'copyright') {
+        dmcaData = {
+          work_description: dmcaWorkInput.value.trim(),
+          reporter_email: dmcaEmailInput.value.trim(),
+          sworn: dmcaSwornCheckbox.checked
+        }
+      }
+
       overlay.remove()
-      await this.submitReport(selectedReason)
+      await this.submitReport(selectedCategory, dmcaData)
     })
 
     overlay.addEventListener('click', (e) => {
@@ -661,13 +750,18 @@ export class PostCard {
     })
   }
 
-  private async submitReport(reason: string): Promise<void> {
+  private async submitReport(category: string, dmcaData?: { work_description: string; reporter_email: string; sworn: boolean }): Promise<void> {
     try {
-      const response = await fetch(`/api/posts/${this.props.post.id}/report`, {
+      const body: any = { post_id: this.props.post.id, category }
+      if (dmcaData) {
+        body.dmca = dmcaData
+      }
+
+      const response = await fetch('/api/report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ reason })
+        body: JSON.stringify(body)
       })
 
       if (response.status === 409) {
@@ -676,12 +770,19 @@ export class PostCard {
       }
 
       if (!response.ok) {
-        throw new Error('Failed to submit report')
+        const errorData = await response.json() as { error?: string }
+        throw new Error(errorData?.error || 'Failed to submit report')
       }
 
       this.showToast('Report submitted. Thank you.')
     } catch (error) {
       console.error('Report error:', error)
+      console.error('Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : 'No stack trace',
+        post_id: this.props.post.id,
+        category: category || 'unknown'
+      })
       this.showToast('Failed to submit report', true)
     }
   }

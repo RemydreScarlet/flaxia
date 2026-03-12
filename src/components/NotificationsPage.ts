@@ -1,6 +1,6 @@
 export interface Notification {
   id: string
-  type: 'reported' | 'fresh'
+  type: 'reported' | 'fresh' | 'warned' | 'hidden'
   post_id: string
   post_text_preview: string
   actor?: {
