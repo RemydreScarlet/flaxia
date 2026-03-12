@@ -97,6 +97,7 @@ export interface TimelineState {
   cursor?: string
   loading: boolean
   hasMore: boolean
+  ngWords: string[]
 }
 
 export interface Ad {

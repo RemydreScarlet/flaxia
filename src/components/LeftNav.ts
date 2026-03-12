@@ -317,6 +317,42 @@ export class LeftNav {
       box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
     `)
 
+    const settingsItem = document.createElement('button')
+    settingsItem.setAttribute('style', `
+      width: 100%;
+      padding: 0.5rem 0.75rem;
+      background: transparent;
+      border: none;
+      text-align: left;
+      color: var(--text-primary);
+      cursor: pointer;
+      border-radius: 2px;
+      font-size: 0.875rem;
+      transition: background-color 0.2s;
+    `)
+    settingsItem.textContent = 'Settings'
+
+    settingsItem.addEventListener('click', (e) => {
+      e.stopPropagation()
+      this.closePopupMenu()
+      window.location.href = '/settings'
+    })
+
+    settingsItem.addEventListener('mouseenter', () => {
+      settingsItem.style.backgroundColor = 'var(--bg-secondary)'
+    })
+    settingsItem.addEventListener('mouseleave', () => {
+      settingsItem.style.backgroundColor = 'transparent'
+    })
+
+    // Add separator
+    const separator = document.createElement('div')
+    separator.style.cssText = `
+      height: 1px;
+      background: var(--border);
+      margin: 0.25rem 0;
+    `
+
     const logoutItem = document.createElement('button')
     logoutItem.setAttribute('style', `
       width: 100%;
@@ -345,6 +381,8 @@ export class LeftNav {
       logoutItem.style.backgroundColor = 'transparent'
     })
 
+    popup.appendChild(settingsItem)
+    popup.appendChild(separator)
     popup.appendChild(logoutItem)
 
     // Position the popup relative to the user area

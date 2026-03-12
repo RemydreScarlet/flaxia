@@ -16,7 +16,7 @@ export interface Session {
   expires_at: string
 }
 
-async function hashPassword(password: string): Promise<string> {
+export async function hashPassword(password: string): Promise<string> {
   const enc = new TextEncoder()
   const salt = crypto.getRandomValues(new Uint8Array(16))
   
@@ -36,7 +36,7 @@ async function hashPassword(password: string): Promise<string> {
 }
 
 
-async function verifyPassword(password: string, stored: string): Promise<boolean> {
+export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const enc = new TextEncoder()
   const combined = Uint8Array.from(atob(stored), c => c.charCodeAt(0))
   const salt = combined.slice(0, 16)

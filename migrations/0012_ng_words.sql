@@ -1,0 +1,1 @@
+ALTER TABLE users ADD COLUMN ng_words TEXT NOT NULL DEFAULT '[]';

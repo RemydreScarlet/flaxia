@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { User, getSession, getSessionToken, setSessionCookie, clearSessionCookie, registerUser, loginUser, deleteSession } from '../lib/auth'
+import { User, getSession, getSessionToken, setSessionCookie, clearSessionCookie, registerUser, loginUser, deleteSession, hashPassword, verifyPassword } from '../lib/auth'
 import { nanoid } from 'nanoid'
 import { checkRateLimit, rateLimitResponse } from '../../src/lib/rate-limit'
 import { isAdmin } from '../../src/lib/admin'
@@ -351,7 +351,7 @@ const requireAuth = async (c: any, next: any) => {
 app.use('/*', cors())
 
 // GET /api/me - check auth state
-app.get('/api/me', async (c) => {
+app.get('/api/me', requireAuth, async (c) => {
   try {
     const token = getSessionToken(c.req.raw)
     const sessionData = token ? await getSession(c.env, token) : null
@@ -359,8 +359,26 @@ app.get('/api/me', async (c) => {
       return c.json({ error: 'Not authenticated' }, 401)
     }
     
+    // Get user data including ng_words
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    const user = await c.env.DB.prepare(`
+      SELECT id, email, username, display_name, bio, avatar_key, language, ng_words, created_at 
+      FROM users 
+      WHERE id = ?
+    `).bind(sessionData.user.id).first()
+    
+    if (!user) {
+      return c.json({ error: 'User not found' }, 404)
+    }
+    
     return c.json({ 
-      user: sessionData.user 
+      user: {
+        ...user,
+        ng_words: JSON.parse(user.ng_words ?? '[]') as string[]
+      }
     })
   } catch (error: any) {
     console.error('Auth check error:', error)
@@ -546,6 +564,8 @@ app.patch('/api/users/me', requireAuth, async (c) => {
     const userId = sessionData.user.id
     let display_name: string | undefined
     let bio: string | undefined
+    let language: string | undefined
+    let ng_words: string[] | undefined
     let avatarFile: File | undefined
     
     const contentType = c.req.header('content-type')
@@ -609,6 +629,8 @@ app.patch('/api/users/me', requireAuth, async (c) => {
       const body = await c.req.json()
       display_name = body.display_name
       bio = body.bio
+      language = body.language
+      ng_words = body.ng_words
     }
     
     // Validation
@@ -618,6 +640,27 @@ app.patch('/api/users/me', requireAuth, async (c) => {
     
     if (bio !== undefined && bio.length > 200) {
       return c.json({ error: 'Bio must be ≤200 characters' }, 400)
+    }
+    
+    if (language !== undefined && !['en', 'ja'].includes(language)) {
+      return c.json({ error: 'Language must be either "en" or "ja"' }, 400)
+    }
+    
+    if (ng_words !== undefined) {
+      if (!Array.isArray(ng_words)) {
+        return c.json({ error: 'ng_words must be an array' }, 400)
+      }
+      if (ng_words.length > 100) {
+        return c.json({ error: 'Maximum 100 NG words allowed' }, 400)
+      }
+      for (const word of ng_words) {
+        if (typeof word !== 'string') {
+          return c.json({ error: 'All NG words must be strings' }, 400)
+        }
+        if (word.length > 50) {
+          return c.json({ error: 'Each NG word must be ≤50 characters' }, 400)
+        }
+      }
     }
     
     // Build update query for text fields
@@ -634,6 +677,16 @@ app.patch('/api/users/me', requireAuth, async (c) => {
       values.push(bio)
     }
     
+    if (language !== undefined) {
+      updates.push('language = ?')
+      values.push(language)
+    }
+    
+    if (ng_words !== undefined) {
+      updates.push('ng_words = ?')
+      values.push(JSON.stringify(ng_words))
+    }
+    
     if (updates.length > 0) {
       values.push(userId)
       
@@ -648,15 +701,144 @@ app.patch('/api/users/me', requireAuth, async (c) => {
     
     // Return updated user
     const updatedUser = await c.env.DB.prepare(`
-      SELECT id, email, username, display_name, bio, avatar_key, created_at 
+      SELECT id, email, username, display_name, bio, avatar_key, language, ng_words, created_at 
       FROM users 
       WHERE id = ?
     `).bind(userId).first()
     
-    return c.json({ user: updatedUser })
+    return c.json({ 
+      user: {
+        ...updatedUser,
+        ng_words: JSON.parse(updatedUser?.ng_words ?? '[]') as string[]
+      }
+    })
   } catch (error: any) {
     console.error('Update profile error:', error)
     return c.json({ error: 'Failed to update profile', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// PATCH /api/users/me/email - update email (protected)
+app.patch('/api/users/me/email', requireAuth, async (c) => {
+  try {
+    const token = getSessionToken(c.req.raw)
+    const sessionData = token ? await getSession(c.env, token) : null
+    if (!sessionData) {
+      return c.json({ error: 'Unauthorized' }, 401)
+    }
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    const { current_password, new_email } = await c.req.json()
+    
+    // Validation
+    if (!current_password || !new_email) {
+      return c.json({ error: 'Current password and new email are required' }, 400)
+    }
+    
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(new_email)) {
+      return c.json({ error: 'Invalid email format' }, 400)
+    }
+    
+    const userId = sessionData.user.id
+    
+    // Get user with password hash to verify current password
+    const userWithPassword = await c.env.DB.prepare(`
+      SELECT password_hash FROM users WHERE id = ?
+    `).bind(userId).first() as any
+    
+    if (!userWithPassword) {
+      return c.json({ error: 'User not found' }, 404)
+    }
+    
+    // Verify current password using the same method as auth
+    const isValid = await verifyPassword(current_password, userWithPassword.password_hash)
+    if (!isValid) {
+      return c.json({ error: 'Current password is incorrect' }, 401)
+    }
+    
+    // Check if new email is already taken
+    const existingEmail = await c.env.DB.prepare('SELECT id FROM users WHERE email = ? AND id != ?')
+      .bind(new_email, userId).first()
+    if (existingEmail) {
+      return c.json({ error: 'Email is already taken' }, 409)
+    }
+    
+    // Update email
+    const result = await c.env.DB.prepare('UPDATE users SET email = ? WHERE id = ?')
+      .bind(new_email, userId).run()
+    
+    if (!result.success) {
+      return c.json({ error: 'Failed to update email' }, 500)
+    }
+    
+    return c.json({ ok: true })
+  } catch (error: any) {
+    console.error('Update email error:', error)
+    return c.json({ error: 'Failed to update email', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// PATCH /api/users/me/password - update password (protected)
+app.patch('/api/users/me/password', requireAuth, async (c) => {
+  try {
+    const token = getSessionToken(c.req.raw)
+    const sessionData = token ? await getSession(c.env, token) : null
+    if (!sessionData) {
+      return c.json({ error: 'Unauthorized' }, 401)
+    }
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    const { current_password, new_password } = await c.req.json()
+    
+    // Validation
+    if (!current_password || !new_password) {
+      return c.json({ error: 'Current password and new password are required' }, 400)
+    }
+    
+    if (new_password.length < 8 || new_password.length > 128) {
+      return c.json({ error: 'Password must be 8-128 characters' }, 400)
+    }
+    
+    const userId = sessionData.user.id
+    
+    // Get user with password hash to verify current password
+    const userWithPassword = await c.env.DB.prepare(`
+      SELECT password_hash FROM users WHERE id = ?
+    `).bind(userId).first() as any
+    
+    if (!userWithPassword) {
+      return c.json({ error: 'User not found' }, 404)
+    }
+    
+    // Verify current password using the same method as auth
+    const isValid = await verifyPassword(current_password, userWithPassword.password_hash)
+    if (!isValid) {
+      return c.json({ error: 'Current password is incorrect' }, 401)
+    }
+    
+    // Hash new password using the same method as registration
+    const newPasswordHash = await hashPassword(new_password)
+    
+    // Update password
+    const result = await c.env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?')
+      .bind(newPasswordHash, userId).run()
+    
+    if (!result.success) {
+      return c.json({ error: 'Failed to update password' }, 500)
+    }
+    
+    return c.json({ ok: true })
+  } catch (error: any) {
+    console.error('Update password error:', error)
+    return c.json({ error: 'Failed to update password', details: error?.message || 'Unknown error' }, 500)
   }
 })
 

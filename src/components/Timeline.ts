@@ -24,11 +24,26 @@ export class Timeline {
       everyN: 8,
       cursor: undefined,
       loading: false,
-      hasMore: true
+      hasMore: true,
+      ngWords: []
     }
     this.element = this.createElement()
     this.setupEventListeners()
-    Promise.all([this.loadInitialPosts(), this.loadAdConfig()])
+    
+    // Load NG words if user is logged in
+    if (this.props.currentUser) {
+      Promise.all([this.loadInitialPosts(), this.loadAdConfig(), this.loadNgWords()])
+    } else {
+      Promise.all([this.loadInitialPosts(), this.loadAdConfig()])
+    }
+  }
+
+  private filterNgWords(posts: Post[], ngWords: string[]): Post[] {
+    if (!ngWords.length) return posts
+    const lower = ngWords.map(w => w.toLowerCase())
+    return posts.filter(post =>
+      !lower.some(word => post.text.toLowerCase().includes(word))
+    )
   }
 
   private createElement(): HTMLElement {
@@ -392,13 +407,28 @@ export class Timeline {
     }
   }
 
+  private async loadNgWords(): Promise<void> {
+    try {
+      const response = await fetch('/api/me')
+      if (response.ok) {
+        const data = await response.json() as { user: { ng_words?: string[] } }
+        this.state.ngWords = data.user.ng_words || []
+      }
+    } catch (error) {
+      console.error('Failed to load NG words:', error)
+    }
+  }
+
   private renderPostList(): void {
     const postList = this.element.querySelector('.post-list') as HTMLElement
     if (!postList) return
 
     postList.innerHTML = ''
 
-    if (this.state.posts.length === 0) {
+    // Apply NG word filtering
+    const filteredPosts = this.filterNgWords(this.state.posts, this.state.ngWords)
+
+    if (filteredPosts.length === 0) {
       const emptyState = document.createElement('p')
       emptyState.className = 'font-mono'
       emptyState.textContent = 'No posts yet. XD'
@@ -406,8 +436,8 @@ export class Timeline {
       return
     }
 
-    // Inject ads into the timeline
-    const timelineItems = injectAds(this.state.posts, this.state.ads, this.state.everyN)
+    // Inject ads into the filtered timeline
+    const timelineItems = injectAds(filteredPosts, this.state.ads, this.state.everyN)
 
     timelineItems.forEach((item) => {
       if (isAd(item)) {

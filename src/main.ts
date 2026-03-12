@@ -14,6 +14,7 @@ import { createAdminAlertsTab } from './components/AdminAlertsTab.js'
 import { createAdminHiddenTab } from './components/AdminHiddenTab.js'
 import { createAdminUsersTab } from './components/AdminUsersTab.js'
 import { createAdminAdsTab } from './components/AdminAdsTab.js'
+import { createSettingsPage } from './components/SettingsPage.js'
 
 console.log('Flaxia initialized')
 
@@ -24,7 +25,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('App mounted')
     
     // Routing state
-    let currentView: 'timeline' | 'thread' | 'login' | 'register' | 'profile' | 'explore' | 'notifications' | 'terms' | 'privacy' | 'admin' = 'timeline'
+    let currentView: 'timeline' | 'thread' | 'login' | 'register' | 'profile' | 'explore' | 'notifications' | 'terms' | 'privacy' | 'admin' | 'settings' = 'timeline'
     let currentPostId: string | null = null
     let currentUsername: string | null = null
     let currentTag: string | null = null
@@ -37,6 +38,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let explorePage: any = null
     let legalPage: any = null
     let notificationsPage: any = null
+    let settingsPage: any = null
     let adminLayout: any = null
     let adminAlertsTab: any = null
     let adminHiddenTab: any = null
@@ -225,6 +227,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         return { view: 'notifications' as const, postId: null, username: null, tag: null }
       }
 
+      // Settings route - requires auth
+      if (cleanPath === '/settings') {
+        console.log('Settings route detected')
+        return { view: 'settings' as const, postId: null, username: null, tag: null }
+      }
+
       // Admin route - requires auth
       const adminMatch = cleanPath.match(/^\/admin(\/alerts|\/hidden|\/users)?$/)
       if (adminMatch) {
@@ -245,7 +253,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     
     // Navigate to view
-    const navigateTo = async (view: 'timeline' | 'thread' | 'login' | 'register' | 'profile' | 'explore' | 'notifications' | 'terms' | 'privacy' | 'admin', postId?: string, username?: string, tag?: string, adminTab?: 'alerts' | 'hidden' | 'users') => {
+    const navigateTo = async (view: 'timeline' | 'thread' | 'login' | 'register' | 'profile' | 'explore' | 'notifications' | 'terms' | 'privacy' | 'admin' | 'settings', postId?: string, username?: string, tag?: string, adminTab?: 'alerts' | 'hidden' | 'users') => {
       console.log('Navigate to:', view, postId, username, tag, 'Current view:', currentView, 'adminTab:', adminTab)
       
       // For auth routes, proceed directly
@@ -276,6 +284,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (notificationsPage) {
           notificationsPage.destroy()
           notificationsPage = null
+        }
+        if (settingsPage) {
+          settingsPage.destroy()
+          settingsPage = null
         }
       } else {
         // Auth guard for protected routes
@@ -310,6 +322,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (notificationsPage) {
           notificationsPage.destroy()
           notificationsPage = null
+        }
+        if (settingsPage) {
+          settingsPage.destroy()
+          settingsPage = null
         }
       }
       
@@ -388,6 +404,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (notificationsPage) {
           notificationsPage.destroy()
           notificationsPage = null
+        }
+        if (settingsPage) {
+          settingsPage.destroy()
+          settingsPage = null
         }
 
         const onTabChange = async (tab: 'alerts' | 'hidden' | 'users' | 'ads') => {
@@ -711,6 +731,124 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Assemble layout
         mainContainer.appendChild(leftNav.getElement())
         mainContainer.appendChild(notificationsPage.getElement())
+        mainContainer.appendChild(rightPanel.getElement())
+        
+        app.appendChild(mainContainer)
+        return
+      }
+      
+      // Handle settings page (within 3-column layout)
+      if (view === 'settings') {
+        currentView = 'settings'
+        currentPostId = null
+        currentUsername = null
+        currentTag = null
+        
+        // Create main container for 3-column layout
+        const mainContainer = document.createElement('div')
+        mainContainer.className = 'main-container'
+        
+        // Create Left Nav
+        const leftNav = createLeftNav({
+          activeItem: 'settings',
+          unreadCount: unreadNotificationCount,
+          currentUser: currentUser || undefined,
+          onNavigate: async (item) => {
+            console.log('Navigate to:', item)
+            if (item === 'home') {
+              window.history.pushState({}, '', '/')
+              navigateTo('timeline')
+            } else if (item === 'explore') {
+              window.history.pushState({}, '', '/explore')
+              navigateTo('explore')
+            } else if (item === 'trending') {
+              const trendingModal = createTrendingModal({
+                onClose: () => {
+                  document.body.removeChild(trendingModal)
+                },
+                onTagClick: (tag) => {
+                  document.body.removeChild(trendingModal)
+                  window.history.pushState({}, '', `/explore?tag=${encodeURIComponent(tag)}`)
+                  navigateTo('explore', undefined, undefined, tag)
+                }
+              })
+              document.body.appendChild(trendingModal)
+            } else if (item === 'notifications') {
+              window.history.pushState({}, '', '/notifications')
+              navigateTo('notifications')
+            } else if (item === 'profile') {
+              if (!currentUser) {
+                window.history.pushState({}, '', '/')
+                navigateTo('timeline')
+                return
+              }
+              window.history.pushState({}, '', `/users/${currentUser.username}`)
+              navigateTo('profile', undefined, currentUser.username)
+            }
+          },
+          onSignIn: () => {
+            window.history.pushState({}, '', '/login')
+            navigateTo('login')
+          },
+          onSignUp: () => {
+            window.history.pushState({}, '', '/register')
+            navigateTo('register')
+          }
+        })
+        
+        leftNavInstances.add(leftNav)
+        
+        // Create Settings Page (as main content)
+        settingsPage = createSettingsPage({
+          currentUser: currentUser || undefined
+        })
+        
+        // Load user data asynchronously
+        const loadUserData = async () => {
+          try {
+            const response = await fetch('/api/me')
+            if (response.ok) {
+              const userData = await response.json() as { user: any }
+              // Recreate settings page with full user data
+              const oldElement = settingsPage.getElement()
+              settingsPage.destroy()
+              settingsPage = createSettingsPage({
+                currentUser: userData.user
+              })
+              
+              // Wait for the next tick to ensure the element is in the DOM
+              setTimeout(() => {
+                if (oldElement.parentNode) {
+                  oldElement.parentNode.replaceChild(settingsPage.getElement(), oldElement)
+                } else {
+                  // If still not in DOM, add it to the main container in the correct position
+                  const leftNavElement = mainContainer.children[0]
+                  if (leftNavElement && mainContainer.children[1]) {
+                    mainContainer.insertBefore(settingsPage.getElement(), mainContainer.children[1])
+                  }
+                }
+              }, 0)
+            }
+          } catch (error) {
+            console.error('Failed to load user data:', error)
+          }
+        }
+        
+        loadUserData()
+        
+        // Create Right Panel
+        const rightPanel = createRightPanel({
+          onSearch: (query) => {
+            console.log('Search:', query)
+          },
+          onFollowUser: (userId) => {
+            console.log('Follow user:', userId)
+          }
+        })
+        
+        // Assemble layout
+        mainContainer.appendChild(leftNav.getElement())
+        mainContainer.appendChild(settingsPage.getElement())
         mainContainer.appendChild(rightPanel.getElement())
         
         app.appendChild(mainContainer)
