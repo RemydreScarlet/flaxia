@@ -895,6 +895,28 @@ app.get('/api/posts', async (c) => {
   }
 })
 
+// GET /api/ads/active - get active ads (public endpoint)
+app.get('/api/ads/active', async (c) => {
+  try {
+    // Stub endpoint - returns empty ads array for now
+    return c.json({ ads: [] })
+  } catch (error: any) {
+    console.error('Get active ads error:', error)
+    return c.json({ error: 'Failed to get active ads', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// GET /api/admin/ads/config - get ad configuration (public endpoint for now)
+app.get('/api/admin/ads/config', async (c) => {
+  try {
+    // Stub endpoint - returns default config for now
+    return c.json({ every_n: 8 })
+  } catch (error: any) {
+    console.error('Get ad config error:', error)
+    return c.json({ error: 'Failed to get ad config', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
 // Step 1 — POST /api/posts/prepare (protected)
 app.post('/api/posts/prepare', requireAuth, async (c) => {
   try {

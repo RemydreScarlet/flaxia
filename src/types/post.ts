@@ -92,7 +92,25 @@ export interface TimelineState {
   mode: 'following' | 'foryou'
   hashtag: string
   posts: Post[]
+  ads: Ad[]
+  everyN: number
   cursor?: string
   loading: boolean
   hasMore: boolean
+}
+
+export interface Ad {
+  id: string
+  body_text: string
+  payload_key: string | null
+  payload_type: 'zip' | 'swf' | 'gif' | 'image' | null
+  click_url: string | null
+  impressions: number
+  clicks: number
+}
+
+export type TimelineItem = Post | Ad
+
+export function isAd(item: TimelineItem): item is Ad {
+  return 'payload_type' in item
 }

@@ -1,7 +1,9 @@
-import { Post, TimelineProps, TimelineState } from '../types/post.js'
+import { Post, TimelineProps, TimelineState, Ad, TimelineItem, isAd } from '../types/post.js'
 import { createPostCard } from './PostCard.js'
 import { createPostComposer, PostComposer } from './PostComposer.js'
 import { showSignInPrompt, SignInPromptAction } from './SignInPrompt.js'
+import { createAdCard } from './AdCard.js'
+import { injectAds } from '../lib/inject-ads.js'
 
 export class Timeline {
   private element: HTMLElement
@@ -18,12 +20,15 @@ export class Timeline {
       mode: 'foryou',
       hashtag: '',
       posts: [],
+      ads: [],
+      everyN: 8,
+      cursor: undefined,
       loading: false,
       hasMore: true
     }
     this.element = this.createElement()
     this.setupEventListeners()
-    this.loadInitialPosts()
+    Promise.all([this.loadInitialPosts(), this.loadAdConfig()])
   }
 
   private createElement(): HTMLElement {
@@ -320,6 +325,21 @@ export class Timeline {
     }
   }
 
+  private async loadAdConfig(): Promise<void> {
+    const [adsRes, configRes] = await Promise.all([
+      fetch('/api/ads/active'),
+      fetch('/api/admin/ads/config')  // returns { every_n: number }
+    ])
+    if (adsRes.ok) {
+      const adsData = await adsRes.json() as { ads: Ad[] }
+      this.state.ads = adsData.ads
+    }
+    if (configRes.ok) {
+      const configData = await configRes.json() as { every_n: number }
+      this.state.everyN = configData.every_n
+    }
+  }
+
   private async loadMorePosts(): Promise<void> {
     if (this.state.loading || !this.state.hasMore || !this.state.cursor) return
 
@@ -386,41 +406,31 @@ export class Timeline {
       return
     }
 
-    this.state.posts.forEach((post, index) => {
-      // Inject AdBanner every 8th slot (index 7, 15, 23, etc.)
-      if (index > 0 && index % 8 === 0) {
-        const adBanner = this.createAdBanner()
-        postList.appendChild(adBanner)
+    // Inject ads into the timeline
+    const timelineItems = injectAds(this.state.posts, this.state.ads, this.state.everyN)
+
+    timelineItems.forEach((item) => {
+      if (isAd(item)) {
+        // Render ad card
+        const adCard = createAdCard(item)
+        postList.appendChild(adCard)
+      } else {
+        // Render post card
+        const postCard = createPostCard({
+          post: item,
+          sandboxOrigin: this.props.sandboxOrigin,
+          currentUser: this.props.currentUser,
+          onDelete: (postId) => {
+            // Remove post from state
+            this.state.posts = this.state.posts.filter(p => p.id !== postId)
+            this.postCards.delete(postId)
+          }
+        })
+        
+        this.postCards.set(item.id, postCard)
+        postList.appendChild(postCard.getElement())
       }
-
-      const postCard = createPostCard({
-        post,
-        sandboxOrigin: this.props.sandboxOrigin,
-        currentUser: this.props.currentUser,
-        onDelete: (postId) => {
-          // Remove post from state
-          this.state.posts = this.state.posts.filter(p => p.id !== postId)
-          this.postCards.delete(postId)
-        }
-      })
-      
-      this.postCards.set(post.id, postCard)
-      postList.appendChild(postCard.getElement())
     })
-  }
-
-  private createAdBanner(): HTMLElement {
-    const adBanner = document.createElement('div')
-    adBanner.className = 'ad-banner'
-    adBanner.innerHTML = `
-      <div class="ad-content">
-        <span class="ad-label">ADVERTISEMENT</span>
-        <div class="ad-placeholder">
-          <p>Ad Space</p>
-        </div>
-      </div>
-    `
-    return adBanner
   }
 
   private updateLoadMoreButton(): void {
