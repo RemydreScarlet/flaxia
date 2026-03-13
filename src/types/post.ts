@@ -23,6 +23,7 @@ export interface Post {
   gif_key?: string  // Stores all image formats (GIF, PNG, JPG), not just GIFs
   payload_key?: string  // Stores ZIP files for HTML execution
   swf_key?: string  // Stores SWF files for Flash execution
+  thumbnail_key?: string  // Stores thumbnail image for ZIP/SWF posts
   fresh_count: number
   reply_count: number
   parent_id?: string

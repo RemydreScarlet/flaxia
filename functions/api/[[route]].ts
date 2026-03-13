@@ -281,6 +281,70 @@ app.get('/api/ads/:id/payload', async (c) => {
   }
 })
 
+// GET /api/thumbnail/:id - serve thumbnail images from R2
+app.get('/api/thumbnail/:id', async (c) => {
+  try {
+    const postId = c.req.param('id')
+    
+    if (!postId) {
+      return c.json({ error: 'Missing post ID' }, 400)
+    }
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    if (!c.env.BUCKET) {
+      return c.json({ error: 'Storage not available' }, 500)
+    }
+    
+    // Fetch thumbnail_key from posts table
+    const post = await c.env.DB.prepare('SELECT thumbnail_key FROM posts WHERE id = ?')
+      .bind(postId).first()
+    
+    if (!post || !post.thumbnail_key) {
+      return c.json({ error: 'Thumbnail not found' }, 404)
+    }
+    
+    // Get thumbnail object from R2
+    const object = await c.env.BUCKET.get(post.thumbnail_key as string)
+    
+    if (!object) {
+      return c.json({ error: 'Thumbnail file not found' }, 404)
+    }
+    
+    // Determine content type based on file extension
+    let contentType = 'image/jpeg' // default
+    const key = post.thumbnail_key as string
+    const extension = key.split('.').pop()?.toLowerCase()
+    
+    switch (extension) {
+      case 'jpg':
+      case 'jpeg':
+        contentType = 'image/jpeg'
+        break
+      case 'png':
+        contentType = 'image/png'
+        break
+      case 'gif':
+        contentType = 'image/gif'
+        break
+    }
+    
+    // Stream the thumbnail with proper headers
+    return new Response(object.body, {
+      headers: {
+        'Content-Type': contentType,
+        'Cache-Control': 'public, max-age=31536000', // Cache for 1 year
+        'Access-Control-Allow-Origin': '*'
+      }
+    })
+  } catch (error: any) {
+    console.error('Thumbnail proxy error:', error)
+    return c.json({ error: 'Failed to fetch thumbnail', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
 // GET /api/swf/:postId - serve SWF files from R2
 app.get('/api/swf/:postId', async (c) => {
   try {
@@ -1182,16 +1246,16 @@ app.get('/api/posts', async (c) => {
     
     if (hashtag) {
       // Filter by hashtag using json_each
-      query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.hidden = 0 AND p.parent_id IS NULL AND EXISTS (SELECT 1 FROM json_each(p.hashtags) WHERE value = ?) ORDER BY p.created_at DESC LIMIT ?'
+      query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.thumbnail_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.hidden = 0 AND p.parent_id IS NULL AND EXISTS (SELECT 1 FROM json_each(p.hashtags) WHERE value = ?) ORDER BY p.created_at DESC LIMIT ?'
       params.push(hashtag, limit)
       
       if (cursor) {
-        query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.hidden = 0 AND p.parent_id IS NULL AND EXISTS (SELECT 1 FROM json_each(p.hashtags) WHERE value = ?) AND p.created_at < ? ORDER BY p.created_at DESC LIMIT ?'
+        query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.thumbnail_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.hidden = 0 AND p.parent_id IS NULL AND EXISTS (SELECT 1 FROM json_each(p.hashtags) WHERE value = ?) AND p.created_at < ? ORDER BY p.created_at DESC LIMIT ?'
         params.unshift(cursor)
       }
     } else if (following && currentUserId) {
       // Following tab - show posts from followed users and current user's own posts
-      query = `SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at 
+      query = `SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.thumbnail_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at 
         FROM posts p 
         LEFT JOIN users u ON p.user_id = u.id 
         WHERE (
@@ -1205,7 +1269,7 @@ app.get('/api/posts', async (c) => {
       params.push(currentUserId, currentUserId, limit)
       
       if (cursor) {
-        query = `SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at 
+        query = `SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.thumbnail_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at 
           FROM posts p 
           LEFT JOIN users u ON p.user_id = u.id 
           WHERE (
@@ -1220,20 +1284,20 @@ app.get('/api/posts', async (c) => {
       }
     } else if (username) {
       // Username filter - show posts from specific user
-      query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.username = ? AND p.hidden = 0 ORDER BY p.created_at DESC LIMIT ?'
+      query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.thumbnail_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.username = ? AND p.hidden = 0 ORDER BY p.created_at DESC LIMIT ?'
       params.push(username, limit)
       
       if (cursor) {
-        query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.username = ? AND p.hidden = 0 AND p.created_at < ? ORDER BY p.created_at DESC LIMIT ?'
+        query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.thumbnail_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.username = ? AND p.hidden = 0 AND p.created_at < ? ORDER BY p.created_at DESC LIMIT ?'
         params.unshift(cursor)
       }
     } else {
       // Regular timeline query (For You tab)
-      query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.hidden = 0 AND p.parent_id IS NULL ORDER BY p.created_at DESC LIMIT ?'
+      query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.thumbnail_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.hidden = 0 AND p.parent_id IS NULL ORDER BY p.created_at DESC LIMIT ?'
       params.push(limit)
       
       if (cursor) {
-        query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.hidden = 0 AND p.parent_id IS NULL AND p.created_at < ? ORDER BY p.created_at DESC LIMIT ?'
+        query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.thumbnail_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = \'published\' AND p.hidden = 0 AND p.parent_id IS NULL AND p.created_at < ? ORDER BY p.created_at DESC LIMIT ?'
         params.unshift(cursor)
       }
     }
@@ -1889,7 +1953,64 @@ app.post('/api/posts', requireAuth, async (c) => {
   if (!rl.allowed) return rateLimitResponse(c, rl.resetIn, 5)
 
   try {
-    const { text, payloadKey, gifKey } = await c.req.json()
+    const contentType = c.req.header('content-type')
+    let text: string
+    let payloadKey: string | undefined
+    let gifKey: string | undefined
+    let swfKey: string | undefined
+    let thumbnailKey: string | undefined
+    let thumbnailFile: File | undefined
+
+    if (contentType?.includes('multipart/form-data')) {
+      // Handle multipart/form-data (for thumbnail uploads)
+      const formData = await c.req.formData()
+      text = formData.get('text') as string
+      payloadKey = formData.get('payloadKey') as string | null || undefined
+      gifKey = formData.get('gifKey') as string | null || undefined
+      swfKey = formData.get('swfKey') as string | null || undefined
+      thumbnailFile = formData.get('thumbnail') as File | null || undefined
+
+      // Process thumbnail if present and payload is ZIP or SWF
+      if (thumbnailFile && thumbnailFile.size > 0) {
+        // Only allow thumbnail for ZIP or SWF posts
+        if (!payloadKey?.startsWith('zip/') && !swfKey?.startsWith('swf/')) {
+          return c.json({ error: 'Thumbnail only allowed for ZIP or SWF posts' }, 400)
+        }
+
+        // Validate thumbnail size (1MB max)
+        if (thumbnailFile.size > 1024 * 1024) {
+          return c.json({ error: 'Thumbnail must be ≤1MB' }, 400)
+        }
+
+        // Validate thumbnail extension
+        const allowedExts = ['jpg', 'jpeg', 'png', 'gif']
+        const ext = thumbnailFile.name.toLowerCase().split('.').pop()
+        if (!ext || !allowedExts.includes(ext)) {
+          return c.json({ error: 'Thumbnail must be .jpg, .jpeg, .png, or .gif' }, 400)
+        }
+
+        // Upload thumbnail to R2
+        if (!c.env.BUCKET) {
+          return c.json({ error: 'Storage not available' }, 500)
+        }
+
+        const postId = crypto.randomUUID()
+        thumbnailKey = `thumbnail/${postId}.${ext}`
+
+        await c.env.BUCKET.put(thumbnailKey, await thumbnailFile.arrayBuffer(), {
+          httpMetadata: {
+            contentType: thumbnailFile.type
+          }
+        })
+      }
+    } else {
+      // Handle JSON request (existing behavior)
+      const body = await c.req.json()
+      text = body.text
+      payloadKey = body.payloadKey
+      gifKey = body.gifKey
+      swfKey = body.swfKey
+    }
     
     if (!text || text.length > 200) {
       return c.json({ error: 'Invalid text' }, 400)
@@ -1910,9 +2031,9 @@ app.post('/api/posts', requireAuth, async (c) => {
     }
     
     const result = await c.env.DB.prepare(`
-      INSERT INTO posts (id, user_id, username, text, hashtags, payload_key, gif_key)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).bind(postId, userId, username, text, JSON.stringify(hashtags), payloadKey || null, gifKey || null).run()
+      INSERT INTO posts (id, user_id, username, text, hashtags, payload_key, gif_key, swf_key, thumbnail_key)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(postId, userId, username, text, JSON.stringify(hashtags), payloadKey || null, gifKey || null, swfKey || null, thumbnailKey || null).run()
     
     if (!result.success) {
       console.error('Database insert failed:', result)
@@ -2424,8 +2545,8 @@ app.delete('/api/posts/:id', requireAuth, async (c) => {
     
     // Get the post to verify ownership and get file keys
     const post = await c.env.DB.prepare(
-      'SELECT id, user_id, gif_key, payload_key FROM posts WHERE id = ?'
-    ).bind(postId).first() as { id: string; user_id: string; gif_key?: string; payload_key?: string } | null
+      'SELECT id, user_id, gif_key, payload_key, swf_key, thumbnail_key FROM posts WHERE id = ?'
+    ).bind(postId).first() as { id: string; user_id: string; gif_key?: string; payload_key?: string; swf_key?: string; thumbnail_key?: string } | null
     
     if (!post) {
       return c.json({ error: 'Post not found' }, 404)
@@ -2450,6 +2571,20 @@ app.delete('/api/posts/:id', requireAuth, async (c) => {
           await c.env.BUCKET.delete(post.payload_key)
         } catch (e) {
           console.error('Failed to delete payload file:', e)
+        }
+      }
+      if (post.swf_key) {
+        try {
+          await c.env.BUCKET.delete(post.swf_key)
+        } catch (e) {
+          console.error('Failed to delete SWF file:', e)
+        }
+      }
+      if (post.thumbnail_key) {
+        try {
+          await c.env.BUCKET.delete(post.thumbnail_key)
+        } catch (e) {
+          console.error('Failed to delete thumbnail file:', e)
         }
       }
     }

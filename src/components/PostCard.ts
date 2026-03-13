@@ -62,10 +62,18 @@ export class PostCard {
     container.appendChild(headerContainer)
 
     // Post text
-    const text = createPostText({
+    const textElement = document.createElement('div')
+    container.appendChild(textElement)
+    
+    // Process text asynchronously
+    createPostText({
       text: this.props.post.text
+    }).then(text => {
+      textElement.replaceWith(text)
+    }).catch(error => {
+      console.error('Failed to create post text:', error)
+      textElement.textContent = this.props.post.text
     })
-    container.appendChild(text)
 
     // Tag chips (between text and PostStage)
     const hashtags = this.parseHashtags(this.props.post.hashtags)

@@ -3,26 +3,18 @@ export interface PostComposerProps {
   currentUser?: { username: string; display_name?: string; avatar_key?: string } | null
 }
 
-import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
-
-// Configure markdown-it for our use case
-const md = new MarkdownIt({
-  html: false,        // Disable HTML tags
-  breaks: true,
-  linkify: false,
-  typographer: true,
-})
-md.block.ruler.disable(['heading', 'lheading'])
 
 export class PostComposer {
   private element: HTMLElement
   private props: PostComposerProps
   private textarea!: HTMLTextAreaElement
   private fileInput!: HTMLInputElement
+  private thumbnailInput!: HTMLInputElement
   private submitButton!: HTMLButtonElement
   private charCount!: HTMLSpanElement
   private selectedFile: File | null = null
+  private selectedThumbnail: File | null = null
   private isSubmitting = false
   private dragCounter = 0
   private errorDisplay!: HTMLElement
@@ -72,12 +64,29 @@ export class PostComposer {
             <button class="file-remove" type="button">✕</button>
           </div>
         </div>
+        <div class="composer-thumbnail-section" style="display: none;">
+          <div class="thumbnail-header">
+            <span>Thumbnail (optional)</span>
+          </div>
+          <div class="thumbnail-input-area">
+            <input type="file" class="composer-thumbnail-input" accept=".jpg,.jpeg,.png,.gif" />
+            <button class="thumbnail-button" type="button">
+              📷 Add thumbnail
+            </button>
+            <span class="thumbnail-hint">accepts .jpg .png .gif, max 1MB</span>
+          </div>
+          <div class="thumbnail-preview" style="display: none;">
+            <img class="thumbnail-image" />
+            <button class="thumbnail-remove" type="button">✕</button>
+          </div>
+        </div>
       </div>
     `
 
     // Cache element references
     this.textarea = container.querySelector('.composer-textarea')!
     this.fileInput = container.querySelector('.composer-file-input')!
+    this.thumbnailInput = container.querySelector('.composer-thumbnail-input')!
     this.submitButton = container.querySelector('.composer-submit')!
     this.charCount = container.querySelector('.composer-char-count')!
 
@@ -162,6 +171,26 @@ export class PostComposer {
     const fileRemove = this.element.querySelector('.file-remove')!
     fileRemove.addEventListener('click', () => {
       this.clearFileSelection()
+    })
+
+    // Thumbnail button click
+    const thumbnailButton = this.element.querySelector('.thumbnail-button')!
+    thumbnailButton.addEventListener('click', () => {
+      this.thumbnailInput.click()
+    })
+
+    // Thumbnail selection
+    this.thumbnailInput.addEventListener('change', (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0]
+      if (file) {
+        this.handleThumbnailSelection(file)
+      }
+    })
+
+    // Thumbnail removal
+    const thumbnailRemove = this.element.querySelector('.thumbnail-remove')!
+    thumbnailRemove.addEventListener('click', () => {
+      this.clearThumbnailSelection()
     })
 
     // Submit button
@@ -263,6 +292,16 @@ export class PostComposer {
 
     this.selectedFile = file
     this.showFilePreview(file)
+
+    // Show thumbnail section for ZIP or SWF files
+    const isZip = file.name.toLowerCase().endsWith('.zip')
+    const isSwf = file.name.toLowerCase().endsWith('.swf')
+    if (isZip || isSwf) {
+      this.showThumbnailSection()
+    } else {
+      this.hideThumbnailSection()
+    }
+
     this.updateSubmitButton()
   }
 
@@ -270,8 +309,72 @@ export class PostComposer {
     this.selectedFile = null
     this.fileInput.value = ''
     this.hideFilePreview()
+    this.hideThumbnailSection()
+    this.clearThumbnailSelection()
     this.clearError()
     this.updateSubmitButton()
+  }
+
+  private handleThumbnailSelection(file: File): void {
+    this.clearError()
+
+    // Validate thumbnail size (1MB max)
+    if (file.size > 1024 * 1024) {
+      this.showError('Thumbnail must be ≤1MB')
+      this.clearThumbnailSelection()
+      return
+    }
+
+    // Validate thumbnail extension
+    const allowedExts = ['jpg', 'jpeg', 'png', 'gif']
+    const ext = file.name.toLowerCase().split('.').pop()
+    if (!ext || !allowedExts.includes(ext)) {
+      this.showError('Thumbnail must be .jpg, .jpeg, .png, or .gif')
+      this.clearThumbnailSelection()
+      return
+    }
+
+    this.selectedThumbnail = file
+    this.showThumbnailPreview(file)
+  }
+
+  private clearThumbnailSelection(): void {
+    this.selectedThumbnail = null
+    this.thumbnailInput.value = ''
+    this.hideThumbnailPreview()
+  }
+
+  private showThumbnailSection(): void {
+    const section = this.element.querySelector('.composer-thumbnail-section') as HTMLElement
+    if (section) {
+      section.style.display = 'block'
+    }
+  }
+
+  private hideThumbnailSection(): void {
+    const section = this.element.querySelector('.composer-thumbnail-section') as HTMLElement
+    if (section) {
+      section.style.display = 'none'
+    }
+    this.clearThumbnailSelection()
+  }
+
+  private showThumbnailPreview(file: File): void {
+    const preview = this.element.querySelector('.thumbnail-preview') as HTMLElement
+    const image = preview.querySelector('.thumbnail-image') as HTMLImageElement
+    
+    image.src = URL.createObjectURL(file)
+    preview.style.display = 'block'
+  }
+
+  private hideThumbnailPreview(): void {
+    const preview = this.element.querySelector('.thumbnail-preview') as HTMLElement
+    const image = preview.querySelector('.thumbnail-image') as HTMLImageElement
+    
+    if (image.src.startsWith('blob:')) {
+      URL.revokeObjectURL(image.src)
+    }
+    preview.style.display = 'none'
   }
 
   private showFilePreview(file: File): void {
@@ -309,10 +412,10 @@ export class PostComposer {
     this.updateSubmitButton()
 
     try {
+      let postId: string | undefined
       let gifKey: string | undefined
       let zipKey: string | undefined
       let swfKey: string | undefined
-      let postId: string | undefined
 
       // Step 1: Prepare post if file is selected
       if (this.selectedFile) {
@@ -347,11 +450,36 @@ export class PostComposer {
         }
       }
 
-      // Step 3: Commit post
-      const commitResult = await this.commitPost(postId, gifKey, zipKey, swfKey, text)
-      
-      if (!commitResult) {
-        throw new Error('Failed to commit post')
+      // Step 2: Create post using multipart form data if thumbnail is present, otherwise use commit
+      let commitResult: any
+      if (this.selectedThumbnail && (zipKey || swfKey)) {
+        // Use multipart form data for thumbnail upload
+        const formData = new FormData()
+        formData.append('text', text)
+        if (gifKey) formData.append('gifKey', gifKey)
+        if (zipKey) formData.append('payloadKey', zipKey)
+        if (swfKey) formData.append('swfKey', swfKey)
+        formData.append('thumbnail', this.selectedThumbnail)
+
+        const response = await fetch('/api/posts', {
+          method: 'POST',
+          credentials: 'include',
+          body: formData
+        })
+
+        if (!response.ok) {
+          const error = await response.json() as any
+          throw new Error(error?.error || 'Failed to create post')
+        }
+
+        commitResult = await response.json()
+      } else {
+        // Use existing commit flow for posts without thumbnails
+        commitResult = await this.commitPost(postId, gifKey, zipKey, swfKey, text)
+        
+        if (!commitResult) {
+          throw new Error('Failed to commit post')
+        }
       }
 
       // Clear form

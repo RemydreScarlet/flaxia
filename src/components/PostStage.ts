@@ -216,6 +216,78 @@ function createExecutionButton(props: ZipExecutionButtonProps): HTMLElement {
   return container
 }
 
+// Create thumbnail with overlay button for ZIP/SWF posts
+function createThumbnailWithOverlay(props: {
+  postId: string
+  thumbnailKey: string
+  overlayLabel: string
+  onClick: () => void
+}): HTMLElement {
+  const container = document.createElement('div')
+  container.className = 'thumbnail-overlay-container'
+  container.style.cssText = `
+    position: relative;
+    width: 100%;
+    height: 100%;
+    cursor: pointer;
+    border-radius: 8px;
+    overflow: hidden;
+  `
+
+  // Thumbnail image
+  const image = document.createElement('img')
+  image.src = `/api/thumbnail/${props.postId}`
+  image.style.cssText = `
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  `
+  
+  // Overlay button
+  const overlay = document.createElement('div')
+  overlay.style.cssText = `
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+    pointer-events: none;
+  `
+  overlay.textContent = props.overlayLabel
+
+  container.appendChild(image)
+  container.appendChild(overlay)
+
+  // Hover effects
+  container.addEventListener('mouseenter', () => {
+    overlay.style.background = 'rgba(0, 0, 0, 0.8)'
+    overlay.style.transform = 'translate(-50%, -50%) scale(1.05)'
+  })
+
+  container.addEventListener('mouseleave', () => {
+    overlay.style.background = 'rgba(0, 0, 0, 0.7)'
+    overlay.style.transform = 'translate(-50%, -50%) scale(1)'
+  })
+
+  // Click handler - trigger execution
+  container.addEventListener('click', (e) => {
+    e.stopPropagation()
+    props.onClick()
+  })
+
+  return container
+}
+
 export function createPostStage(props: PostStageProps): HTMLElement {
   const container = document.createElement('div')
   container.className = 'post-stage'
@@ -256,23 +328,45 @@ async function updateStageContent(container: HTMLElement, props: PostStageProps)
     
     // Check if it's a ZIP file (payload_key starting with 'zip/')
     if (props.post.payload_key && props.post.payload_key.startsWith('zip/')) {
-      // Create ZIP execution button
-      mediaElement = createExecutionButton({
-        postId: props.post.id,
-        label: 'Click to Execute ZIP',
-        icon: '🚀',
-        onClick: () => props.onModeChange(PostCardMode.EXECUTING)
-      })
+      if (props.post.thumbnail_key) {
+        // Show thumbnail with overlay button
+        mediaElement = createThumbnailWithOverlay({
+          postId: props.post.id,
+          thumbnailKey: props.post.thumbnail_key,
+          overlayLabel: '🚀 Run',
+          onClick: () => props.onModeChange(PostCardMode.EXECUTING)
+        })
+      } else {
+        // Create ZIP execution button (existing behavior)
+        mediaElement = createExecutionButton({
+          postId: props.post.id,
+          label: 'Click to Execute ZIP',
+          icon: '🚀',
+          onClick: () => props.onModeChange(PostCardMode.EXECUTING)
+        })
+      }
     } else if (props.post.swf_key && props.post.swf_key.startsWith('swf/')) {
-      // Create SWF execution button
-      mediaElement = createSwfExecutionButton({
-        postId: props.post.id,
-        label: 'Click to Play Flash',
-        icon: '⚡',
-        onClick: () => props.onModeChange(PostCardMode.EXECUTING)
-      })
-      // Add flash class for 4:3 aspect ratio
-      container.classList.add('post-stage--flash')
+      if (props.post.thumbnail_key) {
+        // Show thumbnail with overlay button
+        mediaElement = createThumbnailWithOverlay({
+          postId: props.post.id,
+          thumbnailKey: props.post.thumbnail_key,
+          overlayLabel: '⚡ Play',
+          onClick: () => props.onModeChange(PostCardMode.EXECUTING)
+        })
+        // Add flash class for 4:3 aspect ratio
+        container.classList.add('post-stage--flash')
+      } else {
+        // Create SWF execution button (existing behavior)
+        mediaElement = createSwfExecutionButton({
+          postId: props.post.id,
+          label: 'Click to Play Flash',
+          icon: '⚡',
+          onClick: () => props.onModeChange(PostCardMode.EXECUTING)
+        })
+        // Add flash class for 4:3 aspect ratio
+        container.classList.add('post-stage--flash')
+      }
     } else if (props.post.gif_key && props.post.gif_key.startsWith('audio/')) {
       mediaElement = createAudioPlayer({
         gifKey: props.post.gif_key,

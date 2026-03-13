@@ -1,18 +1,43 @@
 import { PostTextProps } from '../types/post.js'
-import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 
 // Configure markdown-it with security settings
-const md = new MarkdownIt({
-  html: false,        // Disable raw HTML for security
-  xhtmlOut: false,
-  breaks: true,       // Convert newlines to <br>
-  linkify: false,     // We'll handle links ourselves
-  typographer: true,
-})
+let md: any = null
 
-// Disable all heading rules
-md.block.ruler.disable(['heading', 'lheading'])
+// Cache for dynamic imports
+let katexPromise: Promise<typeof import('katex')> | null = null
+let markdownitPromise: Promise<any> | null = null
+
+async function getMarkdownIt() {
+  if (!md) {
+    const MarkdownItModule = await getMarkdownItModule()
+    md = new MarkdownItModule({
+      html: false,        // Disable raw HTML for security
+      xhtmlOut: false,
+      breaks: true,       // Convert newlines to <br>
+      linkify: false,     // We'll handle links ourselves
+      typographer: true,
+    })
+    // Disable all heading rules
+    md.block.ruler.disable(['heading', 'lheading'])
+  }
+  return md
+}
+
+async function getMarkdownItModule() {
+  if (!markdownitPromise) {
+    markdownitPromise = import('markdown-it')
+  }
+  const MarkdownItModule = await markdownitPromise
+  return MarkdownItModule.default
+}
+
+async function getKatex() {
+  if (!katexPromise) {
+    katexPromise = import('katex')
+  }
+  return katexPromise
+}
 
 interface MathPlaceholder {
   id: string
@@ -20,12 +45,12 @@ interface MathPlaceholder {
   displayMode: boolean
 }
 
-export function createPostText(props: PostTextProps): HTMLElement {
+export async function createPostText(props: PostTextProps): Promise<HTMLElement> {
   const container = document.createElement('div')
   container.className = 'post-text'
   
   // Process the text through the unified pipeline
-  const processedHtml = processText(props.text)
+  const processedHtml = await processText(props.text)
   container.innerHTML = processedHtml
   
   // Render math elements after HTML is inserted
@@ -48,11 +73,12 @@ export { processText, renderMathElements, linkifyHashtags, linkifyUrls }
  * 3. Sanitize HTML
  * 4. Expand KaTeX placeholders
  */
-function processText(text: string): string {
+async function processText(text: string): Promise<string> {
   // Step 1: Escape math notation with placeholders
   const { textWithPlaceholders, mathPlaceholders } = escapeMathNotation(text)
   
-  // Step 2: Parse Markdown
+  // Step 2: Parse Markdown (dynamically import markdown-it)
+  const md = await getMarkdownIt()
   let html = md.render(textWithPlaceholders)
   
   // Step 3: Restore math placeholders BEFORE sanitization
@@ -300,25 +326,30 @@ function linkifyUrls(container: HTMLElement): void {
 }
 
 /**
- * Load KaTeX from CDN
+ * Load KaTeX from CDN (cached)
  */
-function loadKaTeX(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    // Check if already loaded
-    if (window.katex) {
-      resolve()
-      return
-    }
-    
-    const link = document.createElement('link')
-    link.rel = 'stylesheet'
-    link.href = 'https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/katex.min.css'
-    document.head.appendChild(link)
-    
+async function loadKaTeX(): Promise<void> {
+  // Check if already loaded
+  if (window.katex) {
+    return
+  }
+  
+  const katex = await getKatex()
+  
+  const link = document.createElement('link')
+  link.rel = 'stylesheet'
+  link.href = 'https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/katex.min.css'
+  document.head.appendChild(link)
+  
+  return new Promise<void>((resolve, reject) => {
     const script = document.createElement('script')
     script.src = 'https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/katex.min.js'
-    script.onload = () => resolve()
-    script.onerror = reject
+    script.onload = () => {
+      // Make katex available globally
+      ;(window as any).katex = katex.default
+      resolve()
+    }
+    script.onerror = () => reject(new Error('Failed to load KaTeX'))
     document.head.appendChild(script)
   })
 }

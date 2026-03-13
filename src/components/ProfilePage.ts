@@ -150,13 +150,17 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
         
         // Process bio with Markdown and links
         if (userData.bio) {
-          const processedHtml = processText(userData.bio)
-          bio.innerHTML = processedHtml
-          
-          // Render math elements and linkify
-          renderMathElements(bio)
-          linkifyHashtags(bio)
-          linkifyUrls(bio)
+          processText(userData.bio).then(processedHtml => {
+            bio.innerHTML = processedHtml
+            
+            // Render math elements and linkify
+            renderMathElements(bio)
+            linkifyHashtags(bio)
+            linkifyUrls(bio)
+          }).catch(error => {
+            console.error('Failed to process bio:', error)
+            bio.textContent = userData.bio
+          })
         } else {
           bio.textContent = ''
         }

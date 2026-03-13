@@ -268,7 +268,7 @@ export class RightPanel {
         justify-content: center;
         font-weight: 600;
         color: var(--text-primary);
-        background-image: ${user.avatar_key ? `url('/api/avatar/${user.id}')` : 'none'};
+        background-image: ${user.avatar_key ? `url('/api/images/${user.avatar_key}')` : 'none'};
         background-size: cover;
         background-position: center;
       `

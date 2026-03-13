@@ -1,7 +1,17 @@
-import JSZip from 'jszip'
 
 export interface ZipExecutorHandle {
   destroy: () => void
+}
+
+// Cache for dynamic imports
+let jszipPromise: Promise<any> | null = null
+
+async function getJSZip() {
+  if (!jszipPromise) {
+    jszipPromise = import('jszip')
+  }
+  const JSZipModule = await jszipPromise
+  return (JSZipModule as any).default
 }
 
 // Allowed extensions and their MIME types
@@ -49,6 +59,7 @@ export async function executeZip(
     }
     
     const zipData = await response.arrayBuffer()
+    const JSZip = await getJSZip()
     const zip = await JSZip.loadAsync(zipData)
 
     // Step 2: Validate ZIP
@@ -96,7 +107,7 @@ export async function executeZip(
   }
 }
 
-function validateZip(zip: JSZip): void {
+function validateZip(zip: any): void {
   const files = Object.entries(zip.files)
   
   // File count: 255 or fewer
@@ -109,7 +120,7 @@ function validateZip(zip: JSZip): void {
 
   for (const [path, file] of files) {
     // Skip directories
-    if (file.dir) continue
+    if ((file as any).dir) continue
 
     // Path length: 255 characters or fewer
     if (path.length > 255) {
@@ -168,11 +179,11 @@ function validateZip(zip: JSZip): void {
   }
 }
 
-async function generateBlobUrlMap(zip: JSZip): Promise<Map<string, string>> {
+async function generateBlobUrlMap(zip: any): Promise<Map<string, string>> {
   const blobUrlMap = new Map<string, string>()
 
   for (const [path, file] of Object.entries(zip.files)) {
-    if (file.dir) continue
+    if ((file as any).dir) continue
 
     // Normalize path: strip leading "./"
     const normalizedPath = path.replace(/^\.\//, '')
@@ -182,7 +193,7 @@ async function generateBlobUrlMap(zip: JSZip): Promise<Map<string, string>> {
     const mimeType = ALLOWED_EXTENSIONS[ext]
     
     if (mimeType) {
-      const content = await file.async('uint8array')
+      const content = await (file as any).async('uint8array')
       const arrayBuffer = content.buffer.slice(content.byteOffset, content.byteOffset + content.byteLength) as ArrayBuffer
       const blob = new Blob([arrayBuffer], { type: mimeType })
       const blobUrl = URL.createObjectURL(blob)
@@ -193,13 +204,13 @@ async function generateBlobUrlMap(zip: JSZip): Promise<Map<string, string>> {
   return blobUrlMap
 }
 
-async function rewriteIndexHtml(zip: JSZip, blobUrlMap: Map<string, string>): Promise<string> {
+async function rewriteIndexHtml(zip: any, blobUrlMap: Map<string, string>): Promise<string> {
   const indexFile = zip.files['index.html']
   if (!indexFile || indexFile.dir) {
     throw new Error('index.html not found at root')
   }
 
-  let htmlContent = await indexFile.async('string')
+  let htmlContent = await (indexFile as any).async('string')
   
   // Use string replacement to avoid corrupting JavaScript code
   htmlContent = rewriteHtmlString(htmlContent, blobUrlMap)

@@ -1,15 +1,5 @@
 import { Post } from '../types/post.js'
-import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
-
-// Configure markdown-it for our use case
-const md = new MarkdownIt({
-  html: false,        // Disable HTML tags
-  breaks: true,
-  linkify: false,
-  typographer: true,
-})
-md.block.ruler.disable(['heading', 'lheading'])
 
 export interface ReplyComposerProps {
   postId: string
