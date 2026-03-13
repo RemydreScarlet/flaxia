@@ -160,6 +160,42 @@ export function createAdminUsersTab({ onNavigateToTab, adminUsernames = [] }: Ad
     `
     element.appendChild(title)
 
+    // Add user count display
+    const countContainer = document.createElement('div')
+    countContainer.style.cssText = `
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    `
+
+    const totalCount = document.createElement('div')
+    totalCount.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 16px;
+      color: #f1f5f9;
+    `
+
+    const countLabel = document.createElement('span')
+    countLabel.textContent = 'Total users:'
+    countLabel.style.cssText = 'color: #94a3b8; font-weight: 500;'
+
+    const countNumber = document.createElement('span')
+    countNumber.textContent = users.length.toString()
+    countNumber.style.cssText = `
+      color: #22c55e;
+      font-weight: 600;
+      font-size: 18px;
+    `
+
+    totalCount.appendChild(countLabel)
+    totalCount.appendChild(countNumber)
+    countContainer.appendChild(totalCount)
+    element.appendChild(countContainer)
+
     const searchContainer = document.createElement('div')
     searchContainer.style.cssText = 'margin-bottom: 16px;'
 

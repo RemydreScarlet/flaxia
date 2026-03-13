@@ -491,6 +491,85 @@ app.post('/api/auth/logout', requireAuth, async (c) => {
   }
 })
 
+// GET /api/users/suggestions - get user suggestions for "who to follow"
+app.get('/api/users/suggestions', async (c) => {
+  try {
+    // Get current user from session
+    const token = getSessionToken(c.req.raw)
+    const sessionData = token ? await getSession(c.env, token) : null
+    
+    // If not authenticated, return empty list
+    if (!sessionData || !c.env.DB) {
+      return c.json({ users: [] })
+    }
+    
+    const currentUserId = sessionData.user.id
+    
+    // Get suggestions: users not followed by current user and not self
+    const suggestions = await c.env.DB.prepare(`
+      SELECT id, username, display_name, avatar_key
+      FROM users
+      WHERE id != ?
+      AND id NOT IN (
+        SELECT followee_id FROM follows WHERE follower_id = ?
+      )
+      ORDER BY RANDOM()
+      LIMIT 3
+    `).bind(currentUserId, currentUserId).all()
+    
+    return c.json({ users: suggestions.results || [] })
+  } catch (error: any) {
+    console.error('User suggestions error:', error)
+    return c.json({ users: [] })
+  }
+})
+
+// POST /api/follows/:id - follow a user by ID (protected)
+app.post('/api/follows/:id', requireAuth, async (c) => {
+  try {
+    const followeeId = c.req.param('id')
+    
+    if (!followeeId) {
+      return c.json({ error: 'User ID required' }, 400)
+    }
+    
+    const token = getSessionToken(c.req.raw)
+    const sessionData = token ? await getSession(c.env, token) : null
+    if (!sessionData) {
+      return c.json({ error: 'Unauthorized' }, 401)
+    }
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    const followerId = sessionData.user.id
+    
+    // Can't follow yourself
+    if (followerId === followeeId) {
+      return c.json({ error: 'Cannot follow yourself' }, 400)
+    }
+    
+    // Check if target user exists
+    const targetUser = await c.env.DB.prepare('SELECT id FROM users WHERE id = ?')
+      .bind(followeeId).first()
+    
+    if (!targetUser) {
+      return c.json({ error: 'User not found' }, 404)
+    }
+    
+    // Insert follow relationship (idempotent with INSERT OR IGNORE)
+    await c.env.DB.prepare(
+      'INSERT OR IGNORE INTO follows (follower_id, followee_id) VALUES (?, ?)'
+    ).bind(followerId, followeeId).run()
+    
+    return c.json({ success: true })
+  } catch (error: any) {
+    console.error('Follow error:', error)
+    return c.json({ error: 'Failed to follow user', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
 // GET /api/users/:username - get public user profile
 app.get('/api/users/:username', async (c) => {
   try {

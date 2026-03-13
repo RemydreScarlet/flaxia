@@ -3,16 +3,25 @@ export interface RightPanelProps {
   onFollowUser?: (userId: string) => void
 }
 
+export interface UserSuggestion {
+  id: string
+  username: string
+  display_name: string
+  avatar_key?: string
+}
+
 export class RightPanel {
   private element: HTMLElement
   private props: RightPanelProps
   private trendingTags: Array<{ tag: string; post_count: number }> = []
+  private userSuggestions: UserSuggestion[] = []
 
   constructor(props: RightPanelProps = {}) {
     this.props = props
     this.element = this.createElement()
     this.setupEventListeners()
     this.loadTrendingTags()
+    this.loadUserSuggestions()
   }
 
   private createElement(): HTMLElement {
@@ -69,34 +78,12 @@ export class RightPanel {
   private createFollowSection(): HTMLElement {
     const section = document.createElement('div')
     section.className = 'follow-section'
+    section.style.display = 'none' // Hidden by default, shown when we have suggestions
     
     section.innerHTML = `
       <h3 class="section-title">Who to follow</h3>
       <div class="follow-list">
-        <div class="follow-item" data-user-id="user1">
-          <div class="follow-avatar" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">A</div>
-          <div class="follow-info">
-            <div class="follow-name">Alice</div>
-            <div class="follow-handle">@alice</div>
-          </div>
-          <button class="follow-button">Follow</button>
-        </div>
-        <div class="follow-item" data-user-id="user2">
-          <div class="follow-avatar" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">B</div>
-          <div class="follow-info">
-            <div class="follow-name">Bob</div>
-            <div class="follow-handle">@bob</div>
-          </div>
-          <button class="follow-button">Follow</button>
-        </div>
-        <div class="follow-item" data-user-id="user3">
-          <div class="follow-avatar" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">C</div>
-          <div class="follow-info">
-            <div class="follow-name">Carol</div>
-            <div class="follow-handle">@carol</div>
-          </div>
-          <button class="follow-button">Follow</button>
-        </div>
+        <div class="follow-loading" style="text-align: center; padding: 20px; color: var(--text-muted);">Loading...</div>
       </div>
     `
 
@@ -121,17 +108,7 @@ export class RightPanel {
       })
     }
 
-    // Follow buttons
-    const followButtons = this.element.querySelectorAll('.follow-button')
-    followButtons.forEach(button => {
-      button.addEventListener('click', (e) => {
-        e.preventDefault()
-        const userId = (button as HTMLElement).dataset.userId
-        if (userId) {
-          this.props.onFollowUser?.(userId)
-        }
-      })
-    })
+    // Follow buttons will be set up dynamically when user suggestions are loaded
   }
 
   private async performSearch(query: string): Promise<void> {
@@ -240,6 +217,185 @@ export class RightPanel {
 
       trendingList.appendChild(item)
     })
+  }
+
+  private async loadUserSuggestions(): Promise<void> {
+    try {
+      const response = await fetch('/api/users/suggestions')
+      if (!response.ok) {
+        throw new Error('Failed to load user suggestions')
+      }
+
+      const data = await response.json() as { users: UserSuggestion[] }
+      this.userSuggestions = data.users || []
+      this.renderUserSuggestions()
+    } catch (error) {
+      console.error('Failed to load user suggestions:', error)
+    }
+  }
+
+  private renderUserSuggestions(): void {
+    const followSection = this.element.querySelector('.follow-section') as HTMLElement
+    const followList = this.element.querySelector('.follow-list')
+    
+    if (!followSection || !followList) return
+
+    // Hide section for guests or when no suggestions
+    if (this.userSuggestions.length === 0) {
+      followSection.style.display = 'none'
+      return
+    }
+
+    // Show section and render suggestions
+    followSection.style.display = 'block'
+    followList.innerHTML = ''
+
+    this.userSuggestions.forEach(user => {
+      const item = document.createElement('div')
+      item.className = 'follow-item'
+      item.dataset.userId = user.id
+      
+      // Create avatar element
+      const avatar = document.createElement('div')
+      avatar.className = 'follow-avatar'
+      avatar.style.cssText = `
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: var(--bg-secondary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        color: var(--text-primary);
+        background-image: ${user.avatar_key ? `url('/api/avatar/${user.id}')` : 'none'};
+        background-size: cover;
+        background-position: center;
+      `
+      
+      if (!user.avatar_key) {
+        avatar.textContent = user.display_name.charAt(0).toUpperCase()
+        avatar.style.background = `linear-gradient(135deg, #${Math.floor(Math.random()*16777215).toString(16)} 0%, #${Math.floor(Math.random()*16777215).toString(16)} 100%)`
+      }
+
+      // Create info container
+      const info = document.createElement('div')
+      info.className = 'follow-info'
+      info.style.cssText = `
+        flex: 1;
+        min-width: 0;
+      `
+
+      const name = document.createElement('div')
+      name.className = 'follow-name'
+      name.style.cssText = `
+        font-weight: 600;
+        color: var(--text-primary);
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      `
+      name.textContent = user.display_name
+      name.addEventListener('click', () => {
+        window.location.href = `/profile/${user.username}`
+      })
+
+      const handle = document.createElement('div')
+      handle.className = 'follow-handle'
+      handle.style.cssText = `
+        font-family: monospace;
+        color: var(--text-muted);
+        font-size: 13px;
+      `
+      handle.textContent = `@${user.username}`
+
+      info.appendChild(name)
+      info.appendChild(handle)
+
+      // Create follow button
+      const button = document.createElement('button')
+      button.className = 'follow-button'
+      button.style.cssText = `
+        padding: 6px 16px;
+        border-radius: 20px;
+        border: 1px solid var(--border);
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      `
+      button.textContent = 'Follow'
+      
+      button.addEventListener('click', async (e) => {
+        e.preventDefault()
+        await this.followUser(user.id, item)
+      })
+
+      button.addEventListener('mouseenter', () => {
+        button.style.background = 'var(--accent)'
+        button.style.color = 'white'
+        button.style.borderColor = 'var(--accent)'
+      })
+
+      button.addEventListener('mouseleave', () => {
+        button.style.background = 'var(--bg-primary)'
+        button.style.color = 'var(--text-primary)'
+        button.style.borderColor = 'var(--border)'
+      })
+
+      // Assemble the item
+      item.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--border);
+        transition: opacity 0.3s ease, transform 0.3s ease;
+      `
+      
+      item.appendChild(avatar)
+      item.appendChild(info)
+      item.appendChild(button)
+
+      followList.appendChild(item)
+    })
+  }
+
+  private async followUser(userId: string, itemElement: HTMLElement): Promise<void> {
+    try {
+      const response = await fetch(`/api/follows/${userId}`, {
+        method: 'POST',
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to follow user')
+      }
+
+      // Remove user from suggestions and fade out the item
+      this.userSuggestions = this.userSuggestions.filter(user => user.id !== userId)
+      
+      // Fade out animation
+      itemElement.style.opacity = '0'
+      itemElement.style.transform = 'translateX(20px)'
+      
+      setTimeout(() => {
+        itemElement.remove()
+        
+        // If no more suggestions, hide the entire section
+        if (this.userSuggestions.length === 0) {
+          const followSection = this.element.querySelector('.follow-section') as HTMLElement
+          if (followSection) {
+            followSection.style.display = 'none'
+          }
+        }
+      }, 300)
+
+    } catch (error) {
+      console.error('Failed to follow user:', error)
+    }
   }
 
   public getElement(): HTMLElement {
