@@ -1079,6 +1079,7 @@ app.get('/api/posts', async (c) => {
     const limit = Math.min(Number(c.req.query('limit') || '20'), 50)
     const hashtag = c.req.query('hashtag')
     const following = c.req.query('following') === 'true'
+    const username = c.req.query('username')
     
     // Check if database is available
     if (!c.env.DB) {
@@ -1110,23 +1111,42 @@ app.get('/api/posts', async (c) => {
         params.unshift(cursor)
       }
     } else if (following && currentUserId) {
-      // Following tab - show only posts from followed users
+      // Following tab - show posts from followed users and current user's own posts
       query = `SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at 
         FROM posts p 
         LEFT JOIN users u ON p.user_id = u.id 
-        INNER JOIN follows f ON p.user_id = f.followee_id AND f.follower_id = ?
-        WHERE p.status = 'published' AND p.hidden = 0 AND p.parent_id IS NULL 
+        WHERE (
+          p.user_id IN (
+            SELECT followee_id FROM follows WHERE follower_id = ?
+          )
+          OR p.user_id = ?
+        )
+        AND p.status = 'published' AND p.hidden = 0 AND p.parent_id IS NULL 
         ORDER BY p.created_at DESC LIMIT ?`
-      params.push(currentUserId, limit)
+      params.push(currentUserId, currentUserId, limit)
       
       if (cursor) {
         query = `SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at 
           FROM posts p 
           LEFT JOIN users u ON p.user_id = u.id 
-          INNER JOIN follows f ON p.user_id = f.followee_id AND f.follower_id = ?
-          WHERE p.status = 'published' AND p.hidden = 0 AND p.parent_id IS NULL AND p.created_at < ?
+          WHERE (
+            p.user_id IN (
+              SELECT followee_id FROM follows WHERE follower_id = ?
+            )
+            OR p.user_id = ?
+          )
+          AND p.status = 'published' AND p.hidden = 0 AND p.parent_id IS NULL AND p.created_at < ?
           ORDER BY p.created_at DESC LIMIT ?`
-        params.push(cursor)
+        params.push(currentUserId, currentUserId, cursor)
+      }
+    } else if (username) {
+      // Username filter - show posts from specific user
+      query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.username = ? AND p.hidden = 0 ORDER BY p.created_at DESC LIMIT ?'
+      params.push(username, limit)
+      
+      if (cursor) {
+        query = 'SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, \'published\') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.username = ? AND p.hidden = 0 AND p.created_at < ? ORDER BY p.created_at DESC LIMIT ?'
+        params.unshift(cursor)
       }
     } else {
       // Regular timeline query (For You tab)

@@ -1,13 +1,15 @@
 import { createEditProfileModal } from './EditProfileModal.js'
 import { processText, renderMathElements, linkifyHashtags, linkifyUrls } from './PostText.js'
 import { showSignInPrompt } from './SignInPrompt.js'
+import { createUserPostList, CurrentUser } from './UserPostList.js'
 
 interface ProfilePageProps {
   username: string
-  currentUser: { username: string; id: string } | null
+  currentUser: CurrentUser | null
+  sandboxOrigin: string
 }
 
-export function createProfilePage({ username, currentUser }: ProfilePageProps) {
+export function createProfilePage({ username, currentUser, sandboxOrigin }: ProfilePageProps) {
   // Create main container
   const container = document.createElement('div')
   container.className = 'profile-page'
@@ -121,6 +123,14 @@ export function createProfilePage({ username, currentUser }: ProfilePageProps) {
   container.appendChild(statsRow)
   container.appendChild(document.createElement('hr'))
   container.appendChild(actionsRow)
+
+  // Add user post list
+  const postList = createUserPostList({
+    username: username,
+    sandboxOrigin: sandboxOrigin,
+    currentUser: currentUser
+  })
+  container.appendChild(postList.getElement())
 
   // State
   let userData: any = null
@@ -383,7 +393,8 @@ export function createProfilePage({ username, currentUser }: ProfilePageProps) {
   return {
     getElement: () => container,
     destroy: () => {
-      // Cleanup if needed
+      // Cleanup post list
+      postList.destroy()
     }
   }
 }
