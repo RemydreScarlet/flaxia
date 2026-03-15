@@ -16,9 +16,9 @@ describe('POST /api/auth/register', () => {
     assert.equal(res.status, 409)
   })
 
-  it('rejects duplicate username → 409', async () => {
+  it('rejects duplicate username (case-insensitive) → 409', async () => {
     await registerUser({ email: 'a@test.com', password: 'password123', username: 'usera', display_name: 'User A' })
-    const res = await registerUser({ email: 'b@test.com', password: 'password123', username: 'usera', display_name: 'User B' })
+    const res = await registerUser({ email: 'b@test.com', password: 'password123', username: 'UserA', display_name: 'User B' })
     assert.equal(res.status, 409)
   })
 

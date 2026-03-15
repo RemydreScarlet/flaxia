@@ -661,8 +661,8 @@ app.get('/api/.well-known/webfinger', async (c) => {
       return c.json({ error: 'Database not available' }, 500)
     }
     
-    // Check if user exists
-    const user = await c.env.DB.prepare('SELECT username FROM users WHERE username = ?')
+    // Check if user exists (case-insensitive)
+    const user = await c.env.DB.prepare('SELECT username FROM users WHERE username = ? COLLATE NOCASE')
       .bind(username).first()
     
     if (!user) {
@@ -706,7 +706,7 @@ app.get('/api/users/:username', async (c) => {
     const user = await c.env.DB.prepare(`
       SELECT id, username, display_name, bio, avatar_key, created_at 
       FROM users 
-      WHERE username = ?
+      WHERE username = ? COLLATE NOCASE
     `).bind(username).first()
     
     if (!user) {

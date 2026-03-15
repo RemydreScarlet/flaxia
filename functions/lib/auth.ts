@@ -125,8 +125,8 @@ export async function registerUser(env: any, userData: {
     throw new Error('Email already registered')
   }
   
-  // Check if username already exists
-  const existingUsername = await env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(username).first()
+  // Check if username already exists (case-insensitive)
+  const existingUsername = await env.DB.prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE').bind(username).first()
   if (existingUsername) {
     throw new Error('Username already taken')
   }
