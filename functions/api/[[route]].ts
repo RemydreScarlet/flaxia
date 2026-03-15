@@ -3042,7 +3042,7 @@ app.get('/api/notifications', requireAuth, async (c) => {
       return c.json({ error: 'Database not available' }, 500)
     }
     
-    // Get notifications with post and actor info
+    // Get notifications with post and actor info (optimized: LIMIT first, then JOIN)
     const result = await c.env.DB.prepare(`
       SELECT 
         n.id,
@@ -3055,12 +3055,14 @@ app.get('/api/notifications', requireAuth, async (c) => {
         u.username as actor_username,
         u.display_name as actor_display_name,
         u.avatar_key as actor_avatar_key
-      FROM notifications n
+      FROM (
+        SELECT * FROM notifications 
+        WHERE user_id = ? 
+        ORDER BY created_at DESC 
+        LIMIT 20
+      ) n
       LEFT JOIN posts p ON n.post_id = p.id
       LEFT JOIN users u ON n.actor_id = u.id
-      WHERE n.user_id = ?
-      ORDER BY n.created_at DESC
-      LIMIT 20
     `).bind(userId).all()
     
     if (!result.success) {

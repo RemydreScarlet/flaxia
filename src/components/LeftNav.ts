@@ -1,3 +1,5 @@
+import { clearMeCache } from '../lib/auth-cache'
+
 export interface LeftNavProps {
   activeItem?: string
   unreadCount?: number
@@ -485,6 +487,7 @@ export class LeftNav {
         })
         
         if (response.ok) {
+          clearMeCache()
           // Redirect to home page
           window.location.href = '/'
         } else {
@@ -511,8 +514,8 @@ export class LeftNav {
       }
     })
 
-    overlay.appendChild(modal)
-    document.body.appendChild(overlay)
+  overlay.appendChild(modal)
+  document.body.appendChild(overlay)
   }
 }
 

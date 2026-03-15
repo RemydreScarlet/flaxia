@@ -1,3 +1,5 @@
+import { updateMeCache } from '../lib/auth-cache'
+
 interface EditProfileModalProps {
   currentUser: { username: string; display_name?: string; bio?: string; avatar_key?: string }
   onSave: () => void
@@ -401,6 +403,10 @@ export function createEditProfileModal({ currentUser, onSave }: EditProfileModal
       })
 
       if (response.ok) {
+        // Update cache with new user data
+        const updatedUser = await response.json()
+        updateMeCache(updatedUser)
+        
         if (avatarPreviewUrl) {
           URL.revokeObjectURL(avatarPreviewUrl)
         }

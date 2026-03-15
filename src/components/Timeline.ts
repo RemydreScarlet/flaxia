@@ -4,6 +4,7 @@ import { createPostComposer, PostComposer } from './PostComposer.js'
 import { showSignInPrompt, SignInPromptAction } from './SignInPrompt.js'
 import { createAdCard } from './AdCard.js'
 import { injectAds } from '../lib/inject-ads.js'
+import { getMe } from '../lib/auth-cache.js'
 
 export class Timeline {
   private element: HTMLElement
@@ -409,9 +410,8 @@ export class Timeline {
 
   private async loadNgWords(): Promise<void> {
     try {
-      const response = await fetch('/api/me')
-      if (response.ok) {
-        const data = await response.json() as { user: { ng_words?: string[] } }
+      const data = await getMe()
+      if (data) {
         this.state.ngWords = data.user.ng_words || []
       }
     } catch (error) {

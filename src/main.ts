@@ -2,6 +2,7 @@ import { createTimeline } from './components/Timeline.js'
 import { createLeftNav, updateLeftNavUser } from './components/LeftNav.js'
 import { createRightPanel } from './components/RightPanel.js'
 import { createThreadPage } from './components/ThreadPage.js'
+import { getMe, clearMeCache, updateMeCache } from './lib/auth-cache.js'
 import { createLoginPage } from './components/LoginPage.js'
 import { createRegisterPage } from './components/RegisterPage.js'
 import { createProfilePage } from './components/ProfilePage.js'
@@ -52,9 +53,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Check current user session
     const checkAuth = async () => {
       try {
-        const response = await fetch('/api/me')
-        if (response.ok) {
-          const data = await response.json() as { user: any }
+        const data = await getMe()
+        if (data) {
           currentUser = { 
             id: data.user.id,
             username: data.user.username,
@@ -654,8 +654,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         currentUsername = null
         currentTag = null
         
-        // Fetch notifications
-        const notificationsData = await fetchNotifications()
+        // Fetch notifications and user data in parallel
+        const [notificationsData] = await Promise.all([
+          fetchNotifications()
+        ])
         
         // Create main container for 3-column layout
         const mainContainer = document.createElement('div')
@@ -814,9 +816,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Load user data asynchronously
         const loadUserData = async () => {
           try {
-            const response = await fetch('/api/me')
-            if (response.ok) {
-              const userData = await response.json() as { user: any }
+            const userData = await getMe()
+            if (userData) {
               // Recreate settings page with full user data
               const oldElement = settingsPage.getElement()
               settingsPage.destroy()
@@ -994,8 +995,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Initial navigation
     console.log('DOM Content Loaded, starting initial routing...')
     
-    // Fetch notifications on app init (once per session)
-    await fetchNotifications()
+    // Fetch notifications and check auth in parallel on app init
+    await Promise.all([
+      fetchNotifications(),
+      checkAuth()
+    ])
     
     const initialRoute = parseCurrentRoute()
     console.log('Initial route:', initialRoute)

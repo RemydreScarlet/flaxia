@@ -1,5 +1,6 @@
 import { createEditProfileModal } from './EditProfileModal.js'
 import { processText, renderMathElements, linkifyHashtags, linkifyUrls } from './PostText.js'
+import { clearMeCache } from '../lib/auth-cache.js'
 import { showSignInPrompt } from './SignInPrompt.js'
 import { createUserPostList, CurrentUser } from './UserPostList.js'
 
@@ -302,6 +303,7 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
         })
         
         if (response.ok) {
+          clearMeCache()
           window.location.href = '/'
         } else {
           console.error('Logout failed')
