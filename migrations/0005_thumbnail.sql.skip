@@ -1,0 +1,3 @@
+-- Add thumbnail_key column if it doesn't already exist
+-- This migration is safe to run multiple times
+ALTER TABLE posts ADD COLUMN thumbnail_key TEXT;

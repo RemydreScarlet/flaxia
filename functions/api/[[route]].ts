@@ -3050,12 +3050,13 @@ app.get('/api/notifications', requireAuth, async (c) => {
         n.post_id,
         n.read,
         n.created_at,
+        n.actor_id,
         SUBSTR(p.text, 1, 50) as post_text_preview,
         u.username as actor_username,
         u.display_name as actor_display_name,
         u.avatar_key as actor_avatar_key
       FROM notifications n
-      JOIN posts p ON n.post_id = p.id
+      LEFT JOIN posts p ON n.post_id = p.id
       LEFT JOIN users u ON n.actor_id = u.id
       WHERE n.user_id = ?
       ORDER BY n.created_at DESC
@@ -3082,6 +3083,7 @@ app.get('/api/notifications', requireAuth, async (c) => {
         display_name: row.actor_display_name,
         avatar_key: row.actor_avatar_key
       } : undefined,
+      actor_id: row.actor_id,
       read: row.read === 1,
       created_at: row.created_at
     }))
@@ -3138,6 +3140,164 @@ app.post('/api/test/reset', async (c) => {
     db.prepare('DELETE FROM users'),
   ])
   return c.json({ ok: true })
+})
+
+// POST /api/users/:username/inbox - ActivityPub inbox endpoint
+app.post('/api/users/:username/inbox', async (c) => {
+  try {
+    const contentType = c.req.header('content-type')
+    if (!contentType?.includes('application/activity+json')) {
+      return c.json({ error: 'Invalid content type' }, 400)
+    }
+
+    const username = c.req.param('username')
+    if (!username) {
+      return c.json({ error: 'Username required' }, 400)
+    }
+
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+
+    // Get target user
+    const targetUser = await c.env.DB.prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE')
+      .bind(username).first()
+    
+    if (!targetUser) {
+      return c.json({ error: 'User not found' }, 404)
+    }
+
+    const activity = await c.req.json()
+    const { type, actor, object } = activity
+
+    // Handle different activity types
+    switch (type) {
+      case 'Follow': {
+        if (!object || typeof object !== 'string') {
+          return c.json({ error: 'Invalid object' }, 400)
+        }
+
+        // Extract username from object URL
+        const objectUrl = new URL(object)
+        const objectUsername = objectUrl.pathname.split('/users/')[1]
+        if (!objectUsername || objectUsername !== username) {
+          return c.json({ error: 'Object username mismatch' }, 400)
+        }
+
+        // Insert follow relationship
+        await c.env.DB.prepare(
+          'INSERT OR IGNORE INTO follows (follower_id, followee_id) VALUES (?, ?)'
+        ).bind(actor, targetUser.id).run()
+
+        // Create notification for follow
+        await c.env.DB.prepare(
+          'INSERT INTO notifications (id, user_id, type, post_id, actor_id) VALUES (?, ?, ?, ?, ?)'
+        ).bind(nanoid(), targetUser.id, 'ap_follow', null, actor).run()
+
+        return c.json({ ok: true }, 200)
+      }
+
+      case 'Undo': {
+        if (!object || typeof object !== 'object' || object.type !== 'Follow') {
+          return c.json({ error: 'Invalid undo object' }, 400)
+        }
+
+        // Delete follow relationship
+        await c.env.DB.prepare(
+          'DELETE FROM follows WHERE follower_id = ? AND followee_id = ?'
+        ).bind(actor, targetUser.id).run()
+
+        // Delete ap_follow notification
+        await c.env.DB.prepare(
+          'DELETE FROM notifications WHERE type = ? AND actor_id = ? AND user_id = ?'
+        ).bind('ap_follow', actor, targetUser.id).run()
+
+        return c.json({ ok: true }, 200)
+      }
+
+      case 'Like': {
+        if (!object || typeof object !== 'string') {
+          return c.json({ error: 'Invalid object' }, 400)
+        }
+
+        // Extract post ID from object URL
+        const objectUrl = new URL(object)
+        const postId = objectUrl.pathname.split('/posts/')[1]
+        if (!postId) {
+          return c.json({ error: 'Invalid post ID' }, 400)
+        }
+
+        // Check if post exists and increment fresh_count
+        const post = await c.env.DB.prepare('SELECT id FROM posts WHERE id = ?')
+          .bind(postId).first()
+        
+        if (!post) {
+          return c.json({ error: 'Post not found' }, 404)
+        }
+
+        await c.env.DB.prepare(
+          'UPDATE posts SET fresh_count = fresh_count + 1 WHERE id = ?'
+        ).bind(postId).run()
+
+        // Get post user_id to create notification
+        const likedPost = await c.env.DB.prepare(
+          'SELECT user_id FROM posts WHERE id = ?'
+        ).bind(postId).first()
+
+        if (likedPost) {
+          await c.env.DB.prepare(
+            'INSERT INTO notifications (id, user_id, type, post_id, actor_id) VALUES (?, ?, ?, ?, ?)'
+          ).bind(nanoid(), likedPost.user_id, 'ap_like', postId, actor).run()
+        }
+
+        return c.json({ ok: true }, 200)
+      }
+
+      case 'Announce': {
+        if (!object || typeof object !== 'string') {
+          return c.json({ error: 'Invalid object' }, 400)
+        }
+
+        // Extract post ID from object URL
+        const objectUrl = new URL(object)
+        const postId = objectUrl.pathname.split('/posts/')[1]
+        if (!postId) {
+          return c.json({ error: 'Invalid post ID' }, 400)
+        }
+
+        // Check if post exists and increment fresh_count
+        const post = await c.env.DB.prepare('SELECT id FROM posts WHERE id = ?')
+          .bind(postId).first()
+        
+        if (!post) {
+          return c.json({ error: 'Post not found' }, 404)
+        }
+
+        await c.env.DB.prepare(
+          'UPDATE posts SET fresh_count = fresh_count + 1 WHERE id = ?'
+        ).bind(postId).run()
+
+        // Get post user_id to create notification
+        const announcedPost = await c.env.DB.prepare(
+          'SELECT user_id FROM posts WHERE id = ?'
+        ).bind(postId).first()
+
+        if (announcedPost) {
+          await c.env.DB.prepare(
+            'INSERT INTO notifications (id, user_id, type, post_id, actor_id) VALUES (?, ?, ?, ?, ?)'
+          ).bind(nanoid(), announcedPost.user_id, 'ap_announce', postId, actor).run()
+        }
+
+        return c.json({ ok: true }, 200)
+      }
+      default:
+        // Ignore other activity types
+        return c.json({ ok: true }, 200)
+    }
+  } catch (error: any) {
+    console.error('Inbox error:', error)
+    return c.json({ error: 'Inbox processing failed', details: error?.message || 'Unknown error' }, 500)
+  }
 })
 
 // Export for Cloudflare Pages Functions

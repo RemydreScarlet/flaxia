@@ -1,13 +1,14 @@
 export interface Notification {
   id: string
-  type: 'reported' | 'fresh' | 'warned' | 'hidden'
-  post_id: string
-  post_text_preview: string
+  type: 'reported' | 'fresh' | 'warned' | 'hidden' | 'ap_follow' | 'ap_like' | 'ap_announce'
+  post_id: string | null
+  post_text_preview: string | null
   actor?: {
     username: string
     display_name: string
     avatar_key: string | null
   }
+  actor_id?: string | null
   read: boolean
   created_at: string
 }
@@ -140,7 +141,10 @@ export class NotificationsPage {
       row.style.background = notification.read ? 'var(--bg-primary)' : 'var(--bg-secondary)'
     })
     row.addEventListener('click', () => {
-      this.props.onNavigateToPost(notification.post_id)
+      if (notification.post_id) {
+        this.props.onNavigateToPost(notification.post_id)
+      }
+      // For follow notifications, clicking doesn't navigate to a post
     })
 
     // Icon
@@ -149,7 +153,29 @@ export class NotificationsPage {
       font-size: 20px;
       flex-shrink: 0;
     `
-    icon.textContent = notification.type === 'fresh' ? '🌿' : '🚩'
+    switch (notification.type) {
+      case 'fresh':
+      case 'ap_like':
+        icon.textContent = '🌿'
+        break
+      case 'ap_follow':
+        icon.textContent = '👥'
+        break
+      case 'ap_announce':
+        icon.textContent = '📣'
+        break
+      case 'reported':
+        icon.textContent = '🚩'
+        break
+      case 'warned':
+        icon.textContent = '⚠️'
+        break
+      case 'hidden':
+        icon.textContent = '🙈'
+        break
+      default:
+        icon.textContent = '�'
+    }
     row.appendChild(icon)
 
     // Content
@@ -167,32 +193,71 @@ export class NotificationsPage {
       margin-bottom: 4px;
     `
 
-    if (notification.type === 'fresh' && notification.actor) {
-      mainText.innerHTML = `
-        <strong>@${notification.actor.username}</strong> 
-        <span style="color: var(--text-muted);">(${notification.actor.display_name})</span>
-        freshed your post
-      `
-    } else {
-      mainText.innerHTML = `
-        <strong>Your post has been reported</strong> multiple times. 
-        Please review and consider deleting it.
-      `
+    switch (notification.type) {
+      case 'fresh':
+      case 'ap_like':
+        if (notification.actor) {
+          const action = notification.type === 'fresh' ? 'freshed' : 'liked'
+          mainText.innerHTML = `
+            <strong>@${notification.actor.username}</strong> 
+            <span style="color: var(--text-muted);">(${notification.actor.display_name})</span>
+            ${action} your post
+          `
+        }
+        break
+      case 'ap_follow':
+        if (notification.actor) {
+          mainText.innerHTML = `
+            <strong>@${notification.actor.username}</strong> 
+            <span style="color: var(--text-muted);">(${notification.actor.display_name})</span>
+            started following you
+          `
+        } else {
+          // Handle external actors (from ActivityPub)
+          const actorUrl = notification.actor_id || 'external user'
+          const domain = actorUrl.includes('://') ? new URL(actorUrl).hostname : actorUrl
+          mainText.innerHTML = `
+            <strong>${domain} のユーザー</strong>がフォローしました
+          `
+        }
+        break
+      case 'ap_announce':
+        if (notification.actor) {
+          mainText.innerHTML = `
+            <strong>@${notification.actor.username}</strong> 
+            <span style="color: var(--text-muted);">(${notification.actor.display_name})</span>
+            announced (boosted) your post
+          `
+        } else {
+          const actorUrl = notification.actor_id || 'external user'
+          const domain = actorUrl.includes('://') ? new URL(actorUrl).hostname : actorUrl
+          mainText.innerHTML = `
+            <strong>${domain} のユーザー</strong>が投稿をブーストしました
+          `
+        }
+        break
+      default:
+        mainText.innerHTML = `
+          <strong>Your post has been reported</strong> multiple times. 
+          Please review and consider deleting it.
+        `
     }
     content.appendChild(mainText)
 
-    // Post preview
-    const preview = document.createElement('div')
-    preview.style.cssText = `
-      color: var(--text-muted);
-      font-size: 13px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      margin-bottom: 4px;
-    `
-    preview.textContent = notification.post_text_preview
-    content.appendChild(preview)
+    // Post preview (only for notifications with posts)
+    if (notification.post_id && notification.post_text_preview) {
+      const preview = document.createElement('div')
+      preview.style.cssText = `
+        color: var(--text-muted);
+        font-size: 13px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-bottom: 4px;
+      `
+      preview.textContent = notification.post_text_preview
+      content.appendChild(preview)
+    }
 
     // Time
     const time = document.createElement('div')
