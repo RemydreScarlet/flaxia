@@ -213,9 +213,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         return { view: 'thread' as const, postId: threadMatch[1], username: null, tag: null }
       }
       
-      // Profile route - matches /users/:username - public, no auth required
-      const profileMatch = cleanPath.match(/^\/users\/([^\/]+)$/)
-      console.log('Profile match test:', profileMatch, 'cleanPath:', cleanPath)
+      // Profile routes - matches both /users/:username and /profile/:username
+      const usersProfileMatch = cleanPath.match(/^\/users\/([^\/]+)$/)
+      const profileMatch = cleanPath.match(/^\/profile\/([^\/]+)$/)
+      console.log('Profile match test:', { usersProfileMatch, profileMatch }, 'cleanPath:', cleanPath)
+      
+      if (usersProfileMatch && usersProfileMatch[1]) {
+        console.log('Users profile route detected, username:', usersProfileMatch[1])
+        return { view: 'profile' as const, postId: null, username: usersProfileMatch[1], tag: null }
+      }
+      
       if (profileMatch && profileMatch[1]) {
         console.log('Profile route detected, username:', profileMatch[1])
         return { view: 'profile' as const, postId: null, username: profileMatch[1], tag: null }
@@ -247,7 +254,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return { view: 'timeline' as const, postId: null, username: null, tag: null }
       }
       
-      // If no specific route matched, default to timeline
+      // If no route matched, default to timeline
       console.log('Unknown route, defaulting to timeline')
       return { view: 'timeline' as const, postId: null, username: null, tag: null }
     }
@@ -615,7 +622,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Create Profile Page (as main content)
         profilePage = createProfilePage({
           username,
-          currentUser
+          currentUser,
+          sandboxOrigin: 'https://flaxia.app'
         })
         
         // Create Right Panel
