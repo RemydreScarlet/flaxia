@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { User, getSession, getSessionToken, setSessionCookie, clearSessionCookie, registerUser, loginUser, deleteSession, hashPassword, verifyPassword } from '../lib/auth'
+import { User, getSession, getMeWithSession, getSessionToken, setSessionCookie, clearSessionCookie, registerUser, loginUser, deleteSession, hashPassword, verifyPassword } from '../lib/auth'
 import { nanoid } from 'nanoid'
 import { checkRateLimit, rateLimitResponse } from '../../src/lib/rate-limit'
 import { isAdmin } from '../../src/lib/admin'
@@ -418,30 +418,15 @@ app.use('/*', cors())
 app.get('/api/me', requireAuth, async (c) => {
   try {
     const token = getSessionToken(c.req.raw)
-    const sessionData = token ? await getSession(c.env, token) : null
+    const sessionData = token ? await getMeWithSession(c.env, token) : null
     if (!sessionData) {
       return c.json({ error: 'Not authenticated' }, 401)
     }
     
-    // Get user data including ng_words
-    if (!c.env.DB) {
-      return c.json({ error: 'Database not available' }, 500)
-    }
-    
-    const user = await c.env.DB.prepare(`
-      SELECT id, email, username, display_name, bio, avatar_key, language, ng_words, created_at 
-      FROM users 
-      WHERE id = ?
-    `).bind(sessionData.user.id).first()
-    
-    if (!user) {
-      return c.json({ error: 'User not found' }, 404)
-    }
-    
     return c.json({ 
       user: {
-        ...user,
-        ng_words: JSON.parse(user.ng_words ?? '[]') as string[]
+        ...sessionData.user,
+        ng_words: JSON.parse(sessionData.user.ng_words ?? '[]') as string[]
       }
     })
   } catch (error: any) {

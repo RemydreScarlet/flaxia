@@ -7,6 +7,8 @@ export interface User {
   display_name: string
   bio: string
   avatar_key?: string
+  language?: string
+  ng_words?: string
   created_at: string
 }
 
@@ -102,6 +104,24 @@ export async function getSession(env: any, token: string): Promise<{ user: User;
   if (!user) return null
   
   return { user, session }
+}
+
+// Get user with session using single JOIN query for /api/me optimization
+export async function getMeWithSession(env: any, token: string): Promise<{ user: User } | null> {
+  if (!token) return null
+  
+  // Get user and session with single JOIN query
+  const result = await env.DB.prepare(`
+    SELECT 
+      u.id, u.email, u.username, u.display_name, 
+      u.bio, u.avatar_key, u.language, u.ng_words, u.created_at
+    FROM sessions s
+    JOIN users u ON s.user_id = u.id
+    WHERE s.id = ?
+      AND s.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+  `).bind(token).first() as User | undefined
+  
+  return result ? { user: result } : null
 }
 
 // Delete session
