@@ -1,4 +1,4 @@
+/.well-known/webfinger /api/.well-known/webfinger 301
+/users/:splat /api/users/:splat 301
 /api/* /api/:splat 200
-/.well-known/* /api/.well-known/:splat 200
-/users/* /api/users/:splat 200
 /* /index.html 200
