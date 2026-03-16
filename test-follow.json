@@ -1,0 +1,7 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://test.example.com/activities/follow-test-123",
+  "type": "Follow",
+  "actor": "https://test.example.com/actors/testuser",
+  "object": "https://84cb8e2a.flaxia-egj.pages.dev/actors/remydrescarlet"
+}

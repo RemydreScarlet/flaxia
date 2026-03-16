@@ -1,5 +1,6 @@
+/.well-known/webfinger /api/.well-known/webfinger 308
+/users/:splat /api/users/:splat 308
 /users/:username/inbox /api/users/:username/inbox 308
-/.well-known/webfinger /api/.well-known/webfinger 301
-/users/:splat /api/users/:splat 301
+/actors/:username /api/actors/:username 301
 /api/* /api/:splat 200
 /* /index.html 200

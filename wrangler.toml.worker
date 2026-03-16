@@ -1,0 +1,16 @@
+name = "flaxia-ap-delivery"
+main = "functions/queue-worker.ts"
+compatibility_date = "2024-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "flaxia"
+database_id = "7c99f35f-69a0-4644-96a1-34c716a3e82d"
+
+[vars]
+BASE_URL = "https://flaxia.app"
+
+[[queues.consumers]]
+queue = "activitypub-delivery"
+max_batch_size = 10
+max_batch_timeout = 5
