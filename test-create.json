@@ -1,0 +1,13 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://test.example.com/activities/create-note-123",
+  "type": "Create",
+  "actor": "https://test.example.com/actors/testuser",
+  "object": {
+    "id": "https://test.example.com/notes/note-123",
+    "type": "Note",
+    "content": "Hello from ActivityPub test! #test #activitypub",
+    "published": "2026-03-17T11:49:00Z",
+    "url": "https://test.example.com/notes/note-123"
+  }
+}

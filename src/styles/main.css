@@ -981,6 +981,10 @@ p {
   font-weight: 600;
 }
 
+.action-button--fresh.action-button--active .action-count {
+  color: var(--accent);
+}
+
 /* PostComposer Styles */
 .post-composer {
   background: var(--bg-primary);

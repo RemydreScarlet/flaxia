@@ -1,11 +1,7 @@
 #!/bin/bash
 
-# テスト用の鍵ペアを生成
-openssl genrsa -out test-private.pem 2048
-openssl rsa -in test-private.pem -pubout -out test-public.pem
-
 # Digestを計算
-BODY=$(cat test-follow.json)
+BODY=$(cat test-create.json)
 DIGEST=$(echo -n "$BODY" | openssl dgst -sha256 -binary | base64)
 
 # 署名対象文字列を作成

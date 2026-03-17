@@ -32,6 +32,7 @@ export interface Post {
   status: string
   hidden: number
   created_at: string
+  is_freshed?: boolean  // Whether current user has freshed this post
 }
 
 export enum PostCardMode {

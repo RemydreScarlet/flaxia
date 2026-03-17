@@ -33,6 +33,10 @@ function createActionButton(type: 'fresh' | 'reply' | 'share', count: string, is
   
   if (isActive) {
     button.classList.add('action-button--active')
+    // Console debug for Fresh status
+    if (type === 'fresh') {
+      console.log('Fresh button is active - user has freshed this post. Fresh count:', count)
+    }
   }
   
   // Create icon (using text for now, will replace with Lucide icons)
@@ -44,6 +48,11 @@ function createActionButton(type: 'fresh' | 'reply' | 'share', count: string, is
   const countSpan = document.createElement('span')
   countSpan.className = 'action-count'
   countSpan.textContent = count
+  
+  // Add debug styling for freshed posts
+  if (type === 'fresh' && isActive) {
+    console.log('Applying green color to fresh count for freshed post')
+  }
   
   button.appendChild(icon)
   button.appendChild(countSpan)

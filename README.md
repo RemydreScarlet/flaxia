@@ -5,23 +5,15 @@ Chronological SNS where posts are living, interactive applications.
 ## Development
 
 ```bash
-# Install dependencies
-pnpm install
+npm run build && npx wrangler pages deploy dist
+```
 
-# Start development server
-pnpm dev
+```bash
+wrangler pages deployment tail
+```
 
-# Apply database migrations (local)
-pnpm migrate:local
-
-# Apply database migrations (production)
-pnpm migrate:prod
-
-# Build for production
-pnpm build
-
-# Deploy to Cloudflare Pages
-pnpm deploy
+```bash
+npx wrangler deploy --name flaxia-ap-delivery functions/queue-worker.ts
 ```
 
 ### How to test

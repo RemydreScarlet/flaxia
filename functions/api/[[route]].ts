@@ -1472,15 +1472,17 @@ app.get('/api/posts', async (c) => {
       return c.json({ error: 'Database not available' }, 500)
     }
     
-    // For Following tab, require authentication
+    // Get current user ID for fresh status (optional for all tabs, required for Following tab)
     let currentUserId: string | null = null
-    if (following) {
-      const token = getSessionToken(c.req.raw)
-      const sessionData = token ? await getSession(c.env, token) : null
-      if (!sessionData) {
-        return c.json({ error: 'Authentication required for Following tab' }, 401)
-      }
+    const token = getSessionToken(c.req.raw)
+    const sessionData = token ? await getSession(c.env, token) : null
+    if (sessionData) {
       currentUserId = sessionData.user.id
+    }
+    
+    // For Following tab, require authentication
+    if (following && !currentUserId) {
+      return c.json({ error: 'Authentication required for Following tab' }, 401)
     }
     
     let query: string
@@ -1551,7 +1553,28 @@ app.get('/api/posts', async (c) => {
       return c.json({ error: 'Failed to fetch posts' }, 500)
     }
     
-    return c.json({ posts: result.results || [] })
+    const posts = result.results || []
+    
+    // Add fresh status for current user if logged in
+    if (currentUserId && posts.length > 0) {
+      const postIds = posts.map((p: any) => p.id)
+      const placeholders = postIds.map(() => '?').join(',')
+      
+      const freshResult = await c.env.DB.prepare(
+        `SELECT post_id FROM freshs WHERE user_id = ? AND post_id IN (${placeholders})`
+      ).bind(currentUserId, ...postIds).all()
+      
+      if (freshResult.success) {
+        const freshedPostIds = new Set((freshResult.results || []).map((f: any) => f.post_id))
+        
+        // Add is_freshed field to each post
+        posts.forEach((post: any) => {
+          post.is_freshed = freshedPostIds.has(post.id)
+        })
+      }
+    }
+    
+    return c.json({ posts })
   } catch (error: any) {
     console.error('Posts fetch error:', error)
     return c.json({ error: 'Internal server error', details: error?.message || 'Unknown error' }, 500)
@@ -2483,6 +2506,11 @@ app.get('/api/posts/:id/thread', async (c) => {
   try {
     const postId = c.req.param('id')
     
+    // Get current user ID from session (optional)
+    const token = getSessionToken(c.req.raw)
+    const sessionData = token ? await getSession(c.env, token) : null
+    const currentUserId = sessionData?.user?.id || null
+    
     if (!c.env.DB) {
       return c.json({ error: 'Database not available' }, 500)
     }
@@ -2525,7 +2553,30 @@ app.get('/api/posts/:id/thread', async (c) => {
       return c.json({ error: 'Failed to fetch thread' }, 500)
     }
     
-    return c.json({ root: rootPost, replies: repliesResult.results || [] })
+    const replies = repliesResult.results || []
+    
+    // Add fresh status for current user if logged in
+    if (currentUserId) {
+      const allPosts = [rootPost, ...replies]
+      const postIds = allPosts.map((p: any) => p.id)
+      const placeholders = postIds.map(() => '?').join(',')
+      
+      const freshResult = await c.env.DB.prepare(
+        `SELECT post_id FROM freshs WHERE user_id = ? AND post_id IN (${placeholders})`
+      ).bind(currentUserId, ...postIds).all()
+      
+      if (freshResult.success) {
+        const freshedPostIds = new Set((freshResult.results || []).map((f: any) => f.post_id))
+        
+        // Add is_freshed field to root post and replies
+        rootPost.is_freshed = freshedPostIds.has(rootPost.id)
+        replies.forEach((post: any) => {
+          post.is_freshed = freshedPostIds.has(post.id)
+        })
+      }
+    }
+    
+    return c.json({ root: rootPost, replies })
   } catch (error: any) {
     console.error('Thread fetch error:', error)
     return c.json({ error: 'Internal server error', details: error?.message || 'Unknown error' }, 500)

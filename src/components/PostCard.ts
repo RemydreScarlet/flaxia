@@ -23,7 +23,8 @@ export class PostCard {
   constructor(props: PostCardProps) {
     this.props = props
     this.mode = props.initialMode || PostCardMode.PREVIEW
-    this.isFreshed = false
+    // Use is_freshed from API response if available, otherwise default to false
+    this.isFreshed = props.post.is_freshed || false
     this.freshCount = props.post.fresh_count
     this.replyCount = props.post.reply_count || 0
     this.element = this.createElement()
