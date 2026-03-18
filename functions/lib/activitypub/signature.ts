@@ -321,7 +321,7 @@ export async function signRequest(
   headers.set('Date', date)
 
   // Set Digest header
-  headers.set('Digest', `SHA-256=${digest}`)
+  headers.set('Digest', `sha-256=${digest}`)
 
   // Set Content-Type
   headers.set('Content-Type', 'application/activity+json')
@@ -333,8 +333,11 @@ export async function signRequest(
     `(request-target): post ${path}`,
     `host: ${parsedUrl.host}`,
     `date: ${date}`,
-    `digest: SHA-256=${digest}`
+    `digest: sha-256=${digest}`
   ].join('\n')
+
+  console.log('Signing string:')
+  console.log(signingString)
 
   // Import private key
   const privateKey = await importPrivateKey(privateKeyPem)
@@ -347,12 +350,9 @@ export async function signRequest(
     signingArray
   )
 
-  // Convert signature to base64
+  // Convert signature to base64 (not base64url)
   const signatureArray = new Uint8Array(signatureBuffer)
   const signature = btoa(String.fromCharCode(...signatureArray))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '')
 
   // Set Signature header
   headers.set('Signature', `keyId="${keyId}",algorithm="rsa-sha256",headers="(request-target) host date digest",signature="${signature}"`)

@@ -6,7 +6,7 @@ import { checkRateLimit, rateLimitResponse } from '../../src/lib/rate-limit'
 import { isAdmin } from '../../src/lib/admin'
 import { verifyHttpSignature, verifyDigest, fetchActorPublicKey, signRequest } from '../lib/activitypub/signature'
 import { generateKeyPair, exportPublicKey, exportPrivateKey } from '../lib/activitypub/crypto'
-import { buildNoteObject, buildCreateActivity } from '../lib/activitypub/note'
+import { buildNoteObject, buildCreateActivity, buildDeleteActivity } from '../lib/activitypub/note'
 import type { ReportCategory } from '../../src/types/post'
 
 type Bindings = {
@@ -2198,6 +2198,38 @@ app.post('/api/posts/commit', requireAuth, async (c) => {
       post = await c.env.DB.prepare(`
         SELECT * FROM posts WHERE id = ?
       `).bind(postId).first()
+      
+      // Queue ActivityPub delivery for public posts
+      if (post && post.visibility === 'public') {
+        try {
+          const user = c.get('user')
+          if (user) {
+            const note = buildNoteObject(post, user, c.env.BASE_URL)
+            const activity = buildCreateActivity(note, user, c.env.BASE_URL)
+            
+            // Get all followers to deliver to
+            const followers = await c.env.DB.prepare(`
+              SELECT inbox_url FROM ap_followers WHERE local_user_id = ?
+            `).bind(user.id).all()
+            
+            // Queue delivery to each follower
+            for (const follower of followers.results) {
+              const inboxUrl = follower.inbox_url
+              if (inboxUrl) {
+                await c.env.AP_DELIVERY_QUEUE.send({
+                  type: 'delivery',
+                  inboxUrl,
+                  activity,
+                  senderUsername: user.username
+                })
+              }
+            }
+          }
+        } catch (deliveryError) {
+          console.error('Failed to queue ActivityPub delivery:', deliveryError)
+          // Don't fail the post creation if delivery queuing fails
+        }
+      }
     }
     
     return c.json({ post })
@@ -2876,8 +2908,8 @@ app.delete('/api/posts/:id', requireAuth, async (c) => {
     
     // Get the post to verify ownership and get file keys
     const post = await c.env.DB.prepare(
-      'SELECT id, user_id, gif_key, payload_key, swf_key, thumbnail_key FROM posts WHERE id = ?'
-    ).bind(postId).first() as { id: string; user_id: string; gif_key?: string; payload_key?: string; swf_key?: string; thumbnail_key?: string } | null
+      'SELECT id, user_id, username, gif_key, payload_key, swf_key, thumbnail_key, visibility FROM posts WHERE id = ?'
+    ).bind(postId).first() as { id: string; user_id: string; username: string; gif_key?: string; payload_key?: string; swf_key?: string; thumbnail_key?: string; visibility?: string } | null
     
     if (!post) {
       return c.json({ error: 'Post not found' }, 404)
@@ -2925,6 +2957,38 @@ app.delete('/api/posts/:id', requireAuth, async (c) => {
     
     if (!result.success) {
       return c.json({ error: 'Failed to delete post' }, 500)
+    }
+    
+    // Queue ActivityPub delete delivery for public posts
+    if (post && post.visibility === 'public') {
+      try {
+        const user = c.get('user')
+        if (user) {
+          const noteId = `${c.env.BASE_URL}/notes/${postId}`
+          const activity = buildDeleteActivity(noteId, user, c.env.BASE_URL)
+          
+          // Get all followers to deliver to
+          const followers = await c.env.DB.prepare(`
+            SELECT inbox_url FROM ap_followers WHERE local_user_id = ?
+          `).bind(user.id).all()
+          
+          // Queue delivery to each follower
+          for (const follower of followers.results) {
+            const inboxUrl = follower.inbox_url
+            if (inboxUrl) {
+              await c.env.AP_DELIVERY_QUEUE.send({
+                type: 'delivery',
+                inboxUrl,
+                activity,
+                senderUsername: user.username
+              })
+            }
+          }
+        }
+      } catch (deliveryError) {
+        console.error('Failed to queue ActivityPub delete delivery:', deliveryError)
+        // Don't fail the post deletion if delivery queuing fails
+      }
     }
     
     return c.json({ success: true })
@@ -3592,6 +3656,88 @@ app.post('/api/users/:username/inbox', async (c) => {
         await c.env.DB.prepare(
           'INSERT INTO notifications (id, user_id, type, post_id, actor_id) VALUES (?, ?, ?, ?, ?)'
         ).bind(nanoid(), targetUser.id, 'ap_follow', null, actor).run()
+
+        // Send Accept activity automatically
+        try {
+          console.log('Sending Accept activity for follow from:', actor, 'to user:', username)
+          
+          // Get user's private key for signing
+          const keyResult = await c.env.DB.prepare(`
+            SELECT ak.private_key_pem FROM actor_keys ak
+            JOIN users u ON u.id = ak.user_id
+            WHERE u.username = ?
+          `).bind(username).first()
+
+          if (!keyResult || !keyResult.private_key_pem) {
+            console.error('No private key found for user:', username)
+          } else {
+            const privateKeyPem = keyResult.private_key_pem as string
+            const keyId = `${c.env.BASE_URL}/actors/${username}#main-key`
+
+            // Get follower's inbox URL
+            let inboxUrl = actor
+            try {
+              const actorResponse = await fetch(actor, {
+                headers: {
+                  'Accept': 'application/activity+json, application/ld+json'
+                }
+              })
+
+              if (actorResponse.ok) {
+                const actorData = await actorResponse.json() as any
+                inboxUrl = actorData.inbox || actor
+              }
+            } catch (e) {
+              console.error('Failed to fetch actor inbox:', e)
+            }
+
+            console.log('Using inbox URL:', inboxUrl)
+
+            // Build Accept activity
+            const acceptActivity = {
+              '@context': 'https://www.w3.org/ns/activitystreams',
+              id: `${c.env.BASE_URL}/activities/accept-${nanoid()}`,
+              type: 'Accept',
+              actor: `${c.env.BASE_URL}/actors/${username}`,
+              object: activity, // Use the entire original Follow activity
+              to: [actor],
+              published: new Date().toISOString()
+            }
+
+            console.log('Accept activity:', JSON.stringify(acceptActivity, null, 2))
+
+            const body = JSON.stringify(acceptActivity)
+            const headers = await signRequest(inboxUrl, body, privateKeyPem, keyId)
+
+            console.log('Sending Accept activity to:', inboxUrl)
+            console.log('Headers:', Object.fromEntries(headers.entries()))
+
+            const response = await fetch(inboxUrl, {
+              method: 'POST',
+              headers: headers,
+              body: body
+            })
+
+            if (response.ok) {
+              console.log('Accept activity sent successfully to:', actor, 'status:', response.status)
+            } else {
+              const responseText = await response.text()
+              console.error('Failed to send Accept activity:', {
+                inboxUrl,
+                status: response.status,
+                statusText: response.statusText,
+                responseText: responseText.substring(0, 500)
+              })
+            }
+          }
+        } catch (e: any) {
+          console.error('Error sending Accept activity:', {
+            error: e.message,
+            stack: e.stack,
+            actor,
+            username
+          })
+        }
 
         return c.json({ ok: true }, 200)
       }

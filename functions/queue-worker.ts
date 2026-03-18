@@ -23,11 +23,30 @@ interface Env {
 
 export default {
   async queue(batch: MessageBatch<QueueMessage>, env: Env): Promise<void> {
+    console.log(`Processing batch of ${batch.messages.length} messages`)
+    
     for (const message of batch.messages) {
-      if (message.body.type === 'inbox') {
-        await handleInboxActivity(message.body, env, message)
-      } else {
-        await handleDeliveryActivity(message.body, env, message)
+      try {
+        console.log(`Processing message type: ${(message.body as any).type}`)
+        
+        if (message.body.type === 'inbox') {
+          await handleInboxActivity(message.body, env, message)
+        } else if (message.body.type === 'delivery') {
+          await handleDeliveryActivity(message.body, env, message)
+        } else {
+          console.error('Unknown message type:', (message.body as any).type)
+          message.ack()
+        }
+      } catch (error: any) {
+        console.error('Error processing message:', {
+          error: error.message,
+          stack: error.stack,
+          messageType: (message.body as any).type,
+          messageId: message.id
+        })
+        
+        // Acknowledge the message to prevent retries for unhandled errors
+        message.ack()
       }
     }
   }
@@ -35,8 +54,12 @@ export default {
 
 async function handleDeliveryActivity(msg: DeliveryMessage, env: Env, message: any): Promise<void> {
   const { inboxUrl, activity, senderUsername } = msg
+  const retryCount = message.retryCount || 0
+  const maxRetries = 3
+  let timeoutId: number | undefined
 
   try {
+    // Get user's private key for signing
     const keyResult = await env.DB.prepare(`
       SELECT ak.private_key_pem FROM actor_keys ak
       JOIN users u ON u.id = ak.user_id
@@ -56,20 +79,69 @@ async function handleDeliveryActivity(msg: DeliveryMessage, env: Env, message: a
     const body = JSON.stringify(activity)
     const headers = await signRequest(inboxUrl, body, privateKeyPem, keyId)
 
+    // Add timeout and better error handling
+    const controller = new AbortController()
+    timeoutId = setTimeout(() => controller.abort(), 30000) as any // 30 second timeout
+
     const response = await fetch(inboxUrl, {
       method: 'POST',
       headers: headers,
-      body: body
+      body: body,
+      signal: controller.signal
     })
 
-    if (!response.ok) {
-      console.error('Delivery failed:', inboxUrl, 'status:', response.status)
+    if (timeoutId) {
+      clearTimeout(timeoutId)
     }
 
-    message.ack()
-  } catch (e) {
-    console.error('Delivery error:', inboxUrl, e)
-    message.retry()
+    if (response.ok) {
+      console.log('ActivityPub delivery successful:', inboxUrl, 'activity:', (activity as any).type)
+      message.ack()
+    } else {
+      const responseText = await response.text()
+      console.error('ActivityPub delivery failed:', {
+        inboxUrl,
+        status: response.status,
+        statusText: response.statusText,
+        responseText: responseText.substring(0, 500),
+        activityType: (activity as any).type
+      })
+
+      // Retry on server errors (5xx) or network issues
+      if (response.status >= 500 || response.status === 429) {
+        if (retryCount < maxRetries) {
+          console.log(`Retrying delivery to ${inboxUrl}, attempt ${retryCount + 1}/${maxRetries}`)
+          message.retry({ delaySeconds: Math.pow(2, retryCount) * 30 }) // Exponential backoff
+        } else {
+          console.error(`Max retries exceeded for ${inboxUrl}, giving up`)
+          message.ack()
+        }
+      } else {
+        // Don't retry client errors (4xx except 429)
+        message.ack()
+      }
+    }
+  } catch (e: any) {
+    if (timeoutId) {
+      clearTimeout(timeoutId)
+    }
+    
+    console.error('ActivityPub delivery error:', {
+      inboxUrl,
+      error: e.message,
+      name: e.name,
+      retryCount,
+      activityType: (activity as any).type
+    })
+
+    // Retry on network errors or timeouts
+    if (retryCount < maxRetries && (e.name === 'AbortError' || e.name === 'TypeError')) {
+      console.log(`Retrying delivery to ${inboxUrl} after error, attempt ${retryCount + 1}/${maxRetries}`)
+      message.retry({ delaySeconds: Math.pow(2, retryCount) * 30 })
+    } else {
+      console.error(`Max retries exceeded or non-retryable error for ${inboxUrl}`)
+      message.ack()
+    }
   }
 }
 
@@ -190,13 +262,100 @@ async function handleFollowActivity(activity: any, username: string, actorId: st
     return
   }
 
+  // Fetch actor's inbox URL
+  let inboxUrl = activity.actor
+  try {
+    const actorResponse = await fetch(actorId, {
+      headers: {
+        'Accept': 'application/activity+json, application/ld+json'
+      }
+    })
+
+    if (actorResponse.ok) {
+      const actorData = await actorResponse.json() as any
+      inboxUrl = actorData.inbox || activity.actor
+    }
+  } catch (e) {
+    console.error('Failed to fetch actor inbox:', e)
+  }
+
   const followerId = generateId()
   await env.DB.prepare(`
     INSERT INTO ap_followers (id, local_user_id, actor_url, inbox_url, created_at)
     VALUES (?, ?, ?, ?, datetime('now'))
-  `).bind(followerId, localUserId, actorId, activity.actor).run()
+  `).bind(followerId, localUserId, actorId, inboxUrl).run()
 
   console.log('Follow request recorded:', actorId)
+
+  // Send Accept activity automatically
+  try {
+    console.log('Preparing to send Accept activity for follow from:', actorId, 'to user:', username)
+    
+    const { signRequest } = await import('./lib/activitypub/signature')
+    
+    // Get user's private key for signing
+    const keyResult = await env.DB.prepare(`
+      SELECT ak.private_key_pem FROM actor_keys ak
+      JOIN users u ON u.id = ak.user_id
+      WHERE u.username = ?
+    `).bind(username).first()
+
+    if (!keyResult || !keyResult.private_key_pem) {
+      console.error('No private key found for user:', username)
+      return
+    }
+
+    const privateKeyPem = keyResult.private_key_pem as string
+    const keyId = `${env.BASE_URL}/actors/${username}#main-key`
+
+    console.log('Using inbox URL:', inboxUrl)
+    console.log('Key ID:', keyId)
+
+    // Build Accept activity - use the original Follow activity as object
+    const acceptActivity = {
+      '@context': 'https://www.w3.org/ns/activitystreams',
+      id: `${env.BASE_URL}/activities/accept-${followerId}`,
+      type: 'Accept',
+      actor: `${env.BASE_URL}/actors/${username}`,
+      object: activity, // Use the entire original Follow activity
+      to: [actorId],
+      published: new Date().toISOString()
+    }
+
+    console.log('Accept activity:', JSON.stringify(acceptActivity, null, 2))
+
+    const body = JSON.stringify(acceptActivity)
+    const headers = await signRequest(inboxUrl, body, privateKeyPem, keyId)
+
+    console.log('Sending Accept activity to:', inboxUrl)
+    console.log('Headers:', Object.fromEntries(headers.entries()))
+
+    const response = await fetch(inboxUrl, {
+      method: 'POST',
+      headers: headers,
+      body: body
+    })
+
+    if (response.ok) {
+      console.log('Accept activity sent successfully to:', actorId, 'status:', response.status)
+    } else {
+      const responseText = await response.text()
+      console.error('Failed to send Accept activity:', {
+        inboxUrl,
+        status: response.status,
+        statusText: response.statusText,
+        responseText: responseText.substring(0, 500)
+      })
+    }
+  } catch (e: any) {
+    console.error('Error sending Accept activity:', {
+      error: e.message,
+      stack: e.stack,
+      actorId,
+      username,
+      inboxUrl
+    })
+  }
 }
 
 async function handleAcceptActivity(activity: any, username: string, actorId: string, env: Env): Promise<void> {

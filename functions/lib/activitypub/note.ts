@@ -69,3 +69,24 @@ export function buildCreateActivity(note: object, user: User, baseUrl: string): 
     published: new Date().toISOString()
   }
 }
+
+/**
+ * Build a Delete activity for a Note
+ */
+export function buildDeleteActivity(noteId: string, user: User, baseUrl: string): object {
+  const actorUrl = `${baseUrl}/actors/${user.username}`
+  const activityId = `${baseUrl}/activities/delete-${noteId}`
+
+  return {
+    id: activityId,
+    type: 'Delete',
+    actor: actorUrl,
+    object: {
+      id: noteId,
+      type: 'Tombstone'
+    },
+    to: ['https://www.w3.org/ns/activitystreams#Public'],
+    cc: [`${baseUrl}/actors/${user.username}/followers`],
+    published: new Date().toISOString()
+  }
+}

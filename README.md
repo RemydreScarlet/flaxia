@@ -13,8 +13,9 @@ wrangler pages deployment tail
 ```
 
 ```bash
-npx wrangler deploy --name flaxia-ap-delivery functions/queue-worker.ts
+npx wrangler deploy functions/queue-worker.ts --config wrangler.toml.worker --name flaxia-ap-delivery --compatibility-date 2024-01-01
 ```
+
 
 ### How to test
 
