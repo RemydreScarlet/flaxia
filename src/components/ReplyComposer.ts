@@ -175,8 +175,8 @@ export class ReplyComposer {
     })
 
     // Add missing event listeners
-    this.element.addEventListener('paste', (e) => {
-      console.log('Paste event:', e)
+    this.textarea.addEventListener('paste', (e) => {
+      this.handlePaste(e)
     })
 
     this.element.addEventListener('dragover', (e) => {
@@ -186,6 +186,23 @@ export class ReplyComposer {
     this.element.addEventListener('drop', (e) => {
       console.log('Drop event:', e)
     })
+  }
+
+  private handlePaste(e: ClipboardEvent): void {
+    const items = e.clipboardData?.items
+    if (!items) return
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (item.type.indexOf('image') !== -1) {
+        e.preventDefault()
+        const file = item.getAsFile()
+        if (file) {
+          this.handleFileSelection(file)
+        }
+        break
+      }
+    }
   }
 
   private handleFileSelection(file: File): void {

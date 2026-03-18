@@ -1,6 +1,22 @@
 import { Ad } from '../types/post.js'
-import { executeZip } from '../lib/zip-executor.js'
-import { executeFlash } from './FlashPlayer.js'
+import { executeZip, ZipExecutorHandle } from '../lib/zip-executor.js'
+import { executeFlash, FlashPlayerHandle } from './FlashPlayer.js'
+
+// Global handles for cleanup
+let activeZipHandle: ZipExecutorHandle | null = null
+let activeFlashHandle: FlashPlayerHandle | null = null
+
+// Cleanup handles on page unload
+window.addEventListener('beforeunload', () => {
+  if (activeZipHandle) {
+    activeZipHandle.destroy()
+    activeZipHandle = null
+  }
+  if (activeFlashHandle) {
+    activeFlashHandle.destroy()
+    activeFlashHandle = null
+  }
+})
 
 function createExecutionButton(props: {
   postId: string
@@ -112,7 +128,16 @@ function mountAdStage(ad: Ad, placeholder: HTMLElement): void {
         placeholder.style.pointerEvents = 'none'
 
         try {
-          await executeZip(ad.id, placeholder, `/api/ads/${ad.id}/payload`)
+          // Record play start for games
+          fetch(`/api/ads/${ad.id}/play`, { method: 'POST' }).catch(console.error)
+          
+          // Clean up any existing handle
+          if (activeZipHandle) {
+            activeZipHandle.destroy()
+            activeZipHandle = null
+          }
+          
+          activeZipHandle = await executeZip(ad.id, placeholder, `/api/ads/${ad.id}/payload`)
           
           // Set pointer events for iframe interaction
           const adBanner = placeholder.closest('.ad-banner') as HTMLElement
@@ -166,7 +191,16 @@ function mountAdStage(ad: Ad, placeholder: HTMLElement): void {
         placeholder.style.pointerEvents = 'none'
 
         try {
-          await executeFlash(ad.id, placeholder, `/api/ads/${ad.id}/payload`)
+          // Record play start for games
+          fetch(`/api/ads/${ad.id}/play`, { method: 'POST' }).catch(console.error)
+          
+          // Clean up any existing handle
+          if (activeFlashHandle) {
+            activeFlashHandle.destroy()
+            activeFlashHandle = null
+          }
+          
+          activeFlashHandle = await executeFlash(ad.id, placeholder, `/api/ads/${ad.id}/payload`)
           
           // Set pointer events for iframe interaction
           const adBanner = placeholder.closest('.ad-banner') as HTMLElement

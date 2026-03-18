@@ -262,8 +262,9 @@ async function handleFollowActivity(activity: any, username: string, actorId: st
     return
   }
 
-  // Fetch actor's inbox URL
+  // Fetch actor's inbox URL and profile information
   let inboxUrl = activity.actor
+  let actorData: any = null
   try {
     const actorResponse = await fetch(actorId, {
       headers: {
@@ -272,7 +273,7 @@ async function handleFollowActivity(activity: any, username: string, actorId: st
     })
 
     if (actorResponse.ok) {
-      const actorData = await actorResponse.json() as any
+      actorData = await actorResponse.json() as any
       inboxUrl = actorData.inbox || activity.actor
     }
   } catch (e) {
@@ -286,6 +287,59 @@ async function handleFollowActivity(activity: any, username: string, actorId: st
   `).bind(followerId, localUserId, actorId, inboxUrl).run()
 
   console.log('Follow request recorded:', actorId)
+
+  // Create notification for follow with actor information
+  try {
+    const { nanoid } = await import('nanoid')
+    
+    // Extract actor name for display
+    let actorDisplayName = 'Unknown User'
+    let actorUsername = 'unknown'
+    let domain = 'unknown'
+    
+    if (actorData) {
+      actorDisplayName = actorData.name || actorData.preferredUsername || 'Unknown User'
+      actorUsername = actorData.preferredUsername || 'unknown'
+      
+      // Extract domain from actor URL for "MastodonのXXXさん" format
+      try {
+        const actorUrl = new URL(actorId)
+        domain = actorUrl.hostname
+      } catch {
+        domain = actorId.includes('://') ? new URL(actorId).hostname : actorId
+      }
+    } else {
+      // Fallback: extract domain from actor URL
+      try {
+        const actorUrl = new URL(actorId)
+        domain = actorUrl.hostname
+      } catch {
+        domain = actorId.includes('://') ? new URL(actorId).hostname : actorId
+      }
+    }
+    
+    // Store actor information in the notification
+    await env.DB.prepare(`
+      INSERT INTO notifications (id, user_id, type, post_id, actor_id, actor_data) 
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(
+      nanoid(), 
+      localUserId, 
+      'ap_follow', 
+      null, 
+      actorId,
+      JSON.stringify({
+        username: actorUsername,
+        display_name: actorDisplayName,
+        domain: domain,
+        actor_url: actorId
+      })
+    ).run()
+    
+    console.log('Follow notification created for:', actorDisplayName, 'from domain:', domain)
+  } catch (e) {
+    console.error('Failed to create follow notification:', e)
+  }
 
   // Send Accept activity automatically
   try {

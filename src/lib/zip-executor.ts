@@ -3,6 +3,9 @@ export interface ZipExecutorHandle {
   destroy: () => void
 }
 
+// Global execution manager
+let activeHandle: ZipExecutorHandle | null = null
+
 // Cache for dynamic imports
 let jszipPromise: Promise<any> | null = null
 
@@ -36,9 +39,6 @@ const ALLOWED_EXTENSIONS: Record<string, string> = {
   '.glsl': 'text/plain',
   '.wgsl': 'text/plain'
 }
-
-// Global execution manager
-let activeHandle: ZipExecutorHandle | null = null
 
 export async function executeZip(
   postId: string,

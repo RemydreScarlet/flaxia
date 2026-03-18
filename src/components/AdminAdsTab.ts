@@ -10,7 +10,7 @@ export interface AdminAd {
   active: number
   created_at: string
   ctr?: number
-  avg_interaction_ms?: number
+  interaction_count?: number
 }
 
 export interface AdminAdsTabProps {
@@ -282,7 +282,7 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
     const header = document.createElement('div')
     header.style.cssText = `
       display: grid;
-      grid-template-columns: 2fr 1fr 80px 100px 100px 80px 120px;
+      grid-template-columns: 2fr 1fr 80px 100px 100px 80px 120px 120px;
       gap: 1px;
       background: #0f172a;
       padding: 12px 16px;
@@ -297,6 +297,7 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
       <div>Impressions</div>
       <div>Clicks</div>
       <div>CTR</div>
+      <div>Plays/Interactions</div>
       <div>Actions</div>
     `
     table.appendChild(header)
@@ -306,7 +307,7 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
       const row = document.createElement('div')
       row.style.cssText = `
         display: grid;
-        grid-template-columns: 2fr 1fr 80px 100px 100px 80px 120px;
+        grid-template-columns: 2fr 1fr 80px 100px 100px 80px 120px 120px;
         gap: 1px;
         background: #1e293b;
         padding: 12px 16px;
@@ -363,6 +364,17 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
       ctr.textContent = ad.impressions > 0 ? `${ctrValue}%` : '—'
       ctr.style.cssText = 'color: #94a3b8;'
       row.appendChild(ctr)
+
+      // Plays/Interactions column for ZIP/SWF
+      const interactions = document.createElement('div')
+      if (ad.payload_type === 'zip' || ad.payload_type === 'swf') {
+        const playCount = ad.interaction_count || 0
+        interactions.innerHTML = `<div style="color: #f1f5f9; font-size: 12px;">${playCount} plays</div>`
+      } else {
+        interactions.textContent = '—'
+        interactions.style.cssText = 'color: #94a3b8;'
+      }
+      row.appendChild(interactions)
 
       const actions = document.createElement('div')
       actions.style.cssText = 'display: flex; gap: 8px;'
@@ -627,12 +639,21 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
         font-size: 13px;
         color: #94a3b8;
       `
-      statsRow.innerHTML = `
+      
+      let statsHTML = `
         <div>Impressions: <strong style="color: #f1f5f9;">${editingAd.impressions}</strong></div>
         <div>Clicks: <strong style="color: #f1f5f9;">${editingAd.clicks}</strong></div>
         <div>CTR: <strong style="color: #f1f5f9;">${editingAd.impressions > 0 ? ((editingAd.clicks / editingAd.impressions) * 100).toFixed(2) : '—'}%</strong></div>
-        <div>Avg interaction time: <strong style="color: #f1f5f9;">${editingAd.avg_interaction_ms ? Math.round(editingAd.avg_interaction_ms) + 'ms' : '—'}</strong></div>
       `
+      
+      if (editingAd.payload_type === 'zip' || editingAd.payload_type === 'swf') {
+        const playCount = editingAd.interaction_count || 0
+        statsHTML += `<div>Plays: <strong style="color: #f1f5f9;">${playCount}</strong></div>`
+      } else {
+        statsHTML += `<div>Type: <strong style="color: #f1f5f9;">${getFormatLabel(editingAd.payload_type)}</strong></div>`
+      }
+      
+      statsRow.innerHTML = statsHTML
       form.appendChild(statsRow)
     }
 

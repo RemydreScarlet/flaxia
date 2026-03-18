@@ -205,6 +205,28 @@ export class PostComposer {
         this.handleSubmit()
       }
     })
+
+    // Clipboard paste support
+    this.textarea.addEventListener('paste', (e) => {
+      this.handlePaste(e)
+    })
+  }
+
+  private handlePaste(e: ClipboardEvent): void {
+    const items = e.clipboardData?.items
+    if (!items) return
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (item.type.indexOf('image') !== -1) {
+        e.preventDefault()
+        const file = item.getAsFile()
+        if (file) {
+          this.handleFileSelection(file)
+        }
+        break
+      }
+    }
   }
 
   private validateFile(file: File): { valid: boolean; error?: string } {

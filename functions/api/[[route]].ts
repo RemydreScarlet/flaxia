@@ -665,7 +665,7 @@ app.get('/api/.well-known/webfinger', async (c) => {
         {
           rel: 'self',
           type: 'application/activity+json',
-          href: `${c.env.BASE_URL}/actors/${username}`
+          href: `${c.env.BASE_URL}/api/actors/${username}`
         }
       ]
     }
@@ -694,8 +694,10 @@ app.get('/api/actors/:username', async (c) => {
     
     // Check Accept header for ActivityPub content types
     const acceptHeader = c.req.header('Accept') || ''
+    console.log('Actor endpoint Accept header:', acceptHeader)
     const isActivityPubRequest = acceptHeader.includes('application/activity+json') || 
-                                acceptHeader.includes('application/ld+json')
+                                acceptHeader.includes('application/ld+json') ||
+                                acceptHeader.includes('application/json')
     
     // Find user in database
     const user = await c.env.DB.prepare(`
@@ -738,17 +740,17 @@ app.get('/api/actors/:username', async (c) => {
     const actor: any = {
       "@context": "https://www.w3.org/ns/activitystreams",
       "type": "Person",
-      "id": `${c.env.BASE_URL}/actors/${username}`,
+      "id": `${c.env.BASE_URL}/api/actors/${username}`,
       "preferredUsername": user.username,
       "name": user.display_name,
       "summary": user.bio || "",
       "inbox": `${c.env.BASE_URL}/api/users/${username}/inbox`,
-      "outbox": `${c.env.BASE_URL}/actors/${username}/outbox`,
-      "followers": `${c.env.BASE_URL}/actors/${username}/followers`,
-      "following": `${c.env.BASE_URL}/actors/${username}/following`,
+      "outbox": `${c.env.BASE_URL}/api/actors/${username}/outbox`,
+      "followers": `${c.env.BASE_URL}/api/actors/${username}/followers`,
+      "following": `${c.env.BASE_URL}/api/actors/${username}/following`,
       "publicKey": {
-        "id": `${c.env.BASE_URL}/actors/${username}#main-key`,
-        "owner": `${c.env.BASE_URL}/actors/${username}`,
+        "id": `${c.env.BASE_URL}/api/actors/${username}#main-key`,
+        "owner": `${c.env.BASE_URL}/api/actors/${username}`,
         "publicKeyPem": publicKeyPem
       }
     }
@@ -772,10 +774,12 @@ app.get('/api/actors/:username', async (c) => {
 })
 
 
-// GET /api/actors/:username/outbox - ActivityPub Outbox endpoint
+// GET /api/actors/:username/outbox - ActivityPub Outbox endpoint (paginated)
 app.get('/api/actors/:username/outbox', async (c) => {
   try {
     const username = c.req.param('username')
+    const page = c.req.query('page')
+    const pageSize = 20
 
     if (!username) {
       return c.json({ error: 'Username required' }, 400)
@@ -784,11 +788,6 @@ app.get('/api/actors/:username/outbox', async (c) => {
     if (!c.env.DB) {
       return c.json({ error: 'Database not available' }, 500)
     }
-
-    // Check Accept header for ActivityPub content types
-    const acceptHeader = c.req.header('Accept') || ''
-    const isActivityPubRequest = acceptHeader.includes('application/activity+json') || 
-                                acceptHeader.includes('application/ld+json')
 
     // Find user in database
     const user = await c.env.DB.prepare(`
@@ -800,32 +799,246 @@ app.get('/api/actors/:username/outbox', async (c) => {
       return c.json({ error: 'User not found' }, 404)
     }
 
-    // Get recent posts (last 20)
-    const posts = await c.env.DB.prepare(`
-      SELECT id, text, created_at, status FROM posts
+    // Get total count of published posts
+    const countResult = await c.env.DB.prepare(`
+      SELECT COUNT(*) as total FROM posts
       WHERE user_id = ? AND status = 'published'
-      ORDER BY created_at DESC LIMIT 20
-    `).bind(user.id).all() as { results: Array<{ id: string, text: string, created_at: string, status: string }> }
+    `).bind(user.id).first() as { total: number }
+    const totalItems = countResult?.total || 0
 
-    // Build activities from posts
-    const activities = posts.results.map(post => {
-      const note = buildNoteObject({
-        ...post,
-        visibility: post.status === 'published' ? 'public' : 'private'
-      }, user, c.env.BASE_URL)
-      return buildCreateActivity(note, user, c.env.BASE_URL)
-    })
+    // If page parameter is present, return OrderedCollectionPage
+    if (page === 'true') {
+      const offset = c.req.query('offset')
+      const offsetNum = offset ? parseInt(offset, 10) : 0
 
+      // Get posts for this page
+      const posts = await c.env.DB.prepare(`
+        SELECT id, text, created_at, status FROM posts
+        WHERE user_id = ? AND status = 'published'
+        ORDER BY created_at DESC LIMIT ? OFFSET ?
+      `).bind(user.id, pageSize, offsetNum).all() as { results: Array<{ id: string, text: string, created_at: string, status: string }> }
+
+      // Build activities from posts
+      const activities = posts.results.map(post => {
+        const note = buildNoteObject({
+          ...post,
+          visibility: post.status === 'published' ? 'public' : 'private'
+        }, user, c.env.BASE_URL)
+        return buildCreateActivity(note, user, c.env.BASE_URL)
+      })
+
+      const nextOffset = offsetNum + pageSize
+      const hasNext = nextOffset < totalItems
+
+      return c.json({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "type": "OrderedCollectionPage",
+        "id": `${c.env.BASE_URL}/api/actors/${username}/outbox?page=true&offset=${offsetNum}`,
+        "partOf": `${c.env.BASE_URL}/api/actors/${username}/outbox`,
+        "totalItems": totalItems,
+        "orderedItems": activities,
+        ...(hasNext && { "next": `${c.env.BASE_URL}/api/actors/${username}/outbox?page=true&offset=${nextOffset}` })
+      }, 200, { 'Content-Type': 'application/activity+json' })
+    }
+
+    // Return main OrderedCollection with first link
     return c.json({
       "@context": "https://www.w3.org/ns/activitystreams",
       "type": "OrderedCollection",
-      "id": `${c.env.BASE_URL}/actors/${username}/outbox`,
-      "totalItems": activities.length,
-      "orderedItems": activities
+      "id": `${c.env.BASE_URL}/api/actors/${username}/outbox`,
+      "totalItems": totalItems,
+      "first": `${c.env.BASE_URL}/api/actors/${username}/outbox?page=true&offset=0`
     }, 200, { 'Content-Type': 'application/activity+json' })
   } catch (error: any) {
     console.error('Outbox endpoint error:', error)
     return c.json({ error: 'Outbox endpoint failed', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// GET /api/notes/:noteId - ActivityPub individual Note endpoint
+app.get('/api/notes/:noteId', async (c) => {
+  try {
+    const noteId = c.req.param('noteId')
+
+    if (!noteId) {
+      return c.json({ error: 'Note ID required' }, 400)
+    }
+
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+
+    // Get post with user info
+    const post = await c.env.DB.prepare(`
+      SELECT p.id, p.text, p.created_at, p.status, p.user_id, p.username
+      FROM posts p
+      WHERE p.id = ? AND p.status = 'published'
+    `).bind(noteId).first() as { id: string, text: string, created_at: string, status: string, user_id: string, username: string } | null
+
+    if (!post) {
+      return c.json({ error: 'Note not found' }, 404)
+    }
+
+    // Get user info by username (posts store username, not user_id)
+    const user = await c.env.DB.prepare(`
+      SELECT id, username, display_name FROM users WHERE username = ? COLLATE NOCASE
+    `).bind(post.username).first() as { id: string, username: string, display_name: string } | null
+
+    if (!user) {
+      return c.json({ error: 'User not found' }, 404)
+    }
+
+    // Build Note object
+    const note = buildNoteObject({
+      id: post.id,
+      text: post.text,
+      created_at: post.created_at,
+      visibility: post.status === 'published' ? 'public' : 'private'
+    }, user, c.env.BASE_URL)
+
+    // Build Create activity wrapping the note
+    const activity = buildCreateActivity(note, user, c.env.BASE_URL)
+
+    return c.json(activity, 200, {
+      'Content-Type': 'application/activity+json'
+    })
+  } catch (error: any) {
+    console.error('Note endpoint error:', error)
+    return c.json({ error: 'Note endpoint failed', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// GET /actors/:username/outbox - ActivityPub Outbox endpoint (paginated, no /api prefix)
+app.get('/actors/:username/outbox', async (c) => {
+  try {
+    const username = c.req.param('username')
+    const page = c.req.query('page')
+    const pageSize = 20
+
+    if (!username) {
+      return c.json({ error: 'Username required' }, 400)
+    }
+
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+
+    // Find user in database
+    const user = await c.env.DB.prepare(`
+      SELECT id, username, display_name FROM users 
+      WHERE username = ? COLLATE NOCASE
+    `).bind(username).first() as { id: string, username: string, display_name: string } | null
+
+    if (!user) {
+      return c.json({ error: 'User not found' }, 404)
+    }
+
+    // Get total count of published posts
+    const countResult = await c.env.DB.prepare(`
+      SELECT COUNT(*) as total FROM posts
+      WHERE user_id = ? AND status = 'published'
+    `).bind(user.id).first() as { total: number }
+    const totalItems = countResult?.total || 0
+
+    // If page parameter is present, return OrderedCollectionPage
+    if (page === 'true') {
+      const offset = c.req.query('offset')
+      const offsetNum = offset ? parseInt(offset, 10) : 0
+
+      // Get posts for this page
+      const posts = await c.env.DB.prepare(`
+        SELECT id, text, created_at, status FROM posts
+        WHERE user_id = ? AND status = 'published'
+        ORDER BY created_at DESC LIMIT ? OFFSET ?
+      `).bind(user.id, pageSize, offsetNum).all() as { results: Array<{ id: string, text: string, created_at: string, status: string }> }
+
+      // Build activities from posts
+      const activities = posts.results.map(post => {
+        const note = buildNoteObject({
+          ...post,
+          visibility: post.status === 'published' ? 'public' : 'private'
+        }, user, c.env.BASE_URL)
+        return buildCreateActivity(note, user, c.env.BASE_URL)
+      })
+
+      const nextOffset = offsetNum + pageSize
+      const hasNext = nextOffset < totalItems
+
+      return c.json({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "type": "OrderedCollectionPage",
+        "id": `${c.env.BASE_URL}/api/actors/${username}/outbox?page=true&offset=${offsetNum}`,
+        "partOf": `${c.env.BASE_URL}/api/actors/${username}/outbox`,
+        "totalItems": totalItems,
+        "orderedItems": activities,
+        ...(hasNext && { "next": `${c.env.BASE_URL}/api/actors/${username}/outbox?page=true&offset=${nextOffset}` })
+      }, 200, { 'Content-Type': 'application/activity+json' })
+    }
+
+    // Return main OrderedCollection with first link
+    return c.json({
+      "@context": "https://www.w3.org/ns/activitystreams",
+      "type": "OrderedCollection",
+      "id": `${c.env.BASE_URL}/api/actors/${username}/outbox`,
+      "totalItems": totalItems,
+      "first": `${c.env.BASE_URL}/api/actors/${username}/outbox?page=true&offset=0`
+    }, 200, { 'Content-Type': 'application/activity+json' })
+  } catch (error: any) {
+    console.error('Outbox endpoint error:', error)
+    return c.json({ error: 'Outbox endpoint failed', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// GET /notes/:noteId - ActivityPub individual Note endpoint (no /api prefix)
+app.get('/notes/:noteId', async (c) => {
+  try {
+    const noteId = c.req.param('noteId')
+
+    if (!noteId) {
+      return c.json({ error: 'Note ID required' }, 400)
+    }
+
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+
+    // Get post with user info
+    const post = await c.env.DB.prepare(`
+      SELECT p.id, p.text, p.created_at, p.status, p.user_id, p.username
+      FROM posts p
+      WHERE p.id = ? AND p.status = 'published'
+    `).bind(noteId).first() as { id: string, text: string, created_at: string, status: string, user_id: string, username: string } | null
+
+    if (!post) {
+      return c.json({ error: 'Note not found' }, 404)
+    }
+
+    // Get user info by username (posts store username, not user_id)
+    const user = await c.env.DB.prepare(`
+      SELECT id, username, display_name FROM users WHERE username = ? COLLATE NOCASE
+    `).bind(post.username).first() as { id: string, username: string, display_name: string } | null
+
+    if (!user) {
+      return c.json({ error: 'User not found' }, 404)
+    }
+
+    // Build Note object
+    const note = buildNoteObject({
+      id: post.id,
+      text: post.text,
+      created_at: post.created_at,
+      visibility: post.status === 'published' ? 'public' : 'private'
+    }, user, c.env.BASE_URL)
+
+    // Build Create activity wrapping the note
+    const activity = buildCreateActivity(note, user, c.env.BASE_URL)
+
+    return c.json(activity, 200, {
+      'Content-Type': 'application/activity+json'
+    })
+  } catch (error: any) {
+    console.error('Note endpoint error:', error)
+    return c.json({ error: 'Note endpoint failed', details: error?.message || 'Unknown error' }, 500)
   }
 })
 
@@ -866,7 +1079,7 @@ app.get('/.well-known/webfinger', async (c) => {
         {
           rel: "self",
           type: "application/activity+json",
-          href: `${c.env.BASE_URL}/actors/${username}`
+          href: `${c.env.BASE_URL}/api/actors/${username}`
         }
       ]
     })
@@ -1706,6 +1919,41 @@ app.post('/api/ads/:id/interaction', async (c) => {
   }
 })
 
+// POST /api/ads/:id/play - track game play start (public endpoint)
+app.post('/api/ads/:id/play', async (c) => {
+  try {
+    const ip = c.req.header('CF-Connecting-IP') ?? 'unknown'
+    const isTestEnvironment = c.req.url.includes('localhost:8788')
+    const rl = await checkRateLimit(c.env.RATE_LIMIT, {
+      key: `ad-play:${ip}`,
+      limit: 30,
+      windowSeconds: 60
+    })
+    if (!rl.allowed) return rateLimitResponse(c, rl.resetIn, 30)
+
+    const adId = c.req.param('id')
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+
+    // Record a 0-duration interaction to track play count
+    const result = await c.env.DB.prepare(
+      'INSERT INTO ad_interactions (id, ad_id, duration_ms) VALUES (?, ?, 0)'
+    ).bind(nanoid(), adId).run()
+
+    if (!result.success) {
+      console.error('Database insert failed:', result)
+      return c.json({ error: 'Failed to record play' }, 500)
+    }
+
+    return c.json({ ok: true })
+  } catch (error: any) {
+    console.error('Record play error:', error)
+    return c.json({ error: 'Failed to record play', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
 // GET /api/admin/ads/config - get ad configuration (admin endpoint)
 app.get('/api/admin/ads/config', async (c) => {
   try {
@@ -1782,7 +2030,7 @@ app.get('/api/admin/ads', requireAuth, async (c) => {
       SELECT
         ads.*,
         ROUND(CAST(clicks AS FLOAT) / NULLIF(impressions, 0) * 100, 2) AS ctr,
-        (SELECT AVG(duration_ms) FROM ad_interactions WHERE ad_id = ads.id) AS avg_interaction_ms
+        (SELECT COUNT(*) FROM ad_interactions WHERE ad_id = ads.id) AS interaction_count
       FROM ads
       ORDER BY created_at DESC
     `).all()
@@ -3390,6 +3638,7 @@ app.get('/api/notifications', requireAuth, async (c) => {
         n.read,
         n.created_at,
         n.actor_id,
+        n.actor_data,
         SUBSTR(p.text, 1, 50) as post_text_preview,
         u.username as actor_username,
         u.display_name as actor_display_name,
@@ -3425,6 +3674,7 @@ app.get('/api/notifications', requireAuth, async (c) => {
         avatar_key: row.actor_avatar_key
       } : undefined,
       actor_id: row.actor_id,
+      actor_data: row.actor_data,
       read: row.read === 1,
       created_at: row.created_at
     }))
@@ -3625,7 +3875,11 @@ app.post('/api/users/:username/inbox', async (c) => {
           return c.json({ error: 'Object username mismatch' }, 400)
         }
 
-        // Save to ap_followers table (remote follower tracking)
+        // Save to ap_followers table (remote follower tracking) and get actor info for notification
+        let actorUsername: string | null = null
+        let actorDisplayName: string | null = null
+        let actorDomain: string | null = null
+        
         try {
           // Get follower's actor info to find inbox URL
           const actorResponse = await fetch(actor, {
@@ -3642,6 +3896,28 @@ app.post('/api/users/:username/inbox', async (c) => {
                 VALUES (lower(hex(randomblob(16))), ?, ?, ?, datetime('now'))
               `).bind(targetUser.id, actor, inboxUrl).run()
             }
+
+            // Extract actor information for notification
+            try {
+              const actorUrl = new URL(actor)
+              actorDomain = actorUrl.hostname
+              
+              // Extract username from actor URL or use preferredUsername
+              if (actorData.preferredUsername) {
+                actorUsername = actorData.preferredUsername
+              } else {
+                const pathParts = actorUrl.pathname.split('/')
+                const usernameIndex = pathParts.indexOf('users') + 1 || pathParts.indexOf('@') + 1
+                if (usernameIndex > 0 && pathParts[usernameIndex]) {
+                  actorUsername = pathParts[usernameIndex]
+                }
+              }
+              
+              // Use display name or fallback to username
+              actorDisplayName = actorData.name || actorData.preferredUsername || actorUsername
+            } catch (e) {
+              console.error('Failed to extract actor info:', e)
+            }
           }
         } catch (e) {
           console.error('Failed to fetch actor info:', e)
@@ -3652,10 +3928,17 @@ app.post('/api/users/:username/inbox', async (c) => {
           'INSERT OR IGNORE INTO follows (follower_id, followee_id) VALUES (?, ?)'
         ).bind(actor, targetUser.id).run()
 
-        // Create notification for follow
+        // Create notification for follow with actor information
+        const actorDataJson = actorUsername && actorDisplayName && actorDomain ? JSON.stringify({
+          username: actorUsername,
+          display_name: actorDisplayName,
+          domain: actorDomain,
+          actor_url: actor
+        }) : null
+        
         await c.env.DB.prepare(
-          'INSERT INTO notifications (id, user_id, type, post_id, actor_id) VALUES (?, ?, ?, ?, ?)'
-        ).bind(nanoid(), targetUser.id, 'ap_follow', null, actor).run()
+          'INSERT INTO notifications (id, user_id, type, post_id, actor_id, actor_data) VALUES (?, ?, ?, ?, ?, ?)'
+        ).bind(nanoid(), targetUser.id, 'ap_follow', null, actor, actorDataJson).run()
 
         // Send Accept activity automatically
         try {

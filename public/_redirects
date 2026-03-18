@@ -2,5 +2,9 @@
 /users/:splat /api/users/:splat 308
 /users/:username/inbox /api/users/:username/inbox 308
 /actors/:username /api/actors/:username 301
+/actors/:username/outbox /api/actors/:username/outbox 301
+/actors/:username/followers /api/actors/:username/followers 301
+/actors/:username/following /api/actors/:username/following 301
+/notes/:noteId /api/notes/:noteId 301
 /api/* /api/:splat 200
 /* /index.html 200

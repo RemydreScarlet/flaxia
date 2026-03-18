@@ -9,6 +9,7 @@ export interface Notification {
     avatar_key: string | null
   }
   actor_id?: string | null
+  actor_data?: string | null  // JSON string for external actor info
   read: boolean
   created_at: string
 }
@@ -207,18 +208,38 @@ export class NotificationsPage {
         break
       case 'ap_follow':
         if (notification.actor) {
+          // Local user follow
           mainText.innerHTML = `
             <strong>@${notification.actor.username}</strong> 
             <span style="color: var(--text-muted);">(${notification.actor.display_name})</span>
             started following you
           `
         } else {
-          // Handle external actors (from ActivityPub)
-          const actorUrl = notification.actor_id || 'external user'
-          const domain = actorUrl.includes('://') ? new URL(actorUrl).hostname : actorUrl
-          mainText.innerHTML = `
-            <strong>${domain} のユーザー</strong>がフォローしました
-          `
+          // External actor follow - use actor_data if available
+          let actorInfo = null
+          if (notification.actor_data) {
+            try {
+              actorInfo = JSON.parse(notification.actor_data)
+            } catch (e) {
+              console.error('Failed to parse actor_data:', e)
+            }
+          }
+          
+          if (actorInfo) {
+            // Display as "MastodonのXXXさんがフォローしました"
+            const displayName = actorInfo.display_name || actorInfo.username || 'ユーザー'
+            const domain = actorInfo.domain || 'external'
+            mainText.innerHTML = `
+              <strong>${domain} の ${displayName}さん</strong>がフォローしました
+            `
+          } else {
+            // Fallback for existing notifications without actor_data
+            const actorUrl = notification.actor_id || 'external user'
+            const domain = actorUrl.includes('://') ? new URL(actorUrl).hostname : actorUrl
+            mainText.innerHTML = `
+              <strong>${domain} のユーザー</strong>がフォローしました
+            `
+          }
         }
         break
       case 'ap_announce':
