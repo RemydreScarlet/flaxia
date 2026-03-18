@@ -3156,8 +3156,8 @@ app.delete('/api/posts/:id', requireAuth, async (c) => {
     
     // Get the post to verify ownership and get file keys
     const post = await c.env.DB.prepare(
-      'SELECT id, user_id, username, gif_key, payload_key, swf_key, thumbnail_key, visibility FROM posts WHERE id = ?'
-    ).bind(postId).first() as { id: string; user_id: string; username: string; gif_key?: string; payload_key?: string; swf_key?: string; thumbnail_key?: string; visibility?: string } | null
+      'SELECT id, user_id, username, gif_key, payload_key, swf_key, thumbnail_key, status FROM posts WHERE id = ?'
+    ).bind(postId).first() as { id: string; user_id: string; username: string; gif_key?: string; payload_key?: string; swf_key?: string; thumbnail_key?: string; status?: string } | null
     
     if (!post) {
       return c.json({ error: 'Post not found' }, 404)
@@ -3208,7 +3208,7 @@ app.delete('/api/posts/:id', requireAuth, async (c) => {
     }
     
     // Queue ActivityPub delete delivery for public posts
-    if (post && post.visibility === 'public') {
+    if (post && post.status === 'published') {
       try {
         const user = c.get('user')
         if (user) {
