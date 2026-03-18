@@ -282,7 +282,7 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
     const header = document.createElement('div')
     header.style.cssText = `
       display: grid;
-      grid-template-columns: 2fr 1fr 80px 100px 100px 80px 120px 120px;
+      grid-template-columns: 2fr 1fr 80px 100px 100px 80px 120px 120px 80px;
       gap: 1px;
       background: #0f172a;
       padding: 12px 16px;
@@ -297,7 +297,8 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
       <div>Impressions</div>
       <div>Clicks</div>
       <div>CTR</div>
-      <div>Plays/Interactions</div>
+      <div>Plays</div>
+      <div>Age</div>
       <div>Actions</div>
     `
     table.appendChild(header)
@@ -307,7 +308,7 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
       const row = document.createElement('div')
       row.style.cssText = `
         display: grid;
-        grid-template-columns: 2fr 1fr 80px 100px 100px 80px 120px 120px;
+        grid-template-columns: 2fr 1fr 80px 100px 100px 80px 120px 120px 80px;
         gap: 1px;
         background: #1e293b;
         padding: 12px 16px;
@@ -375,6 +376,20 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
         interactions.style.cssText = 'color: #94a3b8;'
       }
       row.appendChild(interactions)
+
+      // Age column
+      const age = document.createElement('div')
+      const createdDate = new Date(ad.created_at)
+      const now = new Date()
+      
+      // Calculate days difference more accurately (accounting for timezone)
+      const createdUTC = Date.UTC(createdDate.getFullYear(), createdDate.getMonth(), createdDate.getDate())
+      const nowUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
+      const daysDiff = Math.floor((nowUTC - createdUTC) / (1000 * 60 * 60 * 24))
+      
+      age.textContent = `${daysDiff}d`
+      age.style.cssText = 'color: #94a3b8; font-size: 12px;'
+      row.appendChild(age)
 
       const actions = document.createElement('div')
       actions.style.cssText = 'display: flex; gap: 8px;'

@@ -1,0 +1,16 @@
+User-agent: *
+Allow: /
+
+# Sitemap
+Sitemap: https://flexia.social/sitemap.xml
+
+# Disallow sensitive areas
+Disallow: /api/
+Disallow: /functions/
+Disallow: /admin/
+Disallow: /.well-known/
+
+# Allow legal pages
+Allow: /legal/
+Allow: /legal/privacy
+Allow: /legal/terms

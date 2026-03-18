@@ -7,4 +7,5 @@
 /actors/:username/following /api/actors/:username/following 301
 /notes/:noteId /api/notes/:noteId 301
 /api/* /api/:splat 200
+/robots.txt /robots.txt 200
 /* /index.html 200
