@@ -5,6 +5,7 @@ export interface AdminAd {
   click_url: string | null
   payload_key: string | null
   payload_type: 'zip' | 'swf' | 'gif' | 'image' | null
+  thumbnail_key?: string
   impressions: number
   clicks: number
   active: number
@@ -641,6 +642,42 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
     payloadField.appendChild(payloadInput)
     form.appendChild(payloadField)
 
+    // Thumbnail field
+    const thumbnailField = document.createElement('div')
+    thumbnailField.style.cssText = 'display: flex; flex-direction: column; gap: 8px;'
+
+    const thumbnailLabel = document.createElement('label')
+    thumbnailLabel.textContent = 'Thumbnail (optional, for ZIP/SWF ads)'
+    thumbnailLabel.style.cssText = 'color: #f1f5f9; font-size: 14px; font-weight: 500;'
+    thumbnailField.appendChild(thumbnailLabel)
+
+    const thumbnailInput = document.createElement('input')
+    thumbnailInput.type = 'file'
+    thumbnailInput.accept = '.jpg,.jpeg,.png,.gif'
+    thumbnailInput.style.cssText = `
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #f1f5f9;
+      padding: 8px;
+      border-radius: 4px;
+      font-size: 14px;
+    `
+
+    const thumbnailHint = document.createElement('div')
+    thumbnailHint.textContent = 'accepts .jpg .png .gif, max 1MB'
+    thumbnailHint.style.cssText = 'color: #64748b; font-size: 12px; margin-top: 4px;'
+
+    if (editingAd?.thumbnail_key) {
+      const currentThumbnail = document.createElement('div')
+      currentThumbnail.textContent = `Current thumbnail: ${editingAd.thumbnail_key}`
+      currentThumbnail.style.cssText = 'color: #64748b; font-size: 12px; margin-bottom: 4px;'
+      thumbnailField.appendChild(currentThumbnail)
+    }
+
+    thumbnailField.appendChild(thumbnailInput)
+    thumbnailField.appendChild(thumbnailHint)
+    form.appendChild(thumbnailField)
+
     // Stats row for edit mode
     if (editingAd) {
       const statsRow = document.createElement('div')
@@ -718,6 +755,7 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
           formData.append('body_text', bodyText)
           if (clickUrl) formData.append('click_url', clickUrl)
           if (payloadInput.files?.[0]) formData.append('payload', payloadInput.files[0])
+          if (thumbnailInput.files?.[0]) formData.append('thumbnail', thumbnailInput.files[0])
 
           const response = await fetch('/api/admin/ads', {
             method: 'POST',

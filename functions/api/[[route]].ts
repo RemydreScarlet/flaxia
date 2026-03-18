@@ -225,8 +225,8 @@ app.get('/api/ads/:id/payload', async (c) => {
       return c.json({ error: 'Storage not available' }, 500)
     }
     
-    // Fetch ad to get payload_key and payload_type
-    const ad = await c.env.DB.prepare('SELECT payload_key, payload_type FROM ads WHERE id = ?')
+    // Fetch ad to get payload_key, payload_type, and thumbnail_key
+    const ad = await c.env.DB.prepare('SELECT payload_key, payload_type, thumbnail_key FROM ads WHERE id = ?')
       .bind(adId).first()
     
     if (!ad) {
@@ -285,7 +285,7 @@ app.get('/api/ads/:id/payload', async (c) => {
   }
 })
 
-// GET /api/thumbnail/:id - serve thumbnail images from R2
+// GET /api/thumbnail/:id - serve thumbnail images from R2 (posts)
 app.get('/api/thumbnail/:id', async (c) => {
   try {
     const postId = c.req.param('id')
@@ -302,12 +302,20 @@ app.get('/api/thumbnail/:id', async (c) => {
       return c.json({ error: 'Storage not available' }, 500)
     }
     
-    // Fetch thumbnail_key from posts table
-    const post = await c.env.DB.prepare('SELECT thumbnail_key FROM posts WHERE id = ?')
+    // First try to get from posts table
+    let post = await c.env.DB.prepare('SELECT thumbnail_key FROM posts WHERE id = ?')
       .bind(postId).first()
     
+    // If not found in posts, try ads table
     if (!post || !post.thumbnail_key) {
-      return c.json({ error: 'Thumbnail not found' }, 404)
+      const ad = await c.env.DB.prepare('SELECT thumbnail_key FROM ads WHERE id = ?')
+        .bind(postId).first()
+      
+      if (!ad || !ad.thumbnail_key) {
+        return c.json({ error: 'Thumbnail not found' }, 404)
+      }
+      
+      post = ad
     }
     
     // Get thumbnail object from R2
@@ -1801,7 +1809,7 @@ app.get('/api/ads/active', async (c) => {
       return c.json({ error: 'Database not available' }, 500)
     }
 
-    const result = await c.env.DB.prepare('SELECT * FROM ads WHERE active = 1').all()
+    const result = await c.env.DB.prepare('SELECT id, body_text, payload_key, payload_type, thumbnail_key, click_url, impressions, clicks, active, created_at FROM ads WHERE active = 1').all()
     
     if (!result.success) {
       console.error('Database query failed:', result)
@@ -2028,7 +2036,17 @@ app.get('/api/admin/ads', requireAuth, async (c) => {
 
     const result = await c.env.DB.prepare(`
       SELECT
-        ads.*,
+        ads.id,
+        ads.title,
+        ads.body_text,
+        ads.click_url,
+        ads.payload_key,
+        ads.payload_type,
+        ads.thumbnail_key,
+        ads.impressions,
+        ads.clicks,
+        ads.active,
+        ads.created_at,
         ROUND(CAST(clicks AS FLOAT) / NULLIF(impressions, 0) * 100, 2) AS ctr,
         (SELECT COUNT(*) FROM ad_interactions WHERE ad_id = ads.id) AS interaction_count
       FROM ads
@@ -2056,7 +2074,7 @@ app.post('/api/admin/ads', requireAuth, async (c) => {
     }
 
     const contentType = c.req.header('content-type')
-    let title: string, body_text: string, click_url: string, payloadFile: File | undefined
+    let title: string, body_text: string, click_url: string, payloadFile: File | undefined, thumbnailFile: File | undefined
 
     if (contentType?.includes('multipart/form-data')) {
       const formData = await c.req.formData()
@@ -2064,6 +2082,7 @@ app.post('/api/admin/ads', requireAuth, async (c) => {
       body_text = formData.get('body_text') as string
       click_url = formData.get('click_url') as string
       payloadFile = formData.get('payload') as File | null || undefined
+      thumbnailFile = formData.get('thumbnail') as File | null || undefined
     } else {
       const body = await c.req.json()
       title = body.title
@@ -2131,8 +2150,36 @@ app.post('/api/admin/ads', requireAuth, async (c) => {
       payload_key = r2Key
     }
 
-    // Generate ad ID
+    // Generate ad ID first (needed for thumbnail key)
     const adId = nanoid()
+
+    let thumbnail_key: string | null = null
+    
+    // Handle thumbnail file if present
+    if (thumbnailFile && thumbnailFile.size > 0) {
+      // Validate thumbnail size ≤ 1MB
+      if (thumbnailFile.size > 1024 * 1024) {
+        return c.json({ error: 'Thumbnail must be ≤1MB' }, 400)
+      }
+
+      // Validate thumbnail extension
+      const allowedExts = ['jpg', 'jpeg', 'png', 'gif']
+      const ext = thumbnailFile.name.toLowerCase().split('.').pop()
+      if (!ext || !allowedExts.includes(ext)) {
+        return c.json({ error: 'Thumbnail must be .jpg, .jpeg, .png, or .gif' }, 400)
+      }
+
+      // Upload thumbnail to R2
+      const thumbnailR2Key = `ad/thumbnail/${adId}.${ext}`
+      const thumbnailBuffer = await thumbnailFile.arrayBuffer()
+      await c.env.BUCKET.put(thumbnailR2Key, thumbnailBuffer, {
+        httpMetadata: {
+          contentType: thumbnailFile.type
+        }
+      })
+
+      thumbnail_key = thumbnailR2Key
+    }
 
     // Insert into database
     if (!c.env.DB) {
@@ -2140,9 +2187,9 @@ app.post('/api/admin/ads', requireAuth, async (c) => {
     }
 
     const result = await c.env.DB.prepare(`
-      INSERT INTO ads (id, title, body_text, click_url, payload_key, payload_type, impressions, clicks, active, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, 0, 0, 1, datetime('now'))
-    `).bind(adId, title, body_text, click_url || null, payload_key, payload_type).run()
+      INSERT INTO ads (id, title, body_text, click_url, payload_key, payload_type, thumbnail_key, impressions, clicks, active, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 1, datetime('now'))
+    `).bind(adId, title, body_text, click_url || null, payload_key, payload_type, thumbnail_key).run()
 
     if (!result.success) {
       console.error('Database insert failed:', result)

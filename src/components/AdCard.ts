@@ -22,6 +22,7 @@ function createExecutionButton(props: {
   postId: string
   label: string
   icon: string
+  thumbnailUrl?: string
   onClick: () => void
 }): HTMLElement {
   const container = document.createElement('div')
@@ -41,6 +42,38 @@ function createExecutionButton(props: {
     cursor: pointer;
     transition: all 0.2s ease;
     color: white;
+    overflow: hidden;
+  `
+
+  // Thumbnail background (if provided)
+  if (props.thumbnailUrl) {
+    const thumbnailBg = document.createElement('div')
+    thumbnailBg.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-image: url(${props.thumbnailUrl});
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      opacity: 0.7;
+      z-index: 1;
+    `
+    container.appendChild(thumbnailBg)
+  }
+
+  // Content overlay
+  const content = document.createElement('div')
+  content.style.cssText = `
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
   `
 
   // Icon
@@ -49,6 +82,7 @@ function createExecutionButton(props: {
   icon.style.cssText = `
     font-size: 48px;
     margin-bottom: 12px;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
   `
 
   // Text
@@ -58,10 +92,16 @@ function createExecutionButton(props: {
     font-size: 16px;
     font-weight: 600;
     text-align: center;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    background: rgba(0,0,0,0.5);
+    padding: 8px 16px;
+    border-radius: 20px;
+    backdrop-filter: blur(4px);
   `
 
-  container.appendChild(icon)
-  container.appendChild(text)
+  content.appendChild(icon)
+  content.appendChild(text)
+  container.appendChild(content)
 
   // Hover effects
   container.addEventListener('mouseenter', () => {
@@ -121,6 +161,7 @@ function mountAdStage(ad: Ad, placeholder: HTMLElement): void {
       postId: ad.id,
       label: '🚀 Click to Run',
       icon: '📦',
+      thumbnailUrl: ad.thumbnail_key ? `/api/thumbnail/${ad.id}` : undefined,
       onClick: async () => {
         // Show loading state
         const originalContent = placeholder.innerHTML
@@ -184,6 +225,7 @@ function mountAdStage(ad: Ad, placeholder: HTMLElement): void {
       postId: ad.id,
       label: '⚡ Click to Play',
       icon: '🎮',
+      thumbnailUrl: ad.thumbnail_key ? `/api/thumbnail/${ad.id}` : undefined,
       onClick: async () => {
         // Show loading state
         const originalContent = placeholder.innerHTML
