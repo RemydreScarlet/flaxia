@@ -3,7 +3,7 @@ export interface ZipExecutorHandle {
   destroy: () => void
 }
 
-const SANDBOX_ORIGIN = 'https://sandbox.flaxia.app'
+const SANDBOX_ORIGIN = 'https://sandbox-flaxia.pages.dev'
 
 // Global execution manager
 let activeHandle: ZipExecutorHandle | null = null
