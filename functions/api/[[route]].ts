@@ -238,7 +238,7 @@ app.get('/api/ads/:id/payload', async (c) => {
     }
     
     // Get object from R2
-    const object = await c.env.BUCKET.get(ad.payload_key)
+    const object = await c.env.BUCKET.get(ad.payload_key as string)
     
     if (!object) {
       return c.json({ error: 'Payload not found' }, 404)
@@ -424,7 +424,12 @@ const requireAuth = async (c: any, next: any) => {
   await next()
 }
 
-app.use('/*', cors())
+app.use('/*', cors({
+  origin: ['https://flaxia.app', 'https://*.pages.dev'],
+  allowMethods: ['GET', 'POST', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}))
 
 // GET /api/me - check auth state
 app.get('/api/me', requireAuth, async (c) => {
@@ -1315,7 +1320,7 @@ app.patch('/api/users/me', requireAuth, async (c) => {
     return c.json({ 
       user: {
         ...updatedUser,
-        ng_words: JSON.parse(updatedUser?.ng_words ?? '[]') as string[]
+        ng_words: JSON.parse((updatedUser?.ng_words as string) ?? '[]') as string[]
       }
     })
   } catch (error: any) {
@@ -3317,7 +3322,7 @@ app.get('/api/posts/:id', async (c) => {
     }
 
     // Check if post is hidden - allow admin bypass
-    if (post.hidden && !isAdmin(c.env as unknown as Env, c.get('user')?.username ?? '')) {
+    if (post.hidden && !isAdmin(c.env as unknown as Bindings, c.get('user')?.username ?? '')) {
       return c.json({ error: 'Gone' }, 410)
     }
 
@@ -3652,7 +3657,7 @@ app.delete('/api/admin/users/:id', requireAuth, requireAdmin, async (c) => {
     }
 
     // Check if trying to delete an admin
-    if (isAdmin(c.env as unknown as Env, targetUser.username)) {
+    if (isAdmin(c.env as unknown as Bindings, targetUser.username)) {
       return c.json({ error: 'Cannot delete admin accounts' }, 403)
     }
 

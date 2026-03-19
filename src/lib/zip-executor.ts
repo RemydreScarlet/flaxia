@@ -3,7 +3,8 @@ export interface ZipExecutorHandle {
   destroy: () => void
 }
 
-const SANDBOX_ORIGIN = 'https://sandbox-flaxia.pages.dev'
+const SANDBOX_ORIGIN = ''
+const SANDBOX_API_ORIGIN = ''
 
 // Global execution manager
 let activeHandle: ZipExecutorHandle | null = null
@@ -54,32 +55,10 @@ export async function executeZip(
   }
 
   try {
-    // Step 1: Fetch ZIP
-    const response = await fetch(url || `/api/zip/${postId}`)
-    if (!response.ok) {
-      throw new Error('ZIP download failed')
-    }
-    
-    const zipData = await response.arrayBuffer()
-    
-    // Step 2: Create sandbox iframe
+    // Step 1: Create sandbox iframe
     const { iframe, cleanup } = await createSandboxIframe(postId, containerEl)
 
-    // Step 3: Send ZIP data via postMessage after iframe loads
-    await new Promise((resolve, reject) => {
-      iframe.onload = resolve
-      iframe.onerror = reject
-      setTimeout(reject, 10000) // 10 second timeout
-    })
-    
-    iframe.contentWindow?.postMessage({
-      type: 'EXECUTE_ZIP',
-      postId,
-      zipData: new Uint8Array(zipData),
-      origin: window.location.origin
-    }, SANDBOX_ORIGIN)
-
-    // Step 4: Create handle with cleanup
+    // Step 3: Create handle with cleanup
     const handle: ZipExecutorHandle = {
       destroy: () => {
         cleanup()
@@ -106,7 +85,7 @@ export async function executeZip(
 }
 
 async function createSandboxIframe(postId: string, containerEl: HTMLElement): Promise<{ iframe: HTMLIFrameElement, cleanup: () => void }> {
-  const sandboxUrl = `${SANDBOX_ORIGIN}/sandbox/index.html`
+  const sandboxUrl = `/sandbox/?postId=${postId}`
   
   // Create iframe container
   const iframeContainer = document.createElement('div')

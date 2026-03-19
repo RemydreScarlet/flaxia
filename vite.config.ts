@@ -1,4 +1,6 @@
 import { defineConfig } from 'vite'
+import { copyFileSync, mkdirSync, existsSync, readdirSync } from 'fs'
+import { join } from 'path'
 
 export default defineConfig({
   build: {
@@ -7,7 +9,9 @@ export default defineConfig({
       input: {
         main: 'index.html'
       }
-    }
+    },
+    // Copy functions directory after build
+    emptyOutDir: true
   },
   server: {
     port: 3000
@@ -20,5 +24,45 @@ export default defineConfig({
     'import.meta.env.VITE_CF_ACCESS_LOGIN_URL': JSON.stringify(
       `https://${process.env.CF_TEAM_DOMAIN || 'yourteam.cloudflareaccess.com'}/cdn-cgi/access/login/${process.env.CF_ACCESS_AUD || 'your-aud-tag-here'}`
     )
-  }
+  },
+  ssr: {
+    noExternal: ['hono']
+  },
+  // Custom plugin to copy functions directory
+  plugins: [
+    {
+      name: 'copy-functions',
+      writeBundle() {
+        const functionsDir = 'functions'
+        const distFunctionsDir = 'dist/functions'
+        
+        if (existsSync(functionsDir)) {
+          console.log('Copying functions directory to dist...')
+          
+          // Simple recursive copy function
+          function copyDirectory(src: string, dest: string) {
+            if (!existsSync(dest)) {
+              mkdirSync(dest, { recursive: true })
+            }
+            
+            const entries = readdirSync(src, { withFileTypes: true })
+            
+            for (const entry of entries) {
+              const srcPath = join(src, entry.name)
+              const destPath = join(dest, entry.name)
+              
+              if (entry.isDirectory()) {
+                copyDirectory(srcPath, destPath)
+              } else {
+                copyFileSync(srcPath, destPath)
+              }
+            }
+          }
+          
+          copyDirectory(functionsDir, distFunctionsDir)
+          console.log('Functions directory copied successfully!')
+        }
+      }
+    }
+  ]
 })

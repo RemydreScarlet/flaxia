@@ -1,4 +1,4 @@
-export function isAdmin(env: Env, username: string): boolean {
+export function isAdmin(env: any, username: string): boolean {
   if (!env.ADMIN_USERNAMES) {
     return false
   }

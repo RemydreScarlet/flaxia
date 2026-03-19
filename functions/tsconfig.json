@@ -1,7 +1,33 @@
 {
-  "extends": "../tsconfig.json",
   "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "allowJs": true,
+    "checkJs": false,
+    "strict": false,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["./**/*"]
+  "include": [
+    "sandbox/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "api",
+    "lib",
+    "actors",
+    "pages",
+    "queue-worker.ts",
+    "run",
+    "thread",
+    "users",
+    ".well-known"
+  ]
 }

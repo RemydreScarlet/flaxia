@@ -22,6 +22,47 @@
     const loading = document.getElementById('loading');
     const errorEl = document.getElementById('error');
 
+    // Get postId from URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const postId = urlParams.get('postId');
+    
+    if (postId) {
+      console.log('Found postId in URL:', postId);
+      // Auto-execute ZIP when page loads
+      window.addEventListener('DOMContentLoaded', async () => {
+        try {
+          console.log('Auto-executing ZIP for postId:', postId);
+          const response = await fetch(`/api/zip/${postId}`);
+          if (!response.ok) {
+            throw new Error('Failed to fetch ZIP');
+          }
+          const zipData = await response.arrayBuffer();
+          
+          const result = await executeZip(zipData);
+          
+          window.parent.postMessage({
+            type: 'ZIP_READY',
+            postId: postId
+          }, '*');
+          
+          window.zipCleanup = () => {
+            result.blobUrlMap.forEach(url => URL.revokeObjectURL(url));
+            URL.revokeObjectURL(result.htmlBlobUrl);
+          };
+        } catch (err) {
+          console.error('Auto-execution error:', err);
+          showError(err.message);
+          window.parent.postMessage({
+            type: 'ZIP_ERROR',
+            postId: postId,
+            error: err.message
+          }, '*');
+        }
+      });
+    } else {
+      console.error('No postId found in URL parameters');
+    }
+
     const ALLOWED_EXTENSIONS = {
       '.html': 'text/html',
       '.css': 'text/css',

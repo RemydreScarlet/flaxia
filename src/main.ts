@@ -240,6 +240,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         return { view: 'settings' as const, postId: null, username: null, tag: null }
       }
 
+      // Sandbox route - public, no auth required
+      const sandboxMatch = cleanPath.match(/^\/sandbox\/post\/([^\/]+)$/)
+      if (sandboxMatch) {
+        console.log('Sandbox route detected, postId:', sandboxMatch[1])
+        // For sandbox, don't initialize the app - let the sandbox page handle itself
+        console.log('Sandbox page detected, skipping app initialization')
+        return null
+      }
+
       // Admin route - requires auth
       const adminMatch = cleanPath.match(/^\/admin(\/alerts|\/hidden|\/users)?$/)
       if (adminMatch) {
@@ -983,7 +992,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Handle browser back/forward
     window.addEventListener('popstate', async (e) => {
       const route = parseCurrentRoute()
-      await navigateTo(route.view, route.postId || undefined, route.username || undefined, route.tag || undefined, route.adminTab || undefined)
+      if (route) {
+        await navigateTo(route.view, route.postId || undefined, route.username || undefined, route.tag || undefined, route.adminTab || undefined)
+      }
     })
     
     // Handle SPA navigation events
@@ -1003,6 +1014,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     const initialRoute = parseCurrentRoute()
     console.log('Initial route:', initialRoute)
-    await navigateTo(initialRoute.view, initialRoute.postId || undefined, initialRoute.username || undefined, initialRoute.tag || undefined, initialRoute.adminTab || undefined)
+    if (initialRoute) {
+      await navigateTo(initialRoute.view, initialRoute.postId || undefined, initialRoute.username || undefined, initialRoute.tag || undefined, initialRoute.adminTab || undefined)
+    }
   }
 })
