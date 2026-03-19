@@ -1,0 +1,3 @@
+/sandbox/*
+  X-Frame-Options: SAMEORIGIN
+  Content-Security-Policy: sandbox allow-scripts allow-pointer-lock allow-fullscreen; frame-ancestors 'self' https://flaxia.app
