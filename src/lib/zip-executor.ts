@@ -65,7 +65,13 @@ export async function executeZip(
     // Step 2: Create sandbox iframe
     const { iframe, cleanup } = await createSandboxIframe(postId, containerEl)
 
-    // Step 3: Send ZIP data via postMessage
+    // Step 3: Send ZIP data via postMessage after iframe loads
+    await new Promise((resolve, reject) => {
+      iframe.onload = resolve
+      iframe.onerror = reject
+      setTimeout(reject, 10000) // 10 second timeout
+    })
+    
     iframe.contentWindow?.postMessage({
       type: 'EXECUTE_ZIP',
       postId,
