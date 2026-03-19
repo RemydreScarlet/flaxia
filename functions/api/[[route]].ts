@@ -2073,6 +2073,9 @@ app.post('/api/admin/ads', requireAuth, async (c) => {
       return c.json({ error: 'Admin access required' }, 403)
     }
 
+    // Generate ad ID early so it can be used for both payload and thumbnail
+    const adId = nanoid()
+
     const contentType = c.req.header('content-type')
     let title: string, body_text: string, click_url: string, payloadFile: File | undefined, thumbnailFile: File | undefined
 
@@ -2100,10 +2103,14 @@ app.post('/api/admin/ads', requireAuth, async (c) => {
 
     // Handle payload file if present
     if (payloadFile && payloadFile.size > 0) {
-      // Validate size ≤ 200MB
-      const maxSize = 200 * 1024 * 1024
+      // Validate size ≤ 100MB (Cloudflare Free/Pro plan limit)
+      const maxSize = 100 * 1024 * 1024
       if (payloadFile.size > maxSize) {
-        return c.json({ error: 'Payload file must be ≤200MB' }, 400)
+        return c.json({ 
+          error: 'Payload file must be ≤100MB on Free/Pro plans. For larger files, upgrade to Business plan (200MB) or use chunked upload.', 
+          limit: maxSize,
+          actualSize: payloadFile.size 
+        }, 400)
       }
 
       if (!c.env.BUCKET) {
@@ -2132,7 +2139,6 @@ app.post('/api/admin/ads', requireAuth, async (c) => {
       }
 
       // Upload to R2
-      const adId = nanoid()
       const r2Key = `ad/payload/${adId}`
       
       if (payload_type === 'zip') {
@@ -2151,7 +2157,7 @@ app.post('/api/admin/ads', requireAuth, async (c) => {
     }
 
     // Generate ad ID first (needed for thumbnail key)
-    const adId = nanoid()
+    // Note: adId was already generated above for payload upload
 
     let thumbnail_key: string | null = null
     

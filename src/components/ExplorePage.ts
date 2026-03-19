@@ -177,7 +177,7 @@ export class ExplorePage {
 
         const data = await response.json() as { posts: Post[] }
         this.posts = data.posts || []
-        this.hasMore = this.posts.length > 0
+        this.hasMore = this.posts.length === 20 && this.posts.length > 0
         this.cursor = this.posts.length > 0 ? this.posts[this.posts.length - 1].created_at : undefined
 
         this.renderPosts()
@@ -216,7 +216,7 @@ export class ExplorePage {
       if (newPosts.length > 0) {
         this.posts.push(...newPosts)
         this.cursor = newPosts[newPosts.length - 1].created_at
-        this.hasMore = newPosts.length > 0
+        this.hasMore = newPosts.length === 20 && newPosts.length > 0
         this.renderPosts()
       } else {
         this.hasMore = false

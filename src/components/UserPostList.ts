@@ -153,7 +153,7 @@ export function createUserPostList(props: {
         cursor = data.posts[data.posts.length - 1].created_at
       }
       
-      hasMore = data.posts.length === 20
+      hasMore = data.posts.length === 20 && data.posts.length > 0
       renderPosts()
 
     } catch (error) {
@@ -190,7 +190,7 @@ export function createUserPostList(props: {
         cursor = data.posts[data.posts.length - 1].created_at
       }
       
-      hasMore = data.posts.length === 20
+      hasMore = data.posts.length === 20 && data.posts.length > 0
       renderPosts()
 
     } catch (error) {

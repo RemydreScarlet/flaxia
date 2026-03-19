@@ -105,6 +105,56 @@ export class LeftNav {
     nav.appendChild(logo)
     nav.appendChild(navItems)
 
+    // Add legal links (privacy policy and terms)
+    const legalLinks = document.createElement('div')
+    legalLinks.className = 'nav-legal-links'
+    legalLinks.style.cssText = `
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      margin-top: 1.5rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+    `
+
+    const privacyLink = document.createElement('a')
+    privacyLink.href = '/privacy'
+    privacyLink.textContent = 'Privacy Policy'
+    privacyLink.style.cssText = `
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.875rem;
+      transition: color 0.2s;
+    `
+
+    const termsLink = document.createElement('a')
+    termsLink.href = '/terms'
+    termsLink.textContent = 'Terms of Service'
+    termsLink.style.cssText = `
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.875rem;
+      transition: color 0.2s;
+    `
+
+    privacyLink.addEventListener('mouseenter', () => {
+      privacyLink.style.color = 'var(--text-primary)'
+    })
+    privacyLink.addEventListener('mouseleave', () => {
+      privacyLink.style.color = 'var(--text-muted)'
+    })
+
+    termsLink.addEventListener('mouseenter', () => {
+      termsLink.style.color = 'var(--text-primary)'
+    })
+    termsLink.addEventListener('mouseleave', () => {
+      termsLink.style.color = 'var(--text-muted)'
+    })
+
+    legalLinks.appendChild(privacyLink)
+    legalLinks.appendChild(termsLink)
+    nav.appendChild(legalLinks)
+
     if (this.props.currentUser) {
       // Add user area at the bottom
       this.userAreaElement = this.createUserArea()
@@ -592,6 +642,56 @@ export function updateLeftNavUser(leftNav: LeftNav, currentUser: {
       })
     }
   }
+  
+  // Add legal links (privacy policy and terms)
+  const legalLinks = document.createElement('div')
+  legalLinks.className = 'nav-legal-links'
+  legalLinks.style.cssText = `
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+  `
+
+  const privacyLink = document.createElement('a')
+  privacyLink.href = '/privacy'
+  privacyLink.textContent = 'Privacy Policy'
+  privacyLink.style.cssText = `
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.875rem;
+    transition: color 0.2s;
+  `
+
+  const termsLink = document.createElement('a')
+  termsLink.href = '/terms'
+  termsLink.textContent = 'Terms of Service'
+  termsLink.style.cssText = `
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.875rem;
+    transition: color 0.2s;
+  `
+
+  privacyLink.addEventListener('mouseenter', () => {
+    privacyLink.style.color = 'var(--text-primary)'
+  })
+  privacyLink.addEventListener('mouseleave', () => {
+    privacyLink.style.color = 'var(--text-muted)'
+  })
+
+  termsLink.addEventListener('mouseenter', () => {
+    termsLink.style.color = 'var(--text-primary)'
+  })
+  termsLink.addEventListener('mouseleave', () => {
+    termsLink.style.color = 'var(--text-muted)'
+  })
+
+  legalLinks.appendChild(privacyLink)
+  legalLinks.appendChild(termsLink)
+  leftNav.getElement().appendChild(legalLinks)
   
   // Add new user area if user is available
   if (currentUser) {

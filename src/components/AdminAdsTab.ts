@@ -736,6 +736,19 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
         return
       }
 
+      // Validate file sizes client-side (100MB limit for Cloudflare Free/Pro)
+      const maxFileSize = 100 * 1024 * 1024 // 100MB
+      if (payloadInput.files?.[0] && payloadInput.files[0].size > maxFileSize) {
+        const fileSizeMB = (payloadInput.files[0].size / 1024 / 1024).toFixed(1)
+        alert(`File too large: ${fileSizeMB}MB. Maximum allowed: 100MB.\n\nFor larger files, upgrade to Cloudflare Business plan (200MB limit).`)
+        return
+      }
+
+      if (thumbnailInput.files?.[0] && thumbnailInput.files[0].size > 1024 * 1024) {
+        alert(`Thumbnail too large: ${(thumbnailInput.files[0].size / 1024 / 1024).toFixed(1)}MB. Maximum allowed: 1MB.`)
+        return
+      }
+
       try {
         if (editingAd) {
           // Update existing ad
@@ -771,9 +784,17 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
         editingAd = null
         await refreshAds()
         render()
-      } catch (error) {
+      } catch (error: any) {
         console.error('Submit ad error:', error)
-        alert('Failed to save ad')
+        
+        // Show detailed error message for file size issues
+        if (error.error && error.limit && error.actualSize) {
+          const actualMB = (error.actualSize / 1024 / 1024).toFixed(1)
+          const limitMB = (error.limit / 1024 / 1024).toFixed(1)
+          alert(`File too large: ${actualMB}MB. Maximum allowed: ${limitMB}MB.\n\n${error.error}`)
+        } else {
+          alert(`Failed to save ad: ${error?.error || error?.message || 'Unknown error'}`)
+        }
       }
     })
 

@@ -330,7 +330,7 @@ export class Timeline {
         this.state.cursor = data.posts[data.posts.length - 1].created_at
       }
       
-      this.state.hasMore = data.posts.length === 20
+      this.state.hasMore = data.posts.length === 20 && data.posts.length > 0
       this.renderPostList()
 
     } catch (error) {
@@ -379,7 +379,7 @@ export class Timeline {
         this.state.cursor = data.posts[data.posts.length - 1].created_at
       }
       
-      this.state.hasMore = data.posts.length === 20
+      this.state.hasMore = data.posts.length === 20 && data.posts.length > 0
       this.renderPostList()
 
     } catch (error) {
