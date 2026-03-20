@@ -221,17 +221,35 @@ function createThumbnailWithOverlay(props: {
   postId: string
   thumbnailKey: string
   overlayLabel: string
+  aspectRatio?: string
   onClick: () => void
 }): HTMLElement {
   const container = document.createElement('div')
   container.className = 'thumbnail-overlay-container'
+  
+  // Determine aspect ratio (default to 16:9)
+  const aspectRatio = props.aspectRatio || '56.25' // 16:9 = 56.25%
+  
   container.style.cssText = `
     position: relative;
     width: 100%;
-    height: 100%;
-    cursor: pointer;
+    padding-bottom: ${aspectRatio}%;
+    background: var(--bg-input);
     border-radius: 8px;
     overflow: hidden;
+  `
+
+  // Image container
+  const imageContainer = document.createElement('div')
+  imageContainer.style.cssText = `
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   `
 
   // Thumbnail image
@@ -242,7 +260,36 @@ function createThumbnailWithOverlay(props: {
     height: 100%;
     object-fit: cover;
     display: block;
+    opacity: 0;
+    transition: opacity 0.3s ease;
   `
+  
+  // Load image with fade-in
+  image.onload = () => {
+    image.style.opacity = '1'
+  }
+  
+  image.onerror = () => {
+    // Show fallback on error
+    image.style.display = 'none'
+    const fallback = document.createElement('div')
+    fallback.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-secondary);
+      color: var(--text-muted);
+      font-family: monospace;
+      font-size: 0.875rem;
+    `
+    fallback.textContent = 'Thumbnail unavailable'
+    imageContainer.appendChild(fallback)
+  }
   
   // Overlay button
   const overlay = document.createElement('div')
@@ -262,11 +309,13 @@ function createThumbnailWithOverlay(props: {
     gap: 6px;
     transition: all 0.2s ease;
     pointer-events: none;
+    z-index: 2;
   `
   overlay.textContent = props.overlayLabel
 
-  container.appendChild(image)
-  container.appendChild(overlay)
+  imageContainer.appendChild(image)
+  imageContainer.appendChild(overlay)
+  container.appendChild(imageContainer)
 
   // Hover effects
   container.addEventListener('mouseenter', () => {
@@ -334,6 +383,7 @@ async function updateStageContent(container: HTMLElement, props: PostStageProps)
           postId: props.post.id,
           thumbnailKey: props.post.thumbnail_key,
           overlayLabel: '🚀 Run',
+          aspectRatio: '56.25', // 16:9
           onClick: () => props.onModeChange(PostCardMode.EXECUTING)
         })
       } else {
@@ -352,6 +402,7 @@ async function updateStageContent(container: HTMLElement, props: PostStageProps)
           postId: props.post.id,
           thumbnailKey: props.post.thumbnail_key,
           overlayLabel: '⚡ Play',
+          aspectRatio: '75', // 4:3 = 75%
           onClick: () => props.onModeChange(PostCardMode.EXECUTING)
         })
         // Add flash class for 4:3 aspect ratio

@@ -16,8 +16,12 @@ import { createAdminHiddenTab } from './components/AdminHiddenTab.js'
 import { createAdminUsersTab } from './components/AdminUsersTab.js'
 import { createAdminAdsTab } from './components/AdminAdsTab.js'
 import { createSettingsPage } from './components/SettingsPage.js'
+import { initPerformanceMonitoring } from './lib/performance.js'
 
 console.log('Flaxia initialized')
+
+// Initialize performance monitoring
+initPerformanceMonitoring()
 
 // Basic app initialization
 document.addEventListener('DOMContentLoaded', async () => {

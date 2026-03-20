@@ -9,6 +9,63 @@
   <meta property="og:description" content="The SNS where your posts are playable.">
   <meta name="twitter:title" content="Flaxia">
   <meta name="twitter:description" content="The SNS where your posts are playable.">
+  
+  <!-- Performance optimizations -->
+  <link rel="preload" href="/src/styles/main.css" as="style">
+  <link rel="preconnect" href="https://flaxia.app">
+  <link rel="dns-prefetch" href="https://pagead2.googlesyndication.com">
+  <link rel="dns-prefetch" href="/api">
+  
+  <!-- Critical CSS inline -->
+  <style>
+    /* Prevent flash of unstyled content */
+    body { 
+      margin: 0; 
+      padding: 0; 
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #ffffff;
+      color: #0f172a;
+      line-height: 1.6;
+    }
+    #app { 
+      display: flex; 
+      min-height: 100vh; 
+      margin: 0; 
+      padding: 0; 
+    }
+    /* Loading skeleton for initial page load */
+    .initial-loader {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+    }
+    .initial-loader-content {
+      text-align: center;
+      color: #64748b;
+      font-family: monospace;
+    }
+    .initial-loader-spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid #e2e8f0;
+      border-top: 3px solid #22c55e;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+  
   <link rel="stylesheet" href="/src/styles/main.css">
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8703789531673358"
      crossorigin="anonymous"></script>
@@ -40,7 +97,28 @@
   </script>
 </head>
 <body>
+  <!-- Initial loading indicator -->
+  <div class="initial-loader" id="initial-loader">
+    <div class="initial-loader-content">
+      <div class="initial-loader-spinner"></div>
+      <div>Loading Flaxia...</div>
+    </div>
+  </div>
+  
   <div id="app"></div>
   <script type="module" src="/src/main.ts"></script>
+  <script>
+    // Hide initial loader when app is ready
+    window.addEventListener('DOMContentLoaded', () => {
+      setTimeout(() => {
+        const loader = document.getElementById('initial-loader');
+        if (loader) {
+          loader.style.opacity = '0';
+          loader.style.transition = 'opacity 0.3s ease';
+          setTimeout(() => loader.remove(), 300);
+        }
+      }, 100);
+    });
+  </script>
 </body>
 </html>

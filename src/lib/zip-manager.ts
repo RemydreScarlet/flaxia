@@ -1,5 +1,5 @@
 import { executeZip, ZipExecutorHandle } from './zip-executor.js'
-import { executeWvfsZip, WvfsZipExecutorHandle } from './wvfs-zip-executor.js'
+import { executeWvfsZip, WvfsZipExecutorHandle } from './wvfs-zip-client.js'
 
 export type ZipExecutionMode = 'legacy' | 'wvfs'
 

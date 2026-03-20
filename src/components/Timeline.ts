@@ -5,6 +5,7 @@ import { showSignInPrompt, SignInPromptAction } from './SignInPrompt.js'
 import { createAdCard } from './AdCard.js'
 import { injectAds } from '../lib/inject-ads.js'
 import { getMe } from '../lib/auth-cache.js'
+import { createSkeletonCard } from './SkeletonCard.js'
 
 export class Timeline {
   private element: HTMLElement
@@ -145,6 +146,13 @@ export class Timeline {
       emptyState.textContent = 'No posts yet. XD'
       list.appendChild(emptyState)
     }
+    
+    // Show skeleton cards while loading initial posts
+    if (this.state.loading && this.state.posts.length === 0) {
+      for (let i = 0; i < 3; i++) {
+        list.appendChild(createSkeletonCard())
+      }
+    }
 
     return list
   }
@@ -156,8 +164,13 @@ export class Timeline {
     // Create sentinel element for intersection observer
     this.loadMoreSentinel = document.createElement('div')
     this.loadMoreSentinel.className = 'load-more-sentinel'
-    this.loadMoreSentinel.style.height = '100px'
-    this.loadMoreSentinel.style.width = '100%'
+    this.loadMoreSentinel.style.cssText = `
+      height: 100px;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    `
     
     // Add loading spinner (hidden by default)
     const loadingSpinner = document.createElement('div')
@@ -166,12 +179,26 @@ export class Timeline {
       <div class="spinner"></div>
       <span>Loading...</span>
     `
-    loadingSpinner.style.display = 'none'
-    loadingSpinner.style.textAlign = 'center'
-    loadingSpinner.style.padding = '1rem'
+    loadingSpinner.style.cssText = `
+      display: none;
+      text-align: center;
+      padding: 1rem;
+      color: var(--text-muted);
+      font-family: monospace;
+    `
+    
+    // Add skeleton cards for loading more posts
+    const skeletonContainer = document.createElement('div')
+    skeletonContainer.className = 'skeleton-more'
+    skeletonContainer.style.display = 'none'
+    
+    for (let i = 0; i < 2; i++) {
+      skeletonContainer.appendChild(createSkeletonCard())
+    }
 
     container.appendChild(this.loadMoreSentinel)
     container.appendChild(loadingSpinner)
+    container.appendChild(skeletonContainer)
     
     return container
   }
@@ -275,22 +302,27 @@ export class Timeline {
       this.intersectionObserver.disconnect()
     }
 
-    // Create new intersection observer
+    // Create new intersection observer with performance optimizations
     this.intersectionObserver = new IntersectionObserver(
       (entries) => {
         const entry = entries[0]
         if (entry.isIntersecting && !this.state.loading && this.state.hasMore) {
-          this.loadMorePosts()
+          // Use requestIdleCallback for better performance
+          if ('requestIdleCallback' in window) {
+            requestIdleCallback(() => this.loadMorePosts(), { timeout: 1000 })
+          } else {
+            setTimeout(() => this.loadMorePosts(), 100)
+          }
         }
       },
       {
         root: null, // Use viewport as root
-        rootMargin: '100px', // Start loading 100px before sentinel comes into view
-        threshold: 0.1 // Trigger when 10% of sentinel is visible
+        rootMargin: '200px', // Start loading 200px before sentinel comes into view
+        threshold: 0.01 // Trigger as soon as any part is visible
       }
     )
 
-    // Start observing the sentinel
+    // Start observing sentinel
     this.intersectionObserver.observe(this.loadMoreSentinel)
   }
 
@@ -469,17 +501,25 @@ export class Timeline {
 
   private updateLoadingSpinner(): void {
     const loadingSpinner = this.element.querySelector('.loading-spinner') as HTMLElement
+    const skeletonMore = this.element.querySelector('.skeleton-more') as HTMLElement
+    
     if (!loadingSpinner) return
 
     if (this.state.loading) {
       loadingSpinner.style.display = 'block'
+      if (skeletonMore && this.state.posts.length > 0) {
+        skeletonMore.style.display = 'block'
+      }
     } else {
       loadingSpinner.style.display = 'none'
+      if (skeletonMore) {
+        skeletonMore.style.display = 'none'
+      }
     }
 
     // Hide sentinel when no more posts
     if (this.loadMoreSentinel) {
-      this.loadMoreSentinel.style.display = this.state.hasMore ? 'block' : 'none'
+      this.loadMoreSentinel.style.display = this.state.hasMore ? 'flex' : 'none'
     }
   }
 

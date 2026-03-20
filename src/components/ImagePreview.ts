@@ -13,17 +13,61 @@ export function createImagePreview(props: GifPreviewProps): HTMLElement {
     return container
   }
   
+  // Add aspect ratio container to prevent CLS
+  const aspectRatioContainer = document.createElement('div')
+  aspectRatioContainer.className = 'image-preview-aspect-ratio'
+  aspectRatioContainer.style.cssText = `
+    position: relative;
+    width: 100%;
+    padding-bottom: 56.25%; /* 16:9 aspect ratio */
+    background: var(--bg-input);
+    border-radius: 8px;
+    overflow: hidden;
+  `
+  
   // Add loading indicator
   const loading = document.createElement('div')
   loading.className = 'image-preview-loading'
+  loading.style.cssText = `
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-input);
+    color: var(--text-muted);
+    font-family: monospace;
+    font-size: 0.875rem;
+  `
   loading.textContent = 'Loading...'
-  container.appendChild(loading)
+  
+  // Create image container with proper sizing
+  const imageContainer = document.createElement('div')
+  imageContainer.style.cssText = `
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  `
   
   const img = document.createElement('img')
   img.className = 'image-preview-img'
   img.alt = `Post ${props.postId} preview`
   img.loading = 'lazy'
-  img.style.cursor = 'pointer'
+  img.style.cssText = `
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+  `
   
   // Use the API proxy endpoint for images
   const imageUrl = `/api/images/${props.gifKey}`
@@ -32,6 +76,7 @@ export function createImagePreview(props: GifPreviewProps): HTMLElement {
   // Handle image load success
   img.onload = () => {
     loading.style.display = 'none'
+    img.style.opacity = '1'
   }
   
   // Handle image loading errors
@@ -40,9 +85,27 @@ export function createImagePreview(props: GifPreviewProps): HTMLElement {
     img.style.display = 'none'
     const fallback = document.createElement('div')
     fallback.className = 'image-preview-error'
+    fallback.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-secondary);
+      color: var(--text-muted);
+      font-family: monospace;
+      font-size: 0.875rem;
+      border-radius: 8px;
+    `
     fallback.textContent = 'Image failed to load'
-    container.appendChild(fallback)
+    imageContainer.appendChild(fallback)
   }
+  
+  // Set initial opacity for smooth loading
+  img.style.opacity = '0'
   
   // Add click handler for overlay display
   img.onclick = (e) => {
@@ -50,7 +113,10 @@ export function createImagePreview(props: GifPreviewProps): HTMLElement {
     createImageOverlay(imageUrl, props.postId)
   }
   
-  container.appendChild(img)
+  imageContainer.appendChild(img)
+  aspectRatioContainer.appendChild(loading)
+  aspectRatioContainer.appendChild(imageContainer)
+  container.appendChild(aspectRatioContainer)
   return container
 }
 
@@ -75,9 +141,12 @@ function createImageOverlay(imageUrl: string, postId: string): void {
   // Create image container
   const imageContainer = document.createElement('div')
   imageContainer.style.cssText = `
-    max-width: 90vw;
-    max-height: 90vh;
+    width: 90vw;
+    height: 90vh;
     position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   `
   
   // Create full-size image
@@ -87,6 +156,8 @@ function createImageOverlay(imageUrl: string, postId: string): void {
   fullImage.style.cssText = `
     max-width: 100%;
     max-height: 100%;
+    width: auto;
+    height: auto;
     object-fit: contain;
     border-radius: 8px;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
