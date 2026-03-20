@@ -231,7 +231,14 @@ app.get('/api/zip/:postId', async (c) => {
 app.get('/api/wvfs-zip/:postId/*', async (c) => {
   try {
     const postId = c.req.param('postId')
-    const filePath = c.req.path.replace(`/api/wvfs-zip/${postId}`, '').replace(/^\//, '') || 'index.html'
+    
+    // Extract the file path from the request
+    // This handles both /api/wvfs-zip/:postId and /api/wvfs-zip/:postId/some/path
+    const fullPath = c.req.path
+    const basePath = `/api/wvfs-zip/${postId}`
+    let filePath = fullPath.replace(basePath, '').replace(/^\//, '') || 'index.html'
+    
+    console.log(`WVFS API: Request for postId=${postId}, filePath=${filePath}`)
     
     if (!postId) {
       return c.json({ error: 'Missing post ID' }, 400)
@@ -255,9 +262,13 @@ app.get('/api/wvfs-zip/:postId/*', async (c) => {
       return c.json({ error: 'ZIP not found' }, 404)
     }
     
+    console.log(`WVFS API: Extracting ZIP for postId=${postId}`)
+    
     // Extract ZIP to WVFS
     const zipData = await zipObject.arrayBuffer()
     await extractZipToWvfs(zipData, postId)
+    
+    console.log(`WVFS API: ZIP extracted, serving file: ${filePath}`)
     
     // Try serving the file again
     const fileResponse = await serveFileFromWvfs(postId, filePath)
@@ -265,7 +276,7 @@ app.get('/api/wvfs-zip/:postId/*', async (c) => {
       return fileResponse
     }
     
-    return c.json({ error: 'File not found in ZIP' }, 404)
+    return c.json({ error: 'File not found in ZIP', path: filePath }, 404)
     
   } catch (error: any) {
     console.error('WVFS ZIP error:', error)

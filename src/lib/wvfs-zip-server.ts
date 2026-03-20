@@ -1,23 +1,72 @@
 import { validateZipLegacy } from './zip-executor'
 
+// In-memory WVFS storage for Cloudflare Workers
+const wvfsStorage = new Map<string, Map<string, Uint8Array>>()
+
+// Path normalization utility for handling relative paths
+function normalizePath(path: string): string {
+  if (!path) return 'index.html'
+  
+  // Remove leading slash and split into segments
+  const segments = path.replace(/^\//, '').split('/')
+  const normalized: string[] = []
+  
+  for (const segment of segments) {
+    if (segment === '' || segment === '.') {
+      // Skip empty segments and current directory references
+      continue
+    } else if (segment === '..') {
+      // Go up one directory if possible
+      if (normalized.length > 0) {
+        normalized.pop()
+      }
+    } else {
+      // Add normal segment
+      normalized.push(segment)
+    }
+  }
+  
+  // If result is empty, return index.html
+  const result = normalized.join('/')
+  return result || 'index.html'
+}
+
+// Enhanced file search with multiple fallback patterns
+function findFileInMap(fileMap: Map<string, Uint8Array>, filePath: string): Uint8Array | null {
+  // Try exact match first
+  let fileData = fileMap.get(filePath)
+  if (fileData) return fileData
+  
+  // Try with index.html for directory requests
+  if (filePath.endsWith('/')) {
+    fileData = fileMap.get(filePath + 'index.html')
+    if (fileData) return fileData
+  }
+  
+  // Try without leading slash
+  if (filePath.startsWith('/')) {
+    fileData = fileMap.get(filePath.substring(1))
+    if (fileData) return fileData
+  }
+  
+  // Try common fallbacks
+  const fallbacks = [
+    filePath + '/index.html',
+    'index.html',
+    filePath.replace(/\/$/, '')
+  ]
+  
+  for (const fallback of fallbacks) {
+    fileData = fileMap.get(fallback)
+    if (fileData) return fileData
+  }
+  
+  return null
+}
+
 // Server-side WVFS functions (to be used in Workers)
 export async function extractZipToWvfs(zipData: ArrayBuffer, postId: string): Promise<void> {
-  // This function runs in the Worker with node:fs access
-  const fs = await import('node:fs')
-  const path = await import('node:path')
-  
-  // Create temporary directory for this post
-  const extractDir = `/tmp/wvfs-zip-${postId}`
-  
   try {
-    // Clean up any existing directory
-    if (fs.existsSync(extractDir)) {
-      fs.rmSync(extractDir, { recursive: true, force: true })
-    }
-    
-    // Create directory
-    fs.mkdirSync(extractDir, { recursive: true })
-    
     // Extract ZIP using fflate (server-compatible)
     const fflate = await import('fflate')
     const zip = fflate.unzipSync(new Uint8Array(zipData))
@@ -25,77 +74,83 @@ export async function extractZipToWvfs(zipData: ArrayBuffer, postId: string): Pr
     // Validate ZIP structure
     await validateZipLegacy(zipData)
     
-    // Write files to WVFS
+    // Store files in memory
+    const fileMap = new Map<string, Uint8Array>()
     for (const [filename, fileData] of Object.entries(zip)) {
       if (filename.endsWith('/')) continue // skip directories
-      
-      const filePath = path.join(extractDir, filename)
-      const fileDir = path.dirname(filePath)
-      
-      // Create directory if needed
-      if (!fs.existsSync(fileDir)) {
-        fs.mkdirSync(fileDir, { recursive: true })
-      }
-      
-      // Write file
-      fs.writeFileSync(filePath, fileData)
+      fileMap.set(filename, fileData)
     }
+    
+    // Store in global WVFS storage
+    wvfsStorage.set(postId, fileMap)
     
   } catch (error) {
     // Clean up on error
-    if (fs.existsSync(extractDir)) {
-      fs.rmSync(extractDir, { recursive: true, force: true })
-    }
+    wvfsStorage.delete(postId)
     throw error
   }
 }
 
 export async function serveFileFromWvfs(postId: string, filePath: string): Promise<Response | null> {
-  // This function runs in the Worker to serve files
-  const fs = await import('node:fs')
-  const path = await import('node:path')
+  // This function runs in the Worker to serve files from memory
+  const fileMap = wvfsStorage.get(postId)
   
-  const extractDir = `/tmp/wvfs-zip-${postId}`
-  const fullPath = path.join(extractDir, filePath)
-  
-  // Security: ensure path is within extractDir
-  if (!fullPath.startsWith(extractDir)) {
+  if (!fileMap) {
+    console.log(`WVFS: No file map found for postId: ${postId}`)
     return null
   }
   
   try {
-    if (!fs.existsSync(fullPath)) {
+    // Normalize the file path to handle relative paths
+    const normalizedPath = normalizePath(filePath)
+    console.log(`WVFS: Serving ${filePath} -> normalized to ${normalizedPath}`)
+    
+    // Use enhanced file search
+    let fileData = findFileInMap(fileMap, normalizedPath)
+    
+    if (!fileData) {
+      console.log(`WVFS: File not found: ${normalizedPath} (original: ${filePath})`)
+      // List available files for debugging
+      const availableFiles = Array.from(fileMap.keys()).slice(0, 10)
+      console.log(`WVFS: Available files: ${availableFiles.join(', ')}`)
       return null
     }
     
-    const fileData = fs.readFileSync(fullPath)
-    const ext = path.extname(filePath).toLowerCase()
+    const ext = normalizedPath.split('.').pop()?.toLowerCase()
+    
+    // For HTML files, inject base tag to fix relative paths
+    if (ext === 'html') {
+      const htmlContent = new TextDecoder().decode(fileData)
+      const modifiedHtml = injectBaseTag(htmlContent, postId)
+      fileData = new TextEncoder().encode(modifiedHtml)
+    }
     
     // Determine content type
     let contentType = 'text/plain'
     const mimeTypes: Record<string, string> = {
-      '.html': 'text/html',
-      '.css': 'text/css',
-      '.js': 'text/javascript',
-      '.wasm': 'application/wasm',
-      '.png': 'image/png',
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.gif': 'image/gif',
-      '.webp': 'image/webp',
-      '.svg': 'image/svg+xml',
-      '.mp3': 'audio/mpeg',
-      '.wav': 'audio/wav',
-      '.ogg': 'audio/ogg',
-      '.mp4': 'video/mp4',
-      '.webm': 'video/webm',
-      '.json': 'application/json',
-      '.txt': 'text/plain'
+      'html': 'text/html',
+      'css': 'text/css',
+      'js': 'text/javascript',
+      'mjs': 'text/javascript',
+      'wasm': 'application/wasm',
+      'png': 'image/png',
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'gif': 'image/gif',
+      'webp': 'image/webp',
+      'svg': 'image/svg+xml',
+      'mp3': 'audio/mpeg',
+      'wav': 'audio/wav',
+      'ogg': 'audio/ogg',
+      'mp4': 'video/mp4',
+      'webm': 'video/webm',
+      'json': 'application/json',
+      'txt': 'text/plain'
     }
     
-    contentType = mimeTypes[ext] || 'text/plain'
+    contentType = mimeTypes[ext || ''] || 'text/plain'
     
-    return new Response(fileData, {
+    return new Response(new Uint8Array(fileData), {
       headers: {
         'Content-Type': contentType,
         'Cache-Control': 'no-cache',
@@ -108,15 +163,31 @@ export async function serveFileFromWvfs(postId: string, filePath: string): Promi
   }
 }
 
-export async function cleanupWvfsZip(postId: string): Promise<void> {
-  // Clean up WVFS directory for this post
-  const fs = await import('node:fs')
-  const extractDir = `/tmp/wvfs-zip-${postId}`
+// Inject base tag into HTML to fix relative paths
+function injectBaseTag(htmlContent: string, postId: string): string {
+  const baseUrl = `/api/wvfs-zip/${postId}/`
   
+  // Try to insert after <head> or after <meta charset> if present
+  if (htmlContent.includes('<head>')) {
+    return htmlContent.replace(
+      /<head>/i,
+      `<head>\n  <base href="${baseUrl}">`
+    )
+  } else if (htmlContent.includes('<meta charset')) {
+    return htmlContent.replace(
+      /(<meta charset[^>]*>)/i,
+      `$1\n  <base href="${baseUrl}">`
+    )
+  } else {
+    // Fallback: insert at the beginning
+    return `<base href="${baseUrl}">\n${htmlContent}`
+  }
+}
+
+export async function cleanupWvfsZip(postId: string): Promise<void> {
+  // Clean up WVFS memory storage for this post
   try {
-    if (fs.existsSync(extractDir)) {
-      fs.rmSync(extractDir, { recursive: true, force: true })
-    }
+    wvfsStorage.delete(postId)
   } catch (error) {
     console.error('Error cleaning up WVFS:', error)
   }
