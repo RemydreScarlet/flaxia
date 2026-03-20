@@ -43,6 +43,15 @@ app.get('/:postId', async (c) => {
 <head>
   <meta charset="UTF-8">
   <title>Flaxia Sandbox</title>
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    script-src 'self' 'unsafe-inline';
+    connect-src 'self' /api/zip/*;
+    frame-src 'none';
+    object-src 'none';
+    base-uri 'self';
+    form-action 'none';
+  ">
   <style>
     body { margin: 0; padding: 0; font-family: system-ui, sans-serif; }
     #loading { display: flex; align-items: center; justify-content: center; height: 100vh; }
@@ -56,8 +65,10 @@ app.get('/:postId', async (c) => {
   <iframe id="content" style="display:none;" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"></iframe>
   
 <script>
-  const postId = location.pathname.split('/')[2]
+  const postId = location.pathname.split('/')[3]
 
+  // セキュリティ: 親ページとの通信を制限
+  const ALLOWED_ORIGIN = 'https://flaxia.app';
   
   async function init() {
     // 1. SW登録 (iframe内では実行しない)
@@ -66,7 +77,7 @@ app.get('/:postId', async (c) => {
     }
 
     
-    const reg = await navigator.serviceWorker.register('/sandbox/sw.js', { scope: '/sandbox/' })
+    const reg = await navigator.serviceWorker.register('/api/sandbox/sw.js', { scope: '/api/sandbox/' })
     await reg.update()
 
     // 2. SW制御権を確実に取得
@@ -80,16 +91,29 @@ app.get('/:postId', async (c) => {
     // 4. SWにZIPを送信 → ZIP_READYを待つ
     navigator.serviceWorker.controller.postMessage({ type: 'SETUP_ZIP', zipData })
 
+    // ウォッチドッグタイマー: 5秒でタイムアウト
+    const watchdogTimer = setTimeout(() => {
+      showError('ZIP展開がタイムアウトしました');
+      // iframeを停止
+      const iframe = document.getElementById('content');
+      if (iframe) iframe.src = 'about:blank';
+    }, 5000);
+
     await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('ZIP展開タイムアウト')), 10000)
       navigator.serviceWorker.addEventListener('message', (e) => {
         if (e.data?.type === 'ZIP_READY') { 
           clearTimeout(timer)
+          clearTimeout(watchdogTimer);
           // iframe用にフラグを設定
           window.virtualFSReady = true
           resolve(e.data) 
         }
-        if (e.data?.type === 'ZIP_ERROR') { clearTimeout(timer); reject(new Error(e.data.error)) }
+        if (e.data?.type === 'ZIP_ERROR') { 
+          clearTimeout(timer);
+          clearTimeout(watchdogTimer);
+          reject(new Error(e.data.error)) 
+        }
       }, { once: true })
     })
 
@@ -97,7 +121,7 @@ app.get('/:postId', async (c) => {
     const iframe = document.getElementById('content')
     document.getElementById('loading').style.display = 'none'
     iframe.style.display = 'block'
-    iframe.src = '/sandbox/post/' + postId + '/index.html'
+    iframe.src = '/api/sandbox/post/' + postId + '/index.html'
   }
 
   async function waitForController() {
@@ -155,7 +179,9 @@ app.get('/:postId', async (c) => {
     return new Response(htmlContent, {
       headers: {
         'Content-Type': 'text/html',
-        'Cache-Control': 'no-cache'
+        'Cache-Control': 'no-cache',
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'SAMEORIGIN'
       }
     })
   } catch (error) {

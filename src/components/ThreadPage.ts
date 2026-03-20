@@ -66,7 +66,7 @@ export class ThreadPage {
           }
         } else if (item === 'profile') {
           if (this.props.currentUser) {
-            window.history.pushState({}, '', `/users/${this.props.currentUser.username}`)
+            window.history.pushState({}, '', `/profile/${this.props.currentUser.username}`)
             window.location.reload()
           }
         }

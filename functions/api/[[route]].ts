@@ -8,6 +8,7 @@ import { verifyHttpSignature, verifyDigest, fetchActorPublicKey, signRequest } f
 import { generateKeyPair, exportPublicKey, exportPrivateKey } from '../lib/activitypub/crypto'
 import { buildNoteObject, buildCreateActivity, buildDeleteActivity } from '../lib/activitypub/note'
 import type { ReportCategory } from '../../src/types/post'
+import { extractZipToWvfs, serveFileFromWvfs, cleanupWvfsZip } from '../../src/lib/wvfs-zip-server'
 
 type Bindings = {
   DB: D1Database
@@ -89,6 +90,23 @@ app.get('/api/images/*', async (c) => {
     const object = await c.env.BUCKET.get(key)
     
     if (!object) {
+      // Special handling for default-avatar
+      if (key === 'default-avatar') {
+        const defaultAvatarSvg = `<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="20" cy="20" r="20" fill="#e5e7eb"/>
+          <circle cx="20" cy="15" r="6" fill="#9ca3af"/>
+          <ellipse cx="20" cy="32" rx="10" ry="6" fill="#9ca3af"/>
+        </svg>`
+        
+        return new Response(defaultAvatarSvg, {
+          headers: {
+            'Content-Type': 'image/svg+xml',
+            'Cache-Control': 'public, max-age=31536000',
+            'Access-Control-Allow-Origin': '*'
+          }
+        })
+      }
+      
       return c.json({ error: 'Image not found' }, 404)
     }
     
@@ -205,6 +223,53 @@ app.get('/api/zip/:postId', async (c) => {
   } catch (error: any) {
     console.error('ZIP proxy error:', error)
     return c.json({ error: 'Failed to fetch ZIP', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// GET /api/wvfs-zip/:postId - serve ZIP files using WVFS
+// GET /api/wvfs-zip/:postId/* - serve individual files from ZIP using WVFS
+app.get('/api/wvfs-zip/:postId/*', async (c) => {
+  try {
+    const postId = c.req.param('postId')
+    const filePath = c.req.path.replace(`/api/wvfs-zip/${postId}`, '').replace(/^\//, '') || 'index.html'
+    
+    if (!postId) {
+      return c.json({ error: 'Missing post ID' }, 400)
+    }
+    
+    if (!c.env.BUCKET) {
+      return c.json({ error: 'Storage not available' }, 500)
+    }
+    
+    // Check if ZIP is already extracted to WVFS
+    const response = await serveFileFromWvfs(postId, filePath)
+    if (response) {
+      return response
+    }
+    
+    // If not found, extract ZIP to WVFS first
+    const zipKey = `zip/${postId}.zip`
+    const zipObject = await c.env.BUCKET.get(zipKey)
+    
+    if (!zipObject) {
+      return c.json({ error: 'ZIP not found' }, 404)
+    }
+    
+    // Extract ZIP to WVFS
+    const zipData = await zipObject.arrayBuffer()
+    await extractZipToWvfs(zipData, postId)
+    
+    // Try serving the file again
+    const fileResponse = await serveFileFromWvfs(postId, filePath)
+    if (fileResponse) {
+      return fileResponse
+    }
+    
+    return c.json({ error: 'File not found in ZIP' }, 404)
+    
+  } catch (error: any) {
+    console.error('WVFS ZIP error:', error)
+    return c.json({ error: 'WVFS ZIP failed', details: error?.message || 'Unknown error' }, 500)
   }
 })
 
@@ -402,7 +467,8 @@ app.use('/api/*', async (c, next) => {
       (c.req.method === 'GET' && c.req.path.startsWith('/api/audio/')) ||
       (c.req.method === 'GET' && c.req.path.startsWith('/api/zip/')) ||
       (c.req.method === 'GET' && c.req.path.startsWith('/api/swf/')) ||
-      (c.req.method === 'GET' && c.req.path.startsWith('/api/ads/') && c.req.path.endsWith('/payload'))) {
+      (c.req.method === 'GET' && c.req.path.startsWith('/api/ads/') && c.req.path.endsWith('/payload')) ||
+      (c.req.method === 'GET' && c.req.path.startsWith('/api/wvfs-zip/'))) {
     await next()
     return
   }

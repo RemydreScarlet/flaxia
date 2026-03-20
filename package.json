@@ -22,6 +22,7 @@
   "dependencies": {
     "better-auth": "^1.5.4",
     "dompurify": "^3.0.0",
+    "fflate": "^0.8.2",
     "hono": "^4.0.0",
     "jszip": "^3.10.1",
     "katex": "^0.16.0",

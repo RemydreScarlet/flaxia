@@ -522,7 +522,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 navigateTo('timeline')
                 return
               }
-              window.history.pushState({}, '', `/users/${currentUser.username}`)
+              window.history.pushState({}, '', `/profile/${currentUser.username}`)
               navigateTo('profile', undefined, currentUser.username)
             }
           },
@@ -539,7 +539,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         leftNavInstances.add(leftNav)
         
         // Create Explore Page (as main content)
-        const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://flaxiausercontent.com'
+        const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://flaxia.app'
         explorePage = createExplorePage({
           tag: currentTag || undefined,
           sandboxOrigin
@@ -612,7 +612,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 navigateTo('timeline')
                 return
               }
-              window.history.pushState({}, '', `/users/${currentUser.username}`)
+              window.history.pushState({}, '', `/profile/${currentUser.username}`)
               navigateTo('profile', undefined, currentUser.username)
             }
           },
@@ -629,10 +629,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         leftNavInstances.add(leftNav)
         
         // Create Profile Page (as main content)
+        const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://flaxia.app'
         profilePage = createProfilePage({
           username,
           currentUser,
-          sandboxOrigin: 'https://flaxia.app'
+          sandboxOrigin
         })
         
         // Create Right Panel
@@ -703,7 +704,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 navigateTo('timeline')
                 return
               }
-              window.history.pushState({}, '', `/users/${currentUser.username}`)
+              window.history.pushState({}, '', `/profile/${currentUser.username}`)
               navigateTo('profile', undefined, currentUser.username)
             }
           },
@@ -801,7 +802,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 navigateTo('timeline')
                 return
               }
-              window.history.pushState({}, '', `/users/${currentUser.username}`)
+              window.history.pushState({}, '', `/profile/${currentUser.username}`)
               navigateTo('profile', undefined, currentUser.username)
             }
           },
@@ -883,7 +884,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         currentView = 'thread'
         currentPostId = postId
         
-        const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://flaxiausercontent.com'
+        const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://flaxia.app'
         threadPage = createThreadPage({
           postId,
           sandboxOrigin,
@@ -938,7 +939,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 navigateTo('timeline')
                 return
               }
-              window.history.pushState({}, '', `/users/${currentUser.username}`)
+              window.history.pushState({}, '', `/profile/${currentUser.username}`)
               navigateTo('profile', undefined, currentUser.username)
             }
           },
@@ -955,7 +956,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         leftNavInstances.add(leftNav)
         
         // Create Timeline
-        const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://flaxiausercontent.com'
+        const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://flaxia.app'
         timeline = createTimeline({
           sandboxOrigin,
           currentUser

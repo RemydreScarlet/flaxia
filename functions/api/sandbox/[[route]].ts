@@ -24,9 +24,67 @@ importScripts('https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js')
 
 console.log('fflate loaded:', typeof fflate !== 'undefined')
 
+// --- セキュリティ設定 & リソース制限 ---
+const MAX_TOTAL_SIZE = 100 * 1024 * 1024; // 100MB
+const MAX_FILE_COUNT = 1000;
+const ALLOWED_EXTENSIONS = new Set([
+  'html', 'css', 'js', 'mjs', 'json', 'svg',
+  'png', 'jpg', 'jpeg', 'gif', 'ico', 'webp',
+  'woff', 'woff2', 'ttf', 'mp4', 'webm', 'mp3', 'wav', 'wasm'
+]);
+
 // 仮想ファイルシステム: path → Uint8Array
 const virtualFS = new Map()
 let fsReady = false
+
+// --- セキュリティヘルパー関数 ---
+
+// パス検証: ディレクトリトラバーサルを防止
+function validatePath(path) {
+  // null/undefined チェック
+  if (!path || typeof path !== 'string') return false;
+  
+  // ディレクトリトラバーサル攻撃の防止
+  if (path.includes('..') || path.includes('//') || path.includes('\\\\')) {
+    console.warn('Blocked path traversal attempt:', path);
+    return false;
+  }
+  
+  // 先頭のスラッシュを正規化
+  const normalizedPath = path.startsWith('/') ? path.substring(1) : path;
+  
+  // 拡張子の検証
+  const ext = normalizedPath.split('.').pop()?.toLowerCase();
+  if (!ext || !ALLOWED_EXTENSIONS.has(ext)) {
+    console.warn('Blocked disallowed extension:', path);
+    return false;
+  }
+  
+  return true;
+}
+
+// ファイルサイズと数の検証
+function validateZipContent(files) {
+  let totalSize = 0;
+  let fileCount = 0;
+  
+  for (const [path, data] of Object.entries(files)) {
+    // ディレクトリエントリはスキップ
+    if (path.endsWith('/')) continue;
+    
+    fileCount++;
+    if (fileCount > MAX_FILE_COUNT) {
+      throw new Error(\`Too many files: \${fileCount} (max: \${MAX_FILE_COUNT})\`);
+    }
+    
+    totalSize += data.length;
+    if (totalSize > MAX_TOTAL_SIZE) {
+      throw new Error(\`Total size exceeds \${MAX_TOTAL_SIZE / 1024 / 1024}MB limit\`);
+    }
+  }
+  
+  return { totalSize, fileCount };
+}
 
 self.addEventListener('install', () => {
   console.log('Service Worker installing')
@@ -49,19 +107,34 @@ self.addEventListener('message', (event) => {
   console.log('ZIP data size:', zipData.byteLength)
 
   try {
+    // ZIP Bomb 検出: 展開前にサイズチェック
+    if (zipData.byteLength > MAX_TOTAL_SIZE) {
+      throw new Error('ZIP file exceeds size limit');
+    }
+
     // fflate で同期展開
     console.log('Starting ZIP extraction...')
     const files = fflate.unzipSync(zipData)
     console.log('ZIP extracted, files:', Object.keys(files).length)
 
-    virtualFS.clear()
+    // リソース制限の検証
+    const { totalSize, fileCount } = validateZipContent(files);
+    console.log(\`Resource check: \${fileCount} files, \${(totalSize / 1024 / 1024).toFixed(2)}MB total\`);
+
+    // 仮想ファイルシステムのクリアと再構築
+    virtualFS.clear();
     for (const [path, data] of Object.entries(files)) {
-      // ディレクトリエントリを除外
+      // ディレクトリエントリはスキップ
       if (!path.endsWith('/')) {
-        virtualFS.set('/' + path, data)
+        const normalizedPath = '/' + path;
+        if (validatePath(normalizedPath)) {
+          virtualFS.set(normalizedPath, data);
+        } else {
+          console.warn('Skipping unsafe file:', path);
+        }
       }
     }
-    fsReady = true
+    fsReady = true;
 
     // 全クライアントに通知
     self.clients.matchAll().then(clients =>
@@ -72,6 +145,7 @@ self.addEventListener('message', (event) => {
       }))
     )
   } catch (err) {
+    console.error('ZIP processing error:', err);
     self.clients.matchAll().then(clients =>
       clients.forEach(c => c.postMessage({
         type: 'ZIP_ERROR',

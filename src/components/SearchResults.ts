@@ -102,7 +102,7 @@ export function createSearchResults(props: SearchResultsProps): HTMLElement {
       // Navigate to user profile on click
       userItem.onclick = () => {
         // Use SPA navigation instead of full page reload
-        window.history.pushState({ username: user.username }, '', `/users/${user.username}`)
+        window.history.pushState({ username: user.username }, '', `/profile/${user.username}`)
         // Dispatch custom event to trigger SPA navigation
         window.dispatchEvent(new CustomEvent('spaNavigate', { 
           detail: { view: 'profile', username: user.username } 

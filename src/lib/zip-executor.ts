@@ -55,13 +55,46 @@ export async function executeZip(
   }
 
   try {
-    // Step 1: Create sandbox iframe
-    const { iframe, cleanup } = await createSandboxIframe(postId, containerEl)
+    // JSZip方式: ZIPデータをフェッチしてJSZipで展開
+    const zipUrl = url || `/api/zip/${postId}`
+    const response = await fetch(zipUrl)
+    if (!response.ok) {
+      throw new Error(`Failed to fetch ZIP: ${response.status}`)
+    }
+    const zipData = await response.arrayBuffer()
+    
+    // JSZipで展開
+    const JSZip = await getJSZip()
+    const zip = await JSZip.loadAsync(zipData)
+    validateZip(zip)
+    
+    // Blob URLマップを生成
+    const blobUrlMap = await generateBlobUrlMap(zip)
+    
+    // index.htmlを書き換えてBlob URLに置換
+    const indexFile = zip.files['index.html']
+    if (!indexFile || indexFile.dir) {
+      throw new Error('index.html not found at root')
+    }
+    
+    let htmlContent = await indexFile.async('string')
+    htmlContent = rewriteIndexHtml(zip, blobUrlMap)
+    
+    // Blob URLを生成
+    const htmlBlob = new Blob([htmlContent], { type: 'text/html' })
+    const htmlBlobUrl = URL.createObjectURL(htmlBlob)
+    
+    // iframeを作成してBlob URLを読み込む
+    const { iframe, cleanup } = await createSandboxIframe(postId, containerEl, htmlBlobUrl)
 
-    // Step 3: Create handle with cleanup
+    // Create handle with cleanup
     const handle: ZipExecutorHandle = {
       destroy: () => {
         cleanup()
+        
+        // Blob URLを解放
+        blobUrlMap.forEach(url => URL.revokeObjectURL(url))
+        URL.revokeObjectURL(htmlBlobUrl)
         
         // Remove fullscreen button if it exists
         const fullscreenBtn = containerEl.querySelector('.zip-fullscreen-btn')
@@ -84,8 +117,9 @@ export async function executeZip(
   }
 }
 
-async function createSandboxIframe(postId: string, containerEl: HTMLElement): Promise<{ iframe: HTMLIFrameElement, cleanup: () => void }> {
-  const sandboxUrl = `/sandbox/?postId=${postId}`
+async function createSandboxIframe(postId: string, containerEl: HTMLElement, blobUrl?: string): Promise<{ iframe: HTMLIFrameElement, cleanup: () => void }> {
+  // JSZip方式: Blob URLを使用
+  const iframeUrl = blobUrl || `/sandbox/?postId=${postId}`
   
   // Create iframe container
   const iframeContainer = document.createElement('div')
@@ -101,7 +135,8 @@ async function createSandboxIframe(postId: string, containerEl: HTMLElement): Pr
   
   // Create iframe pointing to sandbox domain
   const iframe = document.createElement('iframe')
-  iframe.src = sandboxUrl
+  iframe.src = iframeUrl
+  // JSZip方式ではallow-same-originは不要
   iframe.sandbox = 'allow-scripts allow-pointer-lock allow-fullscreen'
   iframe.setAttribute('allow', 'fullscreen')
   iframe.setAttribute('referrerpolicy', 'no-referrer')

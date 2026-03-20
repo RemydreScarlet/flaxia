@@ -1,7 +1,7 @@
 import { PostStageProps, PostCardMode } from '../types/post.js'
 import { createImagePreview } from './ImagePreview.js'
 import { createAudioPlayer } from './AudioPlayer.js'
-import { executeZip } from '../lib/zip-executor.js'
+import { executeZipAuto } from '../lib/zip-manager.js'
 import { executeFlash } from './FlashPlayer.js'
 
 // Create SWF execution button (similar to ZIP but for Flash)
@@ -391,8 +391,8 @@ async function updateStageContent(container: HTMLElement, props: PostStageProps)
   } else {
     // For ZIP files, use the new ZIP execution engine
     if (props.post.payload_key && props.post.payload_key.startsWith('zip/')) {
-      // The executeZip function will handle creating the iframe and cleanup
-      executeZip(props.post.id, container).catch(error => {
+      // The executeZipAuto function will handle creating the iframe and cleanup
+      executeZipAuto(props.post.id, container).catch((error: Error) => {
         console.error('Failed to execute ZIP:', error)
         container.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">Failed to load ZIP content</div>'
       })
