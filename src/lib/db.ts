@@ -23,7 +23,7 @@ export interface Fresh {
 export class Database {
   constructor(private db: D1Database) {}
   
-  async getPosts(cursor?: string, limit = 20): Promise<Post[]> {
+  async getPosts(cursor?: string, limit = 10): Promise<Post[]> {
     let query = 'SELECT * FROM posts ORDER BY created_at DESC LIMIT ?'
     const params = [limit]
     

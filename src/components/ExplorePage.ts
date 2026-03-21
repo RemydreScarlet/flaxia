@@ -165,7 +165,7 @@ export class ExplorePage {
     try {
       if (this.props.tag) {
         // Load posts with this tag
-        let url = `/api/posts?hashtag=${encodeURIComponent(this.props.tag)}&limit=20`
+        let url = `/api/posts?hashtag=${encodeURIComponent(this.props.tag)}&limit=10`
         if (this.cursor) {
           url += `&cursor=${encodeURIComponent(this.cursor)}`
         }
@@ -200,7 +200,7 @@ export class ExplorePage {
     this.updateLoadingState(true)
 
     try {
-      let url = `/api/posts?hashtag=${encodeURIComponent(this.props.tag)}&limit=20`
+      let url = `/api/posts?hashtag=${encodeURIComponent(this.props.tag)}&limit=10`
       if (this.cursor) {
         url += `&cursor=${encodeURIComponent(this.cursor)}`
       }

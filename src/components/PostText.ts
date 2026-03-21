@@ -7,6 +7,7 @@ let md: any = null
 // Cache for dynamic imports
 let katexPromise: Promise<typeof import('katex')> | null = null
 let markdownitPromise: Promise<any> | null = null
+let katexLoadingPromise: Promise<void> | null = null
 
 async function getMarkdownIt() {
   if (!md) {
@@ -158,9 +159,16 @@ function quotePattern(text: string): string {
 function renderMathElements(container: HTMLElement): void {
   const mathElements = container.querySelectorAll('.math-placeholder')
   
-  // Load KaTeX if not already loaded
+  // Load KaTeX if not already loaded or loading
   if (!window.katex) {
-    loadKaTeX().then(() => {
+    if (!katexLoadingPromise) {
+      katexLoadingPromise = loadKaTeX().catch(error => {
+        console.error('Failed to load KaTeX:', error)
+        katexLoadingPromise = null // Reset on error
+      })
+    }
+    
+    katexLoadingPromise.then(() => {
       mathElements.forEach(el => renderMathElement(el as HTMLElement))
     })
   } else {
@@ -336,20 +344,43 @@ async function loadKaTeX(): Promise<void> {
   
   const katex = await getKatex()
   
-  const link = document.createElement('link')
-  link.rel = 'stylesheet'
-  link.href = 'https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/katex.min.css'
-  document.head.appendChild(link)
+  // Check if CSS is already loaded
+  if (!document.querySelector('link[href*="katex.min.css"]')) {
+    const link = document.createElement('link')
+    link.rel = 'stylesheet'
+    link.href = 'https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/katex.min.css'
+    document.head.appendChild(link)
+  }
   
   return new Promise<void>((resolve, reject) => {
+    // Check if script is already loaded
+    if (document.querySelector('script[src*="katex.min.js"]')) {
+      // Script exists but katex not available yet, wait a bit
+      setTimeout(() => {
+        if (window.katex) {
+          ;(window as any).katex = katex.default
+          katexLoadingPromise = null
+          resolve()
+        } else {
+          katexLoadingPromise = null
+          reject(new Error('KaTeX script loaded but not available'))
+        }
+      }, 100)
+      return
+    }
+    
     const script = document.createElement('script')
     script.src = 'https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/katex.min.js'
     script.onload = () => {
       // Make katex available globally
       ;(window as any).katex = katex.default
+      katexLoadingPromise = null
       resolve()
     }
-    script.onerror = () => reject(new Error('Failed to load KaTeX'))
+    script.onerror = () => {
+      katexLoadingPromise = null
+      reject(new Error('Failed to load KaTeX'))
+    }
     document.head.appendChild(script)
   })
 }

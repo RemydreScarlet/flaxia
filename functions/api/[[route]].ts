@@ -228,6 +228,7 @@ app.get('/api/zip/:postId', async (c) => {
 
 // GET /api/wvfs-zip/:postId - serve ZIP files using WVFS
 // GET /api/wvfs-zip/:postId/* - serve individual files from ZIP using WVFS
+// Also handles ads with the same endpoint format
 app.get('/api/wvfs-zip/:postId/*', async (c) => {
   try {
     const postId = c.req.param('postId')
@@ -254,15 +255,46 @@ app.get('/api/wvfs-zip/:postId/*', async (c) => {
       return response
     }
     
-    // If not found, extract ZIP to WVFS first
-    const zipKey = `zip/${postId}.zip`
+    // Determine if this is a post or ad by checking database
+    let zipKey: string
+    let isAd = false
+    
+    if (c.env.DB) {
+      // Check if it's an ad
+      const adResult = await c.env.DB.prepare('SELECT payload_key FROM ads WHERE id = ? AND payload_type = \'zip\' AND active = 1')
+        .bind(postId)
+        .first() as { payload_key: string } | null
+      
+      if (adResult && adResult.payload_key) {
+        zipKey = adResult.payload_key
+        isAd = true
+        console.log(`WVFS API: Found ZIP ad with key: ${zipKey}`)
+      } else {
+        // Check if it's a post
+        const postResult = await c.env.DB.prepare('SELECT payload_key FROM posts WHERE id = ? AND payload_key IS NOT NULL')
+          .bind(postId)
+          .first() as { payload_key: string } | null
+        
+        if (postResult && postResult.payload_key) {
+          zipKey = postResult.payload_key
+          console.log(`WVFS API: Found ZIP post with key: ${zipKey}`)
+        } else {
+          return c.json({ error: 'ZIP not found for this ID' }, 404)
+        }
+      }
+    } else {
+      // Fallback: try post format first, then ad format
+      zipKey = `zip/${postId}.zip`
+    }
+    
+    // Get ZIP from R2
     const zipObject = await c.env.BUCKET.get(zipKey)
     
     if (!zipObject) {
-      return c.json({ error: 'ZIP not found' }, 404)
+      return c.json({ error: 'ZIP not found in storage' }, 404)
     }
     
-    console.log(`WVFS API: Extracting ZIP for postId=${postId}`)
+    console.log(`WVFS API: Extracting ZIP for ${isAd ? 'ad' : 'post'}=${postId}`)
     
     // Extract ZIP to WVFS
     const zipData = await zipObject.arrayBuffer()

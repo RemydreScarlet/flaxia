@@ -3,26 +3,27 @@ import { PostActionsProps } from '../types/post.js'
 export function createPostActions(props: PostActionsProps): HTMLElement {
   const container = document.createElement('div')
   container.className = 'post-actions'
-  
+
   // Fresh! button
   const freshButton = createActionButton('fresh', props.freshCount.toString(), props.isFreshed)
   freshButton.addEventListener('click', props.onFreshToggle)
-  
+
   // Reply button
   const replyButton = createActionButton('reply', props.replyCount.toString(), false)
   replyButton.addEventListener('click', props.onReplyToggle)
-  
+
   // Share button
   const shareButton = createActionButton('share', '0', false)
   shareButton.addEventListener('click', () => {
-    // TODO: Implement share functionality
-    console.log('Share clicked for post:', props.postId)
+    if (props.onShare) {
+      props.onShare()
+    }
   })
-  
+
   container.appendChild(freshButton)
   container.appendChild(replyButton)
   container.appendChild(shareButton)
-  
+
   return container
 }
 
@@ -44,18 +45,21 @@ function createActionButton(type: 'fresh' | 'reply' | 'share', count: string, is
   icon.className = 'action-icon'
   icon.textContent = getIconForType(type)
   
-  // Create count
-  const countSpan = document.createElement('span')
-  countSpan.className = 'action-count'
-  countSpan.textContent = count
-  
-  // Add debug styling for freshed posts
-  if (type === 'fresh' && isActive) {
-    console.log('Applying green color to fresh count for freshed post')
-  }
-  
   button.appendChild(icon)
-  button.appendChild(countSpan)
+  
+  // Add count for fresh and reply buttons only (not for share)
+  if (type !== 'share') {
+    const countSpan = document.createElement('span')
+    countSpan.className = 'action-count'
+    countSpan.textContent = count
+    
+    // Add debug styling for freshed posts
+    if (type === 'fresh' && isActive) {
+      console.log('Applying green color to fresh count for freshed post')
+    }
+    
+    button.appendChild(countSpan)
+  }
   
   return button
 }

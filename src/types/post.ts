@@ -83,6 +83,7 @@ export interface PostActionsProps {
   isFreshed: boolean
   onFreshToggle: () => void
   onReplyToggle: () => void
+  onShare?: () => void
 }
 
 export interface TimelineProps {

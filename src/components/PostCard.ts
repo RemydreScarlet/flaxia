@@ -4,6 +4,7 @@ import { createPostText } from './PostText.js'
 import { createPostStage, updatePostStage } from './PostStage.js'
 import { createPostActions } from './PostActions.js'
 import { createReplyComposer, ReplyComposer } from './ReplyComposer.js'
+import { createShareModal } from './ShareModal.js'
 import { useSandboxBridge } from '../lib/sandbox-bridge.js'
 import { showSignInPrompt } from './SignInPrompt.js'
 
@@ -101,7 +102,8 @@ export class PostCard {
       replyCount: this.replyCount,
       isFreshed: this.isFreshed,
       onFreshToggle: () => this.handleFreshToggle(),
-      onReplyToggle: () => this.handleReplyToggle()
+      onReplyToggle: () => this.handleReplyToggle(),
+      onShare: () => this.handleShare()
     })
     container.appendChild(actions)
 
@@ -284,6 +286,18 @@ export class PostCard {
     this.handleReplyToggle()
   }
 
+  private handleShare(): void {
+    createShareModal({
+      post: {
+        id: this.props.post.id,
+        text: this.props.post.text,
+        username: this.props.post.username,
+        display_name: this.props.post.display_name
+      },
+      onClose: () => {}
+    })
+  }
+
   private handlePostClick(): void {
     console.log('handlePostClick called for post:', this.props.post.id)
     
@@ -316,7 +330,8 @@ export class PostCard {
         replyCount: this.replyCount,
         isFreshed: this.isFreshed,
         onFreshToggle: () => this.handleFreshToggle(),
-        onReplyToggle: () => this.handleReplyToggle()
+        onReplyToggle: () => this.handleReplyToggle(),
+        onShare: () => this.handleShare()
       })
       actionsContainer.replaceWith(newActions)
     }

@@ -1,5 +1,5 @@
 import { Ad } from '../types/post.js'
-import { executeZipAuto, UniversalZipExecutorHandle } from '../lib/zip-manager.js'
+import { executeUniversalZip, UniversalZipExecutorHandle } from '../lib/zip-manager.js'
 import { executeFlash, FlashPlayerHandle } from './FlashPlayer.js'
 
 // Global handles for cleanup
@@ -178,7 +178,7 @@ function mountAdStage(ad: Ad, placeholder: HTMLElement): void {
             activeZipHandle = null
           }
           
-          activeZipHandle = await executeZipAuto(ad.id, placeholder, `/api/ads/${ad.id}/payload`)
+          activeZipHandle = await executeUniversalZip(ad.id, placeholder, 'wvfs')
           
           // Set pointer events for iframe interaction
           const adBanner = placeholder.closest('.ad-banner') as HTMLElement
