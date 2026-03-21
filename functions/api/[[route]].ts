@@ -2103,7 +2103,7 @@ app.get('/api/ads/active', async (c) => {
       return c.json({ error: 'Database not available' }, 500)
     }
 
-    const result = await c.env.DB.prepare('SELECT id, body_text, payload_key, payload_type, thumbnail_key, click_url, impressions, clicks, active, created_at FROM ads WHERE active = 1').all()
+    const result = await c.env.DB.prepare('SELECT id, ad_type, body_text, payload_key, payload_type, thumbnail_key, click_url, adsense_slot, adsense_client, impressions, clicks, active, created_at FROM ads WHERE active = 1').all()
     
     if (!result.success) {
       console.error('Database query failed:', result)
@@ -2332,11 +2332,14 @@ app.get('/api/admin/ads', requireAuth, async (c) => {
       SELECT
         ads.id,
         ads.title,
+        ads.ad_type,
         ads.body_text,
         ads.click_url,
         ads.payload_key,
         ads.payload_type,
         ads.thumbnail_key,
+        ads.adsense_slot,
+        ads.adsense_client,
         ads.impressions,
         ads.clicks,
         ads.active,
@@ -2371,25 +2374,46 @@ app.post('/api/admin/ads', requireAuth, async (c) => {
     const adId = nanoid()
 
     const contentType = c.req.header('content-type')
-    let title: string, body_text: string, click_url: string, payloadFile: File | undefined, thumbnailFile: File | undefined
+    let title: string, bodyText: string, clickUrl: string | null, adType: string, adsenseSlot: string | null, adsenseClient: string | null, payloadFile: File | undefined, thumbnailFile: File | undefined
 
     if (contentType?.includes('multipart/form-data')) {
       const formData = await c.req.formData()
       title = formData.get('title') as string
-      body_text = formData.get('body_text') as string
-      click_url = formData.get('click_url') as string
+      bodyText = formData.get('body_text') as string
+      clickUrl = formData.get('click_url') as string | null
+      adType = formData.get('ad_type') as string || 'self_hosted'
+      adsenseSlot = formData.get('adsense_slot') as string | null
+      adsenseClient = formData.get('adsense_client') as string | null
       payloadFile = formData.get('payload') as File | null || undefined
       thumbnailFile = formData.get('thumbnail') as File | null || undefined
     } else {
       const body = await c.req.json()
       title = body.title
-      body_text = body.body_text
-      click_url = body.click_url
+      bodyText = body.body_text
+      clickUrl = body.click_url
+      adType = body.ad_type || 'self_hosted'
+      adsenseSlot = body.adsense_slot
+      adsenseClient = body.adsense_client
     }
 
     // Validate required fields
-    if (!title || !body_text) {
-      return c.json({ error: 'title and body_text are required' }, 400)
+    if (!title || !bodyText) {
+      return c.json({ error: 'Title and body text are required' }, 400)
+    }
+
+    // Validate ad type
+    if (!['self_hosted', 'adsense'].includes(adType)) {
+      return c.json({ error: 'Invalid ad type' }, 400)
+    }
+
+    // Validate AdSense specific fields
+    if (adType === 'adsense' && !adsenseSlot) {
+      return c.json({ error: 'AdSense slot ID is required for AdSense ads' }, 400)
+    }
+
+    // For self-hosted ads, validate payload
+    if (adType === 'self_hosted' && !payloadFile) {
+      return c.json({ error: 'Payload file is required for self-hosted ads' }, 400)
     }
 
     let payload_key: string | null = null
@@ -2487,9 +2511,9 @@ app.post('/api/admin/ads', requireAuth, async (c) => {
     }
 
     const result = await c.env.DB.prepare(`
-      INSERT INTO ads (id, title, body_text, click_url, payload_key, payload_type, thumbnail_key, impressions, clicks, active, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 1, datetime('now'))
-    `).bind(adId, title, body_text, click_url || null, payload_key, payload_type, thumbnail_key).run()
+      INSERT INTO ads (id, title, ad_type, body_text, click_url, payload_key, payload_type, thumbnail_key, adsense_slot, adsense_client, impressions, clicks, active, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 1, datetime('now'))
+    `).bind(adId, title, adType, bodyText, clickUrl || null, payload_key, payload_type, thumbnail_key, adsenseSlot, adsenseClient || 'ca-pub-8703789531673358').run()
 
     if (!result.success) {
       console.error('Database insert failed:', result)
@@ -2542,6 +2566,18 @@ app.patch('/api/admin/ads/:id', requireAuth, async (c) => {
     if (body.click_url !== undefined) {
       updates.push('click_url = ?')
       values.push(body.click_url)
+    }
+    if (body.ad_type !== undefined) {
+      updates.push('ad_type = ?')
+      values.push(body.ad_type)
+    }
+    if (body.adsense_slot !== undefined) {
+      updates.push('adsense_slot = ?')
+      values.push(body.adsense_slot)
+    }
+    if (body.adsense_client !== undefined) {
+      updates.push('adsense_client = ?')
+      values.push(body.adsense_client)
     }
     if (body.active !== undefined) {
       updates.push('active = ?')

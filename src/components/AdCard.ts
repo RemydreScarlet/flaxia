@@ -2,6 +2,13 @@ import { Ad } from '../types/post.js'
 import { executeUniversalZip, UniversalZipExecutorHandle } from '../lib/zip-manager.js'
 import { executeFlash, FlashPlayerHandle } from './FlashPlayer.js'
 
+// TypeScript declaration for AdSense global
+declare global {
+  interface Window {
+    adsbygoogle: any[]
+  }
+}
+
 // Global handles for cleanup
 let activeZipHandle: UniversalZipExecutorHandle | null = null
 let activeFlashHandle: FlashPlayerHandle | null = null
@@ -128,7 +135,51 @@ function handleDirectClick(ad: Ad): void {
   window.open(ad.click_url, '_blank', 'noopener')
 }
 
+function mountAdSense(ad: Ad, placeholder: HTMLElement): void {
+  // Set placeholder styles for AdSense
+  placeholder.style.cssText = `
+    position: relative;
+    width: 100%;
+    min-height: 250px;
+    overflow: hidden;
+    background: #f0f0f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  `
+
+  // Create AdSense ad container
+  const adContainer = document.createElement('ins')
+  adContainer.className = 'adsbygoogle'
+  adContainer.style.cssText = 'display:block'
+  adContainer.setAttribute('data-ad-client', ad.adsense_client || 'ca-pub-8703789531673358')
+  adContainer.setAttribute('data-ad-slot', ad.adsense_slot || '6262283560')
+  adContainer.setAttribute('data-ad-format', 'auto')
+  adContainer.setAttribute('data-full-width-responsive', 'true')
+  
+  placeholder.appendChild(adContainer)
+  
+  // Load AdSense ad
+  try {
+    (window.adsbygoogle = window.adsbygoogle || []).push({})
+  } catch (error) {
+    console.error('AdSense error:', error)
+    // Show error message
+    placeholder.innerHTML = `
+      <div style="color: #666; font-size: 14px; text-align: center; padding: 20px;">
+        Ad could not be loaded
+      </div>
+    `
+  }
+}
+
 function mountAdStage(ad: Ad, placeholder: HTMLElement): void {
+  // Handle AdSense ads
+  if (ad.ad_type === 'adsense') {
+    mountAdSense(ad, placeholder)
+    return
+  }
+
   // Update placeholder styles for content
   const aspectRatio = ad.payload_type === 'swf' ? '4 / 3' : '16 / 9'
   placeholder.style.cssText = `
@@ -323,8 +374,25 @@ export function createAdCard(ad: Ad): HTMLElement {
     background: #f0f0f0;
   `
   
-  // Render based on payload_type
-  if (ad.payload_type === null) {
+  // Render based on payload_type and ad_type
+  if (ad.ad_type === 'adsense') {
+    // AdSense ads always use lazy loading
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          // 1. Load AdSense ad
+          mountAdStage(ad, adPlaceholder)
+
+          // 2. Track impression
+          fetch(`/api/ads/${ad.id}/impression`, { method: 'POST' })
+
+          // 3. Stop observing
+          observer.unobserve(entry.target)
+        }
+      })
+    }, { threshold: 0.5 })
+    observer.observe(adBanner)
+  } else if (ad.payload_type === null) {
     // Body text only - no stage, no Visit button if click_url is null
     // Entire card clickable if click_url exists
     if (ad.click_url) {

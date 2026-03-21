@@ -105,11 +105,14 @@ export interface TimelineState {
 
 export interface Ad {
   id: string
+  ad_type: 'self_hosted' | 'adsense'
   body_text: string
   payload_key: string | null
   payload_type: 'zip' | 'swf' | 'gif' | 'image' | null
   thumbnail_key?: string
   click_url: string | null
+  adsense_slot?: string
+  adsense_client?: string
   impressions: number
   clicks: number
 }
@@ -117,11 +120,14 @@ export interface Ad {
 export interface AdminAd {
   id: string
   title: string
+  ad_type: 'self_hosted' | 'adsense'
   body_text: string
   click_url: string | null
   payload_key: string | null
   payload_type: 'zip' | 'swf' | 'gif' | 'image' | null
   thumbnail_key?: string
+  adsense_slot?: string
+  adsense_client?: string
   impressions: number
   clicks: number
   active: number

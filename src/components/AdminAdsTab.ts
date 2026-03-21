@@ -1,11 +1,14 @@
 export interface AdminAd {
   id: string
   title: string
+  ad_type: 'self_hosted' | 'adsense'
   body_text: string
   click_url: string | null
   payload_key: string | null
   payload_type: 'zip' | 'swf' | 'gif' | 'image' | null
   thumbnail_key?: string
+  adsense_slot?: string
+  adsense_client?: string
   impressions: number
   clicks: number
   active: number
@@ -120,7 +123,8 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
     return date.toLocaleDateString()
   }
 
-  const getFormatLabel = (payloadType: string | null): string => {
+  const getFormatLabel = (payloadType: string | null, adType?: string): string => {
+    if (adType === 'adsense') return 'AdSense'
     switch (payloadType) {
       case 'zip': return 'ZIP'
       case 'swf': return 'SWF'
@@ -283,7 +287,7 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
     const header = document.createElement('div')
     header.style.cssText = `
       display: grid;
-      grid-template-columns: 2fr 1fr 80px 100px 100px 80px 120px 120px 80px;
+      grid-template-columns: 2fr 1fr 1fr 80px 100px 100px 80px 120px 120px 80px;
       gap: 1px;
       background: #0f172a;
       padding: 12px 16px;
@@ -293,6 +297,7 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
     `
     header.innerHTML = `
       <div>Title</div>
+      <div>Type</div>
       <div>Format</div>
       <div>Active</div>
       <div>Impressions</div>
@@ -309,7 +314,7 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
       const row = document.createElement('div')
       row.style.cssText = `
         display: grid;
-        grid-template-columns: 2fr 1fr 80px 100px 100px 80px 120px 120px 80px;
+        grid-template-columns: 2fr 1fr 1fr 80px 100px 100px 80px 120px 120px 80px;
         gap: 1px;
         background: #1e293b;
         padding: 12px 16px;
@@ -323,8 +328,14 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
       title.title = ad.title
       row.appendChild(title)
 
+      // Ad Type column
+      const adType = document.createElement('div')
+      adType.textContent = ad.ad_type === 'adsense' ? 'AdSense' : 'Self'
+      adType.style.cssText = `color: ${ad.ad_type === 'adsense' ? '#3b82f6' : '#22c55e'}; font-weight: 500;`
+      row.appendChild(adType)
+
       const format = document.createElement('div')
-      format.textContent = getFormatLabel(ad.payload_type)
+      format.textContent = getFormatLabel(ad.payload_type, ad.ad_type)
       format.style.cssText = 'color: #94a3b8;'
       row.appendChild(format)
 
@@ -516,6 +527,43 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
     const form = document.createElement('div')
     form.style.cssText = 'display: flex; flex-direction: column; gap: 16px;'
 
+    // Ad Type field
+    const adTypeField = document.createElement('div')
+    adTypeField.style.cssText = 'display: flex; flex-direction: column; gap: 8px;'
+
+    const adTypeLabel = document.createElement('label')
+    adTypeLabel.textContent = 'Ad Type'
+    adTypeLabel.style.cssText = 'color: #f1f5f9; font-size: 14px; font-weight: 500;'
+    adTypeField.appendChild(adTypeLabel)
+
+    const adTypeSelect = document.createElement('select')
+    adTypeSelect.style.cssText = `
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #f1f5f9;
+      padding: 12px;
+      border-radius: 4px;
+      font-size: 14px;
+    `
+    
+    const selfHostedOption = document.createElement('option')
+    selfHostedOption.value = 'self_hosted'
+    selfHostedOption.textContent = 'Self-hosted (ZIP/SWF/GIF/Image)'
+    
+    const adsenseOption = document.createElement('option')
+    adsenseOption.value = 'adsense'
+    adsenseOption.textContent = 'Google AdSense'
+    
+    adTypeSelect.appendChild(selfHostedOption)
+    adTypeSelect.appendChild(adsenseOption)
+    
+    if (editingAd?.ad_type) {
+      adTypeSelect.value = editingAd.ad_type
+    }
+    
+    adTypeField.appendChild(adTypeSelect)
+    form.appendChild(adTypeField)
+
     // Title field
     const titleField = document.createElement('div')
     titleField.style.cssText = 'display: flex; flex-direction: column; gap: 8px;'
@@ -611,6 +659,36 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
     urlField.appendChild(urlInput)
     form.appendChild(urlField)
 
+    // AdSense Slot field (shown only for AdSense ads)
+    const adsenseSlotField = document.createElement('div')
+    adsenseSlotField.style.cssText = 'display: flex; flex-direction: column; gap: 8px;'
+
+    const adsenseSlotLabel = document.createElement('label')
+    adsenseSlotLabel.textContent = 'AdSense Slot ID'
+    adsenseSlotLabel.style.cssText = 'color: #f1f5f9; font-size: 14px; font-weight: 500;'
+    adsenseSlotField.appendChild(adsenseSlotLabel)
+
+    const adsenseSlotInput = document.createElement('input')
+    adsenseSlotInput.type = 'text'
+    adsenseSlotInput.value = editingAd?.adsense_slot || '6262283560'
+    adsenseSlotInput.placeholder = '6262283560'
+    adsenseSlotInput.style.cssText = `
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #f1f5f9;
+      padding: 12px;
+      border-radius: 4px;
+      font-size: 14px;
+    `
+
+    const adsenseSlotHint = document.createElement('div')
+    adsenseSlotHint.textContent = 'Google AdSense ad slot ID'
+    adsenseSlotHint.style.cssText = 'color: #64748b; font-size: 12px; margin-top: 4px;'
+
+    adsenseSlotField.appendChild(adsenseSlotInput)
+    adsenseSlotField.appendChild(adsenseSlotHint)
+    form.appendChild(adsenseSlotField)
+
     // Payload field
     const payloadField = document.createElement('div')
     payloadField.style.cssText = 'display: flex; flex-direction: column; gap: 8px;'
@@ -678,6 +756,20 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
     thumbnailField.appendChild(thumbnailHint)
     form.appendChild(thumbnailField)
 
+    // Function to toggle field visibility based on ad type (now defined after all fields)
+    const toggleFieldVisibility = () => {
+      const isAdSense = adTypeSelect.value === 'adsense'
+      payloadField.style.display = isAdSense ? 'none' : 'flex'
+      thumbnailField.style.display = isAdSense ? 'none' : 'flex'
+      adsenseSlotField.style.display = isAdSense ? 'flex' : 'none'
+    }
+
+    // Add event listener to ad type selector
+    adTypeSelect.addEventListener('change', toggleFieldVisibility)
+    
+    // Set initial visibility
+    toggleFieldVisibility()
+
     // Stats row for edit mode
     if (editingAd) {
       const statsRow = document.createElement('div')
@@ -730,9 +822,17 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
       const title = titleInput.value.trim()
       const bodyText = bodyTextarea.value.trim()
       const clickUrl = urlInput.value.trim() || null
+      const adType = adTypeSelect.value as 'self_hosted' | 'adsense'
+      const adsenseSlot = adsenseSlotInput.value.trim() || '6262283560'
 
       if (!title || !bodyText) {
         alert('Title and body text are required')
+        return
+      }
+
+      // Validate AdSense ads
+      if (adType === 'adsense' && !adsenseSlot) {
+        alert('AdSense Slot ID is required for AdSense ads')
         return
       }
 
@@ -755,7 +855,13 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
           const response = await fetch(`/api/admin/ads/${editingAd.id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title, body_text: bodyText, click_url: clickUrl }),
+            body: JSON.stringify({ 
+              title, 
+              body_text: bodyText, 
+              click_url: clickUrl,
+              ad_type: adType,
+              adsense_slot: adType === 'adsense' ? adsenseSlot : null
+            }),
             credentials: 'include'
           })
           if (!response.ok) {
@@ -766,7 +872,11 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
           const formData = new FormData()
           formData.append('title', title)
           formData.append('body_text', bodyText)
+          formData.append('ad_type', adType)
           if (clickUrl) formData.append('click_url', clickUrl)
+          if (adType === 'adsense') {
+            formData.append('adsense_slot', adsenseSlot)
+          }
           if (payloadInput.files?.[0]) formData.append('payload', payloadInput.files[0])
           if (thumbnailInput.files?.[0]) formData.append('thumbnail', thumbnailInput.files[0])
 
