@@ -1,4 +1,5 @@
 import { createEditProfileModal } from './EditProfileModal.js'
+import { createFollowerListModal } from './FollowerListModal.js'
 import { processText, renderMathElements, linkifyHashtags, linkifyUrls } from './PostText.js'
 import { clearMeCache } from '../lib/auth-cache.js'
 import { showSignInPrompt } from './SignInPrompt.js'
@@ -71,6 +72,7 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
 
   const followersStat = document.createElement('div')
   followersStat.className = 'profile-stat'
+  followersStat.style.cssText = 'cursor: pointer; transition: background-color 0.2s;'
   const followersCountSpan = document.createElement('span')
   followersCountSpan.className = 'stat-number'
   followersCountSpan.textContent = '0'
@@ -79,6 +81,7 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
 
   const followingStat = document.createElement('div')
   followingStat.className = 'profile-stat'
+  followingStat.style.cssText = 'cursor: pointer; transition: background-color 0.2s;'
   const followingCountSpan = document.createElement('span')
   followingCountSpan.className = 'stat-number'
   followingCountSpan.textContent = '0'
@@ -391,6 +394,45 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
     } finally {
       followButton.disabled = false
     }
+  })
+
+  // Add click handlers for follower/following stats
+  followersStat.addEventListener('click', () => {
+    const modal = createFollowerListModal({
+      username: username,
+      initialTab: 'followers',
+      currentUser: currentUser,
+      onClose: () => {
+        document.body.removeChild(modal.getElement())
+      }
+    })
+    document.body.appendChild(modal.getElement())
+  })
+
+  followersStat.addEventListener('mouseenter', () => {
+    followersStat.style.backgroundColor = 'var(--bg-secondary)'
+  })
+  followersStat.addEventListener('mouseleave', () => {
+    followersStat.style.backgroundColor = 'transparent'
+  })
+
+  followingStat.addEventListener('click', () => {
+    const modal = createFollowerListModal({
+      username: username,
+      initialTab: 'following',
+      currentUser: currentUser,
+      onClose: () => {
+        document.body.removeChild(modal.getElement())
+      }
+    })
+    document.body.appendChild(modal.getElement())
+  })
+
+  followingStat.addEventListener('mouseenter', () => {
+    followingStat.style.backgroundColor = 'var(--bg-secondary)'
+  })
+  followingStat.addEventListener('mouseleave', () => {
+    followingStat.style.backgroundColor = 'transparent'
   })
 
   // Load initial data

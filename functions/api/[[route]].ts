@@ -1681,6 +1681,186 @@ app.post('/api/users/me/avatar', requireAuth, async (c) => {
   }
 })
 
+// GET /api/users/:username/followers - get list of followers
+app.get('/api/users/:username/followers', async (c) => {
+  try {
+    const username = c.req.param('username')
+    const cursor = c.req.query('cursor')
+    const limit = parseInt(c.req.query('limit') || '20')
+    
+    if (!username) {
+      return c.json({ error: 'Username required' }, 400)
+    }
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    // Get target user ID
+    const targetUser = await c.env.DB.prepare('SELECT id FROM users WHERE username = ?')
+      .bind(username).first()
+    
+    if (!targetUser) {
+      return c.json({ error: 'User not found' }, 404)
+    }
+    
+    const userId = targetUser.id
+    
+    // Get current user for follow status
+    const token = getSessionToken(c.req.raw)
+    const sessionData = token ? await getSession(c.env, token) : null
+    const currentUserId = sessionData?.user.id
+    
+    // Build query
+    let query = `
+      SELECT 
+        u.id, u.username, u.display_name, u.avatar_key,
+        (SELECT COUNT(*) FROM follows WHERE followee_id = u.id) as followers_count,
+        (SELECT COUNT(*) FROM follows WHERE follower_id = u.id) as following_count
+      FROM users u
+      INNER JOIN follows f ON u.id = f.follower_id
+      WHERE f.followee_id = ?
+      ORDER BY u.username
+      LIMIT ?
+    `
+    let params: any[] = [userId, limit]
+    
+    if (cursor) {
+      query = `
+        SELECT 
+          u.id, u.username, u.display_name, u.avatar_key,
+          (SELECT COUNT(*) FROM follows WHERE followee_id = u.id) as followers_count,
+          (SELECT COUNT(*) FROM follows WHERE follower_id = u.id) as following_count
+        FROM users u
+        INNER JOIN follows f ON u.id = f.follower_id
+        WHERE f.followee_id = ? AND u.username > ?
+        ORDER BY u.username
+        LIMIT ?
+      `
+      params = [userId, cursor, limit]
+    }
+    
+    const result = await c.env.DB.prepare(query).bind(...params).all()
+    const users = result.results as any[]
+    
+    // Add follow status for authenticated users
+    if (currentUserId) {
+      for (const user of users) {
+        if (user.id !== currentUserId) {
+          const followResult = await c.env.DB.prepare(
+            'SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ?'
+          ).bind(currentUserId, user.id).first()
+          user.is_following = followResult !== null
+        } else {
+          user.is_following = false
+        }
+      }
+    }
+    
+    // Determine next cursor
+    const nextCursor = users.length >= limit ? users[users.length - 1].username : null
+    
+    return c.json({
+      users,
+      next_cursor: nextCursor,
+      has_more: users.length >= limit
+    })
+  } catch (error: any) {
+    console.error('Get followers error:', error)
+    return c.json({ error: 'Failed to get followers', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// GET /api/users/:username/following - get list of following
+app.get('/api/users/:username/following', async (c) => {
+  try {
+    const username = c.req.param('username')
+    const cursor = c.req.query('cursor')
+    const limit = parseInt(c.req.query('limit') || '20')
+    
+    if (!username) {
+      return c.json({ error: 'Username required' }, 400)
+    }
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    // Get target user ID
+    const targetUser = await c.env.DB.prepare('SELECT id FROM users WHERE username = ?')
+      .bind(username).first()
+    
+    if (!targetUser) {
+      return c.json({ error: 'User not found' }, 404)
+    }
+    
+    const userId = targetUser.id
+    
+    // Get current user for follow status
+    const token = getSessionToken(c.req.raw)
+    const sessionData = token ? await getSession(c.env, token) : null
+    const currentUserId = sessionData?.user.id
+    
+    // Build query
+    let query = `
+      SELECT 
+        u.id, u.username, u.display_name, u.avatar_key,
+        (SELECT COUNT(*) FROM follows WHERE followee_id = u.id) as followers_count,
+        (SELECT COUNT(*) FROM follows WHERE follower_id = u.id) as following_count
+      FROM users u
+      INNER JOIN follows f ON u.id = f.followee_id
+      WHERE f.follower_id = ?
+      ORDER BY u.username
+      LIMIT ?
+    `
+    let params: any[] = [userId, limit]
+    
+    if (cursor) {
+      query = `
+        SELECT 
+          u.id, u.username, u.display_name, u.avatar_key,
+          (SELECT COUNT(*) FROM follows WHERE followee_id = u.id) as followers_count,
+          (SELECT COUNT(*) FROM follows WHERE follower_id = u.id) as following_count
+        FROM users u
+        INNER JOIN follows f ON u.id = f.followee_id
+        WHERE f.follower_id = ? AND u.username > ?
+        ORDER BY u.username
+        LIMIT ?
+      `
+      params = [userId, cursor, limit]
+    }
+    
+    const result = await c.env.DB.prepare(query).bind(...params).all()
+    const users = result.results as any[]
+    
+    // Add follow status for authenticated users
+    if (currentUserId) {
+      for (const user of users) {
+        if (user.id !== currentUserId) {
+          const followResult = await c.env.DB.prepare(
+            'SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ?'
+          ).bind(currentUserId, user.id).first()
+          user.is_following = followResult !== null
+        } else {
+          user.is_following = false
+        }
+      }
+    }
+    
+    // Determine next cursor
+    const nextCursor = users.length >= limit ? users[users.length - 1].username : null
+    
+    return c.json({
+      users,
+      next_cursor: nextCursor,
+      has_more: users.length >= limit
+    })
+  } catch (error: any) {
+    console.error('Get following error:', error)
+    return c.json({ error: 'Failed to get following', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
 // POST /api/users/:username/follow - follow a user (protected)
 app.post('/api/users/:username/follow', requireAuth, async (c) => {
   try {
