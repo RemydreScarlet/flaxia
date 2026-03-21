@@ -442,7 +442,7 @@ export function createFollowerListModal({ username, initialTab = 'followers', cu
     `
     
     userLink.addEventListener('click', () => {
-      window.location.href = `/users/${user.username}`
+      window.location.href = `/profile/${user.username}`
     })
 
     userLink.addEventListener('mouseenter', () => {
