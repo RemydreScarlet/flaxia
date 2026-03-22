@@ -145,7 +145,12 @@ export async function serveFileFromWvfs(postId: string, filePath: string): Promi
       'mp4': 'video/mp4',
       'webm': 'video/webm',
       'json': 'application/json',
-      'txt': 'text/plain'
+      'txt': 'text/plain',
+      'unityweb': 'application/octet-stream',
+      'data': 'application/octet-stream',
+      'wasm.code': 'application/wasm',
+      'wasm.framework': 'application/octet-stream',
+      'ico': 'image/x-icon'
     }
     
     contentType = mimeTypes[ext || ''] || 'text/plain'

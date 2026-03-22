@@ -228,7 +228,6 @@ app.get('/api/zip/:postId', async (c) => {
 
 // GET /api/wvfs-zip/:postId - serve ZIP files using WVFS
 // GET /api/wvfs-zip/:postId/* - serve individual files from ZIP using WVFS
-// Also handles ads with the same endpoint format
 app.get('/api/wvfs-zip/:postId/*', async (c) => {
   try {
     const postId = c.req.param('postId')
@@ -255,46 +254,33 @@ app.get('/api/wvfs-zip/:postId/*', async (c) => {
       return response
     }
     
-    // Determine if this is a post or ad by checking database
+    // If not found, extract ZIP to WVFS first
     let zipKey: string
-    let isAd = false
+    let zipObject: R2Object | null = null
     
+    // Check if it's an ad
     if (c.env.DB) {
-      // Check if it's an ad
       const adResult = await c.env.DB.prepare('SELECT payload_key FROM ads WHERE id = ? AND payload_type = \'zip\' AND active = 1')
         .bind(postId)
         .first() as { payload_key: string } | null
       
       if (adResult && adResult.payload_key) {
         zipKey = adResult.payload_key
-        isAd = true
-        console.log(`WVFS API: Found ZIP ad with key: ${zipKey}`)
-      } else {
-        // Check if it's a post
-        const postResult = await c.env.DB.prepare('SELECT payload_key FROM posts WHERE id = ? AND payload_key IS NOT NULL')
-          .bind(postId)
-          .first() as { payload_key: string } | null
-        
-        if (postResult && postResult.payload_key) {
-          zipKey = postResult.payload_key
-          console.log(`WVFS API: Found ZIP post with key: ${zipKey}`)
-        } else {
-          return c.json({ error: 'ZIP not found for this ID' }, 404)
-        }
+        zipObject = await c.env.BUCKET.get(zipKey)
       }
-    } else {
-      // Fallback: try post format first, then ad format
-      zipKey = `zip/${postId}.zip`
     }
     
-    // Get ZIP from R2
-    const zipObject = await c.env.BUCKET.get(zipKey)
+    // If not an ad or ad not found, try as a post
+    if (!zipObject) {
+      zipKey = `zip/${postId}.zip`
+      zipObject = await c.env.BUCKET.get(zipKey)
+    }
     
     if (!zipObject) {
-      return c.json({ error: 'ZIP not found in storage' }, 404)
+      return c.json({ error: 'ZIP not found' }, 404)
     }
     
-    console.log(`WVFS API: Extracting ZIP for ${isAd ? 'ad' : 'post'}=${postId}`)
+    console.log(`WVFS API: Extracting ZIP for postId=${postId}`)
     
     // Extract ZIP to WVFS
     const zipData = await zipObject.arrayBuffer()
@@ -1681,186 +1667,6 @@ app.post('/api/users/me/avatar', requireAuth, async (c) => {
   }
 })
 
-// GET /api/users/:username/followers - get list of followers
-app.get('/api/users/:username/followers', async (c) => {
-  try {
-    const username = c.req.param('username')
-    const cursor = c.req.query('cursor')
-    const limit = parseInt(c.req.query('limit') || '20')
-    
-    if (!username) {
-      return c.json({ error: 'Username required' }, 400)
-    }
-    
-    if (!c.env.DB) {
-      return c.json({ error: 'Database not available' }, 500)
-    }
-    
-    // Get target user ID
-    const targetUser = await c.env.DB.prepare('SELECT id FROM users WHERE username = ?')
-      .bind(username).first()
-    
-    if (!targetUser) {
-      return c.json({ error: 'User not found' }, 404)
-    }
-    
-    const userId = targetUser.id
-    
-    // Get current user for follow status
-    const token = getSessionToken(c.req.raw)
-    const sessionData = token ? await getSession(c.env, token) : null
-    const currentUserId = sessionData?.user.id
-    
-    // Build query
-    let query = `
-      SELECT 
-        u.id, u.username, u.display_name, u.avatar_key,
-        (SELECT COUNT(*) FROM follows WHERE followee_id = u.id) as followers_count,
-        (SELECT COUNT(*) FROM follows WHERE follower_id = u.id) as following_count
-      FROM users u
-      INNER JOIN follows f ON u.id = f.follower_id
-      WHERE f.followee_id = ?
-      ORDER BY u.username
-      LIMIT ?
-    `
-    let params: any[] = [userId, limit]
-    
-    if (cursor) {
-      query = `
-        SELECT 
-          u.id, u.username, u.display_name, u.avatar_key,
-          (SELECT COUNT(*) FROM follows WHERE followee_id = u.id) as followers_count,
-          (SELECT COUNT(*) FROM follows WHERE follower_id = u.id) as following_count
-        FROM users u
-        INNER JOIN follows f ON u.id = f.follower_id
-        WHERE f.followee_id = ? AND u.username > ?
-        ORDER BY u.username
-        LIMIT ?
-      `
-      params = [userId, cursor, limit]
-    }
-    
-    const result = await c.env.DB.prepare(query).bind(...params).all()
-    const users = result.results as any[]
-    
-    // Add follow status for authenticated users
-    if (currentUserId) {
-      for (const user of users) {
-        if (user.id !== currentUserId) {
-          const followResult = await c.env.DB.prepare(
-            'SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ?'
-          ).bind(currentUserId, user.id).first()
-          user.is_following = followResult !== null
-        } else {
-          user.is_following = false
-        }
-      }
-    }
-    
-    // Determine next cursor
-    const nextCursor = users.length >= limit ? users[users.length - 1].username : null
-    
-    return c.json({
-      users,
-      next_cursor: nextCursor,
-      has_more: users.length >= limit
-    })
-  } catch (error: any) {
-    console.error('Get followers error:', error)
-    return c.json({ error: 'Failed to get followers', details: error?.message || 'Unknown error' }, 500)
-  }
-})
-
-// GET /api/users/:username/following - get list of following
-app.get('/api/users/:username/following', async (c) => {
-  try {
-    const username = c.req.param('username')
-    const cursor = c.req.query('cursor')
-    const limit = parseInt(c.req.query('limit') || '20')
-    
-    if (!username) {
-      return c.json({ error: 'Username required' }, 400)
-    }
-    
-    if (!c.env.DB) {
-      return c.json({ error: 'Database not available' }, 500)
-    }
-    
-    // Get target user ID
-    const targetUser = await c.env.DB.prepare('SELECT id FROM users WHERE username = ?')
-      .bind(username).first()
-    
-    if (!targetUser) {
-      return c.json({ error: 'User not found' }, 404)
-    }
-    
-    const userId = targetUser.id
-    
-    // Get current user for follow status
-    const token = getSessionToken(c.req.raw)
-    const sessionData = token ? await getSession(c.env, token) : null
-    const currentUserId = sessionData?.user.id
-    
-    // Build query
-    let query = `
-      SELECT 
-        u.id, u.username, u.display_name, u.avatar_key,
-        (SELECT COUNT(*) FROM follows WHERE followee_id = u.id) as followers_count,
-        (SELECT COUNT(*) FROM follows WHERE follower_id = u.id) as following_count
-      FROM users u
-      INNER JOIN follows f ON u.id = f.followee_id
-      WHERE f.follower_id = ?
-      ORDER BY u.username
-      LIMIT ?
-    `
-    let params: any[] = [userId, limit]
-    
-    if (cursor) {
-      query = `
-        SELECT 
-          u.id, u.username, u.display_name, u.avatar_key,
-          (SELECT COUNT(*) FROM follows WHERE followee_id = u.id) as followers_count,
-          (SELECT COUNT(*) FROM follows WHERE follower_id = u.id) as following_count
-        FROM users u
-        INNER JOIN follows f ON u.id = f.followee_id
-        WHERE f.follower_id = ? AND u.username > ?
-        ORDER BY u.username
-        LIMIT ?
-      `
-      params = [userId, cursor, limit]
-    }
-    
-    const result = await c.env.DB.prepare(query).bind(...params).all()
-    const users = result.results as any[]
-    
-    // Add follow status for authenticated users
-    if (currentUserId) {
-      for (const user of users) {
-        if (user.id !== currentUserId) {
-          const followResult = await c.env.DB.prepare(
-            'SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ?'
-          ).bind(currentUserId, user.id).first()
-          user.is_following = followResult !== null
-        } else {
-          user.is_following = false
-        }
-      }
-    }
-    
-    // Determine next cursor
-    const nextCursor = users.length >= limit ? users[users.length - 1].username : null
-    
-    return c.json({
-      users,
-      next_cursor: nextCursor,
-      has_more: users.length >= limit
-    })
-  } catch (error: any) {
-    console.error('Get following error:', error)
-    return c.json({ error: 'Failed to get following', details: error?.message || 'Unknown error' }, 500)
-  }
-})
-
 // POST /api/users/:username/follow - follow a user (protected)
 app.post('/api/users/:username/follow', requireAuth, async (c) => {
   try {
@@ -2103,7 +1909,7 @@ app.get('/api/ads/active', async (c) => {
       return c.json({ error: 'Database not available' }, 500)
     }
 
-    const result = await c.env.DB.prepare('SELECT id, ad_type, body_text, payload_key, payload_type, thumbnail_key, click_url, adsense_slot, adsense_client, impressions, clicks, active, created_at FROM ads WHERE active = 1').all()
+    const result = await c.env.DB.prepare('SELECT id, body_text, payload_key, payload_type, thumbnail_key, click_url, impressions, clicks, active, created_at FROM ads WHERE active = 1').all()
     
     if (!result.success) {
       console.error('Database query failed:', result)
@@ -2332,14 +2138,11 @@ app.get('/api/admin/ads', requireAuth, async (c) => {
       SELECT
         ads.id,
         ads.title,
-        ads.ad_type,
         ads.body_text,
         ads.click_url,
         ads.payload_key,
         ads.payload_type,
         ads.thumbnail_key,
-        ads.adsense_slot,
-        ads.adsense_client,
         ads.impressions,
         ads.clicks,
         ads.active,
@@ -2374,46 +2177,25 @@ app.post('/api/admin/ads', requireAuth, async (c) => {
     const adId = nanoid()
 
     const contentType = c.req.header('content-type')
-    let title: string, bodyText: string, clickUrl: string | null, adType: string, adsenseSlot: string | null, adsenseClient: string | null, payloadFile: File | undefined, thumbnailFile: File | undefined
+    let title: string, body_text: string, click_url: string, payloadFile: File | undefined, thumbnailFile: File | undefined
 
     if (contentType?.includes('multipart/form-data')) {
       const formData = await c.req.formData()
       title = formData.get('title') as string
-      bodyText = formData.get('body_text') as string
-      clickUrl = formData.get('click_url') as string | null
-      adType = formData.get('ad_type') as string || 'self_hosted'
-      adsenseSlot = formData.get('adsense_slot') as string | null
-      adsenseClient = formData.get('adsense_client') as string | null
+      body_text = formData.get('body_text') as string
+      click_url = formData.get('click_url') as string
       payloadFile = formData.get('payload') as File | null || undefined
       thumbnailFile = formData.get('thumbnail') as File | null || undefined
     } else {
       const body = await c.req.json()
       title = body.title
-      bodyText = body.body_text
-      clickUrl = body.click_url
-      adType = body.ad_type || 'self_hosted'
-      adsenseSlot = body.adsense_slot
-      adsenseClient = body.adsense_client
+      body_text = body.body_text
+      click_url = body.click_url
     }
 
     // Validate required fields
-    if (!title || !bodyText) {
-      return c.json({ error: 'Title and body text are required' }, 400)
-    }
-
-    // Validate ad type
-    if (!['self_hosted', 'adsense'].includes(adType)) {
-      return c.json({ error: 'Invalid ad type' }, 400)
-    }
-
-    // Validate AdSense specific fields
-    if (adType === 'adsense' && !adsenseSlot) {
-      return c.json({ error: 'AdSense slot ID is required for AdSense ads' }, 400)
-    }
-
-    // For self-hosted ads, validate payload
-    if (adType === 'self_hosted' && !payloadFile) {
-      return c.json({ error: 'Payload file is required for self-hosted ads' }, 400)
+    if (!title || !body_text) {
+      return c.json({ error: 'title and body_text are required' }, 400)
     }
 
     let payload_key: string | null = null
@@ -2511,9 +2293,9 @@ app.post('/api/admin/ads', requireAuth, async (c) => {
     }
 
     const result = await c.env.DB.prepare(`
-      INSERT INTO ads (id, title, ad_type, body_text, click_url, payload_key, payload_type, thumbnail_key, adsense_slot, adsense_client, impressions, clicks, active, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 1, datetime('now'))
-    `).bind(adId, title, adType, bodyText, clickUrl || null, payload_key, payload_type, thumbnail_key, adsenseSlot, adsenseClient || 'ca-pub-8703789531673358').run()
+      INSERT INTO ads (id, title, body_text, click_url, payload_key, payload_type, thumbnail_key, impressions, clicks, active, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 1, datetime('now'))
+    `).bind(adId, title, body_text, click_url || null, payload_key, payload_type, thumbnail_key).run()
 
     if (!result.success) {
       console.error('Database insert failed:', result)
@@ -2566,18 +2348,6 @@ app.patch('/api/admin/ads/:id', requireAuth, async (c) => {
     if (body.click_url !== undefined) {
       updates.push('click_url = ?')
       values.push(body.click_url)
-    }
-    if (body.ad_type !== undefined) {
-      updates.push('ad_type = ?')
-      values.push(body.ad_type)
-    }
-    if (body.adsense_slot !== undefined) {
-      updates.push('adsense_slot = ?')
-      values.push(body.adsense_slot)
-    }
-    if (body.adsense_client !== undefined) {
-      updates.push('adsense_client = ?')
-      values.push(body.adsense_client)
     }
     if (body.active !== undefined) {
       updates.push('active = ?')

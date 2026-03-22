@@ -40,7 +40,12 @@ const ALLOWED_EXTENSIONS: Record<string, string> = {
   '.json': 'application/json',
   '.txt': 'text/plain',
   '.glsl': 'text/plain',
-  '.wgsl': 'text/plain'
+  '.wgsl': 'text/plain',
+  '.unityweb': 'application/octet-stream',
+  '.data': 'application/octet-stream',
+  '.wasm.code': 'application/wasm',
+  '.wasm.framework': 'application/octet-stream',
+  '.ico': 'image/x-icon'
 }
 
 export async function executeZip(

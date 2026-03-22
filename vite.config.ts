@@ -8,9 +8,18 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: 'index.html'
+      },
+      output: {
+        manualChunks: {
+          // 大型ライブラリを個別チャンクに分割
+          katex: ['katex'],
+          jszip: ['jszip'],
+          markdown: ['markdown-it'],
+          // その他のvendorライブラリ
+          vendor: ['dompurify', 'fflate', 'lucide', 'nanoid']
+        }
       }
     },
-    // Copy functions directory after build
     emptyOutDir: true
   },
   server: {
