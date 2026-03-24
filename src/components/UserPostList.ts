@@ -63,7 +63,6 @@ export function createUserPostList(props: {
     if (posts.length === 0 && !loading) {
       const emptyState = document.createElement('p')
       emptyState.className = 'font-mono'
-      emptyState.textContent = 'No posts yet. XD'
       postList.appendChild(emptyState)
       return
     }

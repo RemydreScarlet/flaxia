@@ -63,19 +63,48 @@ export class PostCard {
 
     container.appendChild(headerContainer)
 
-    // Post text
+    // Post text - 優先的にプレーンテキストで表示
     const textElement = document.createElement('div')
+    textElement.className = 'post-text'
+    textElement.style.cssText = `
+      margin-bottom: 1rem;
+      line-height: 1.6;
+      font-family: monospace;
+      color: var(--text-primary);
+      white-space: pre-wrap;
+      word-break: break-word;
+    `
+    // まずプレーンテキストで即時表示
+    textElement.textContent = this.props.post.text
     container.appendChild(textElement)
     
-    // Process text asynchronously
-    createPostText({
-      text: this.props.post.text
-    }).then(text => {
-      textElement.replaceWith(text)
-    }).catch(error => {
-      console.error('Failed to create post text:', error)
-      textElement.textContent = this.props.post.text
-    })
+    // 非同期でMarkdown処理（リッチな表示は後から）
+    if ('requestIdleCallback' in window) {
+      (window as any).requestIdleCallback(async () => {
+        try {
+          const richText = await createPostText({
+            text: this.props.post.text
+          })
+          // リッチテキストに置き換え
+          textElement.replaceWith(richText)
+        } catch (error) {
+          console.error('Failed to create rich post text:', error)
+          // エラー時はプレーンテキストのまま
+        }
+      }, { timeout: 2000 })
+    } else {
+      // フォールバック
+      setTimeout(async () => {
+        try {
+          const richText = await createPostText({
+            text: this.props.post.text
+          })
+          textElement.replaceWith(richText)
+        } catch (error) {
+          console.error('Failed to create rich post text:', error)
+        }
+      }, 500)
+    }
 
     // Tag chips (between text and PostStage)
     const hashtags = this.parseHashtags(this.props.post.hashtags)

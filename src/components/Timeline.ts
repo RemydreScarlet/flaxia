@@ -32,12 +32,16 @@ export class Timeline {
     this.element = this.createElement()
     this.setupEventListeners()
     
-    // Load NG words if user is logged in
-    if (this.props.currentUser) {
-      Promise.all([this.loadInitialPosts(), this.loadAdConfig(), this.loadNgWords()])
-    } else {
-      Promise.all([this.loadInitialPosts(), this.loadAdConfig()])
-    }
+    // Load ads first, then posts
+    this.loadAdConfig().then(() => {
+      // Load NG words if user is logged in
+      if (this.props.currentUser) {
+        this.loadInitialPosts()
+        this.loadNgWords()
+      } else {
+        this.loadInitialPosts()
+      }
+    })
   }
 
   private filterNgWords(posts: Post[], ngWords: string[]): Post[] {
@@ -143,7 +147,6 @@ export class Timeline {
     if (this.state.posts.length === 0 && !this.state.loading) {
       const emptyState = document.createElement('p')
       emptyState.className = 'font-mono'
-      emptyState.textContent = 'No posts yet. XD'
       list.appendChild(emptyState)
     }
     
@@ -328,6 +331,7 @@ export class Timeline {
 
   private resetAndLoadPosts(): void {
     this.state.posts = []
+    this.state.ads = []
     this.state.cursor = undefined
     this.state.hasMore = true
     this.postCards.clear()
@@ -336,7 +340,8 @@ export class Timeline {
     // Re-setup intersection observer for new content
     this.setupIntersectionObserver()
     
-    this.loadInitialPosts()
+    // Load ads and posts in parallel
+    Promise.all([this.loadInitialPosts(), this.loadAdConfig()])
   }
 
   private async loadInitialPosts(): Promise<void> {
@@ -356,7 +361,10 @@ export class Timeline {
       }
 
       const data = await response.json() as { posts: Post[] }
-      this.state.posts = data.posts
+      
+      // Inject ads into posts
+      const postsWithAds = injectAds(data.posts, this.state.ads, this.state.everyN)
+      this.state.posts = postsWithAds
       
       if (data.posts.length > 0) {
         this.state.cursor = data.posts[data.posts.length - 1].created_at
@@ -405,7 +413,10 @@ export class Timeline {
       }
 
       const data = await response.json() as { posts: Post[] }
-      this.state.posts = [...this.state.posts, ...data.posts]
+      
+      // Inject ads into new posts
+      const postsWithAds = injectAds(data.posts, this.state.ads, this.state.everyN)
+      this.state.posts = [...this.state.posts, ...postsWithAds]
       
       if (data.posts.length > 0) {
         this.state.cursor = data.posts[data.posts.length - 1].created_at
@@ -455,44 +466,82 @@ export class Timeline {
     const postList = this.element.querySelector('.post-list') as HTMLElement
     if (!postList) return
 
-    postList.innerHTML = ''
+    // Clear existing posts and ads
+    const existingPosts = postList.querySelectorAll('.post-card, .ad-banner')
+    existingPosts.forEach(post => post.remove())
 
-    // Apply NG word filtering
-    const filteredPosts = this.filterNgWords(this.state.posts, this.state.ngWords)
-
-    if (filteredPosts.length === 0) {
-      const emptyState = document.createElement('p')
-      emptyState.className = 'font-mono'
-      emptyState.textContent = 'No posts yet. XD'
-      postList.appendChild(emptyState)
-      return
+    // Create ad placeholders first at the correct positions
+    const adPlaceholders: HTMLElement[] = []
+    if (this.state.ads.length > 0) {
+      const shuffled = [...this.state.ads].sort(() => Math.random() - 0.5)
+      this.state.posts.forEach((item, index) => {
+        if (!isAd(item) && (index + 1) % this.state.everyN === 0) {
+          const placeholder = document.createElement('div')
+          placeholder.className = 'ad-placeholder-slot'
+          placeholder.style.cssText = `
+            position: relative;
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            background: #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #666;
+            font-size: 14px;
+          `
+          placeholder.innerHTML = 'Loading ad...'
+          postList.appendChild(placeholder)
+          adPlaceholders.push(placeholder)
+        }
+      })
     }
 
-    // Inject ads into the filtered timeline
-    const timelineItems = injectAds(filteredPosts, this.state.ads, this.state.everyN)
-
-    timelineItems.forEach((item) => {
+    // Render posts immediately for text content (prioritize speed)
+    const fragment = document.createDocumentFragment()
+    
+    this.state.posts.forEach((item, index) => {
       if (isAd(item)) {
-        // Render ad card
-        const adCard = createAdCard(item)
-        postList.appendChild(adCard)
+        // Skip ads in main rendering - they're handled by placeholders
+        return
       } else {
-        // Render post card
+        // Render text posts immediately (highest priority)
         const postCard = createPostCard({
           post: item,
-          sandboxOrigin: this.props.sandboxOrigin,
           currentUser: this.props.currentUser,
-          onDelete: (postId) => {
-            // Remove post from state
-            this.state.posts = this.state.posts.filter(p => p.id !== postId)
-            this.postCards.delete(postId)
-          }
+          sandboxOrigin: this.props.sandboxOrigin,
+          initialMode: 'preview' as any
         })
         
-        this.postCards.set(item.id, postCard)
-        postList.appendChild(postCard.getElement())
+        // Insert post and check if we need to add an ad placeholder after it
+        fragment.appendChild(postCard.getElement())
+        
+        if ((index + 1) % this.state.everyN === 0 && adPlaceholders.length > 0) {
+          const adPlaceholder = adPlaceholders.shift()
+          if (adPlaceholder) {
+            fragment.appendChild(adPlaceholder)
+          }
+        }
       }
     })
+    
+    // Add all content at once for better performance
+    postList.appendChild(fragment)
+    
+    // Now replace placeholders with actual ads
+    setTimeout(() => {
+      const placeholders = postList.querySelectorAll('.ad-placeholder-slot')
+      const shuffled = [...this.state.ads].sort(() => Math.random() - 0.5)
+      
+      placeholders.forEach((placeholder, index) => {
+        if (shuffled[index % shuffled.length]) {
+          const adCard = createAdCard(shuffled[index % shuffled.length])
+          placeholder.replaceWith(adCard)
+        }
+      })
+    }, 100) // Small delay to ensure DOM is ready
+    
+    // Update loading state
+    this.updateLoadMoreButton()
   }
 
   private updateLoadMoreButton(): void {

@@ -94,7 +94,7 @@ export interface TimelineProps {
 export interface TimelineState {
   mode: 'following' | 'foryou'
   hashtag: string
-  posts: Post[]
+  posts: TimelineItem[]
   ads: Ad[]
   everyN: number
   cursor?: string

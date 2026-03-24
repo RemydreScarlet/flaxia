@@ -20,10 +20,12 @@
     "dev:test": "wrangler pages dev dist --d1=DB_TEST --kv=RATE_LIMIT_TEST --port 8788 --var BASE_URL:http://localhost:8788"
   },
   "dependencies": {
+    "@cloudflare/kv-asset-handler": "^0.4.2",
     "better-auth": "^1.5.4",
     "dompurify": "^3.0.0",
     "fflate": "^0.8.2",
     "hono": "^4.0.0",
+    "imagesize": "^1.0.0",
     "jszip": "^3.10.1",
     "katex": "^0.16.0",
     "lucide": "^0.300.0",

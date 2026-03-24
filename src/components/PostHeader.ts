@@ -18,14 +18,22 @@ export function createPostHeader(props: PostHeaderProps): HTMLElement {
   avatar.style.background = 'var(--accent)'
   avatar.style.flexShrink = '0'
   
-  // Show avatar image if available, otherwise show initial
+  // 優先的に初期文字を表示（アバター画像は後で非同期読み込み）
+  avatar.textContent = props.username.charAt(0).toUpperCase()
+  
+  // アバター画像は遅延読み込み（テキスト表示を優先）
   if (props.avatar_key) {
-    avatar.style.backgroundImage = `url(/api/images/${props.avatar_key})`
-    avatar.style.backgroundSize = 'cover'
-    avatar.style.backgroundPosition = 'center'
-    avatar.textContent = ''
-  } else {
-    avatar.textContent = props.username.charAt(0).toUpperCase()
+    // requestIdleCallback を使ってアイコン読み込みを遅延
+    if ('requestIdleCallback' in window) {
+      (window as any).requestIdleCallback(() => {
+        loadAvatarImage(avatar, props.avatar_key!)
+      }, { timeout: 1000 })
+    } else {
+      // フォールバック：setTimeoutで遅延読み込み
+      setTimeout(() => {
+        loadAvatarImage(avatar, props.avatar_key!)
+      }, 100)
+    }
   }
   
   const displayName = document.createElement('span')
@@ -74,6 +82,23 @@ export function createPostHeader(props: PostHeaderProps): HTMLElement {
   })
   
   return header
+}
+
+// アバター画像を非同期で読み込む関数
+function loadAvatarImage(avatar: HTMLElement, avatarKey: string): void {
+  const img = new Image()
+  img.onload = () => {
+    // 画像読み込み完了後に背景画像を設定
+    avatar.style.backgroundImage = `url(/api/images/${avatarKey})`
+    avatar.style.backgroundSize = 'cover'
+    avatar.style.backgroundPosition = 'center'
+    avatar.textContent = ''
+  }
+  img.onerror = () => {
+    // 読み込み失敗時は初期文字のまま
+    console.warn(`Failed to load avatar: ${avatarKey}`)
+  }
+  img.src = `/api/images/${avatarKey}`
 }
 
 function formatTimestamp(isoString: string): string {
