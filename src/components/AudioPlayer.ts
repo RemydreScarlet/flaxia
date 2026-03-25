@@ -1,4 +1,5 @@
 import { GifPreviewProps } from '../types/post.js'
+import { AudioVisualizer } from './AudioVisualizer.js'
 
 export function createAudioPlayer(props: GifPreviewProps): HTMLElement {
   const container = document.createElement('div')
@@ -19,6 +20,13 @@ export function createAudioPlayer(props: GifPreviewProps): HTMLElement {
   loading.textContent = 'Loading audio...'
   container.appendChild(loading)
   
+  // Create visualizer canvas
+  const visualizerCanvas = document.createElement('canvas')
+  visualizerCanvas.className = 'audio-visualizer-canvas'
+  visualizerCanvas.width = 400
+  visualizerCanvas.height = 120
+  container.appendChild(visualizerCanvas)
+  
   const audio = document.createElement('audio')
   audio.className = 'audio-player-element'
   audio.controls = true
@@ -35,10 +43,22 @@ export function createAudioPlayer(props: GifPreviewProps): HTMLElement {
   // Use the API proxy endpoint for audio
   const audioUrl = `/api/audio/${props.gifKey}`
   
+  // Initialize visualizer after audio element is ready
+  let visualizer: AudioVisualizer | null = null
+  
   // Force Chrome to load the audio element properly
   setTimeout(() => {
     audio.src = audioUrl
     audio.load() // Explicitly call load() for Chrome
+    
+    // Initialize visualizer after audio source is set
+    if (audio.src) {
+      try {
+        visualizer = new AudioVisualizer(audio, visualizerCanvas)
+      } catch (error) {
+        console.warn('Failed to initialize audio visualizer:', error)
+      }
+    }
   }, 100)
   
   // Handle audio load success
@@ -68,6 +88,7 @@ export function createAudioPlayer(props: GifPreviewProps): HTMLElement {
     console.error('Audio error message:', audio.error?.message)
     loading.style.display = 'none'
     audio.style.display = 'none'
+    visualizerCanvas.style.display = 'none'
     const fallback = document.createElement('div')
     fallback.className = 'audio-player-error'
     fallback.textContent = `Audio failed to load: ${audio.error?.message || 'Unknown error'}`
@@ -93,6 +114,15 @@ export function createAudioPlayer(props: GifPreviewProps): HTMLElement {
   }, { once: false })
   
   container.appendChild(audio)
+  
+  // Cleanup function for when the component is destroyed
+  container.addEventListener('DOMNodeRemoved', () => {
+    if (visualizer) {
+      visualizer.cleanup()
+      visualizer = null
+    }
+  })
+  
   return container
 }
 
