@@ -4,6 +4,7 @@ import { processText, renderMathElements, linkifyHashtags, linkifyUrls } from '.
 import { clearMeCache } from '../lib/auth-cache.js'
 import { showSignInPrompt } from './SignInPrompt.js'
 import { createUserPostList, CurrentUser } from './UserPostList.js'
+import { safeRemoveFromBody } from '../lib/dom-utils.js'
 
 interface ProfilePageProps {
   username: string
@@ -403,7 +404,7 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
       initialTab: 'followers',
       currentUser: currentUser,
       onClose: () => {
-        document.body.removeChild(modal.getElement())
+        safeRemoveFromBody(modal.getElement())
       }
     })
     document.body.appendChild(modal.getElement())
@@ -422,7 +423,7 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
       initialTab: 'following',
       currentUser: currentUser,
       onClose: () => {
-        document.body.removeChild(modal.getElement())
+        safeRemoveFromBody(modal.getElement())
       }
     })
     document.body.appendChild(modal.getElement())

@@ -145,11 +145,13 @@ export async function verifyHttpSignature(request: Request, publicKeyPem: string
     console.log('Base64 validation passed, attempting decode...')
     
     try {
-      // Use Buffer instead of atob() for Cloudflare Functions compatibility
-      const signatureBuffer = Buffer.from(signatureBase64, 'base64')
-      console.log('Base64 decode successful, signature length:', signatureBuffer.length)
-      
-      const signatureArray = new Uint8Array(signatureBuffer)
+      // Use atob() for Cloudflare Functions compatibility
+      const signatureString = atob(signatureBase64)
+      const signatureArray = new Uint8Array(signatureString.length)
+      for (let i = 0; i < signatureString.length; i++) {
+        signatureArray[i] = signatureString.charCodeAt(i)
+      }
+      console.log('Base64 decode successful, signature length:', signatureArray.length)
       console.log('Signature array created successfully')
 
       // Verify signature
@@ -280,10 +282,10 @@ async function importPrivateKey(pem: string): Promise<CryptoKey> {
   const pemContents = pem.substring(pemHeader.length, pem.length - pemFooter.length)
     .replace(/\n/g, '')
 
-  const binaryDer = atob(pemContents)
-  const binaryDerArray = new Uint8Array(binaryDer.length)
-  for (let i = 0; i < binaryDer.length; i++) {
-    binaryDerArray[i] = binaryDer.charCodeAt(i)
+  const binaryDerString = atob(pemContents)
+  const binaryDerArray = new Uint8Array(binaryDerString.length)
+  for (let i = 0; i < binaryDerString.length; i++) {
+    binaryDerArray[i] = binaryDerString.charCodeAt(i)
   }
 
   return crypto.subtle.importKey(
@@ -305,6 +307,7 @@ export async function signRequest(
   url: string,
   body: string,
   privateKeyPem: string,
+  publicKeyPem: string,
   keyId: string
 ): Promise<Headers> {
   const headers = new Headers()
@@ -340,10 +343,15 @@ export async function signRequest(
   console.log(signingString)
 
   // Import private key
+  console.log('Importing private key for signing...')
   const privateKey = await importPrivateKey(privateKeyPem)
+  console.log('Private key imported successfully')
 
   // Sign
   const signingArray = encoder.encode(signingString)
+  console.log('Signing string length:', signingString.length)
+  console.log('Signing string (first 200 chars):', signingString.substring(0, 200))
+  
   const signatureBuffer = await crypto.subtle.sign(
     'RSASSA-PKCS1-v1_5',
     privateKey,
@@ -353,6 +361,27 @@ export async function signRequest(
   // Convert signature to base64 (not base64url)
   const signatureArray = new Uint8Array(signatureBuffer)
   const signature = btoa(String.fromCharCode(...signatureArray))
+  
+  console.log('Signature generated successfully, length:', signature.length)
+  console.log('Signature (first 50 chars):', signature.substring(0, 50))
+
+  // Verify our own signature for debugging
+  try {
+    console.log('Verifying our own signature...')
+    const publicKey = await importPublicKey(publicKeyPem)
+    const isValid = await crypto.subtle.verify(
+      'RSASSA-PKCS1-v1_5',
+      publicKey,
+      signatureArray,
+      signingArray
+    )
+    console.log('Self-verification result:', isValid)
+    if (!isValid) {
+      console.error('WARNING: Our own signature verification failed!')
+    }
+  } catch (error) {
+    console.error('Self-verification error:', error)
+  }
 
   // Set Signature header
   headers.set('Signature', `keyId="${keyId}",algorithm="rsa-sha256",headers="(request-target) host date digest",signature="${signature}"`)

@@ -1,4 +1,5 @@
 import { GifPreviewProps } from '../types/post.js'
+import { safeRemoveFromBody } from '../lib/dom-utils.js'
 
 export function createImagePreview(props: GifPreviewProps): HTMLElement {
   const container = document.createElement('div')
@@ -189,7 +190,7 @@ function createImageOverlay(imageUrl: string, postId: string): void {
   
   // Close handlers
   const closeOverlay = () => {
-    document.body.removeChild(overlay)
+    safeRemoveFromBody(overlay)
   }
   
   closeButton.onclick = (e) => {

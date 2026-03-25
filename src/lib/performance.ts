@@ -22,50 +22,66 @@ export class PerformanceMonitor {
 
   startMonitoring(): void {
     if (typeof window === 'undefined' || !window.PerformanceObserver) {
+      console.warn('Performance monitoring not available in this browser')
       return
     }
 
     try {
-      // Monitor CLS
-      const clsObserver = new PerformanceObserver((list) => {
-        for (const entry of list.getEntries()) {
-          const layoutShiftEntry = entry as any
-          if (!layoutShiftEntry.hadRecentInput) {
-            this.metrics.cls = (this.metrics.cls || 0) + layoutShiftEntry.value
+      // Check for layout-shift support before observing
+      if (PerformanceObserver.supportedEntryTypes.includes('layout-shift')) {
+        const clsObserver = new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            const layoutShiftEntry = entry as any
+            if (!layoutShiftEntry.hadRecentInput) {
+              this.metrics.cls = (this.metrics.cls || 0) + layoutShiftEntry.value
+            }
           }
-        }
-      })
-      clsObserver.observe({ entryTypes: ['layout-shift'] })
-      this.observers.push(clsObserver)
+        })
+        clsObserver.observe({ entryTypes: ['layout-shift'] })
+        this.observers.push(clsObserver)
+      } else {
+        console.warn('layout-shift entry type not supported in this browser')
+      }
 
-      // Monitor LCP
-      const lcpObserver = new PerformanceObserver((list) => {
-        const entries = list.getEntries()
-        const lastEntry = entries[entries.length - 1]
-        if (lastEntry) {
-          this.metrics.lcp = lastEntry.startTime
-        }
-      })
-      lcpObserver.observe({ entryTypes: ['largest-contentful-paint'] })
-      this.observers.push(lcpObserver)
+      // Check for largest-contentful-paint support
+      if (PerformanceObserver.supportedEntryTypes.includes('largest-contentful-paint')) {
+        const lcpObserver = new PerformanceObserver((list) => {
+          const entries = list.getEntries()
+          const lastEntry = entries[entries.length - 1]
+          if (lastEntry) {
+            this.metrics.lcp = lastEntry.startTime
+          }
+        })
+        lcpObserver.observe({ entryTypes: ['largest-contentful-paint'] })
+        this.observers.push(lcpObserver)
+      } else {
+        console.warn('largest-contentful-paint entry type not supported in this browser')
+      }
 
-      // Monitor FID
-      const fidObserver = new PerformanceObserver((list) => {
-        for (const entry of list.getEntries()) {
-          this.metrics.fid = (entry as any).processingStart - entry.startTime
-        }
-      })
-      fidObserver.observe({ entryTypes: ['first-input'] })
-      this.observers.push(fidObserver)
+      // Check for first-input support
+      if (PerformanceObserver.supportedEntryTypes.includes('first-input')) {
+        const fidObserver = new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            this.metrics.fid = (entry as any).processingStart - entry.startTime
+          }
+        })
+        fidObserver.observe({ entryTypes: ['first-input'] })
+        this.observers.push(fidObserver)
+      } else {
+        console.warn('first-input entry type not supported in this browser')
+      }
 
-      // Monitor TTFB
+      // Monitor TTFB (works in most browsers)
       const navigationEntries = performance.getEntriesByType('navigation')
       if (navigationEntries.length > 0) {
         const navEntry = navigationEntries[0] as PerformanceNavigationTiming
         this.metrics.ttfb = navEntry.responseStart - navEntry.requestStart
+      } else {
+        console.warn('navigation timing not available in this browser')
       }
     } catch (error) {
-      console.warn('Performance monitoring not fully supported:', error)
+      console.warn('Performance monitoring setup failed:', error)
+      // Don't re-throw - graceful degradation
     }
   }
 

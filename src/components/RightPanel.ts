@@ -1,3 +1,6 @@
+import { createSearchResults } from './SearchResults.js'
+import { safeRemoveFromBody } from '../lib/dom-utils.js'
+
 export interface RightPanelProps {
   onSearch?: (query: string) => void
   onFollowUser?: (userId: string) => void
@@ -141,7 +144,7 @@ export class RightPanel {
         posts: postsData.results || [],
         users: usersData.results || [],
         onClose: () => {
-          document.body.removeChild(searchResults)
+          safeRemoveFromBody(searchResults)
         }
       })
 

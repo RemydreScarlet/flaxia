@@ -1,5 +1,6 @@
 import { createPostCard } from './PostCard.js'
 import { Post } from '../types/post.js'
+import { safeRemoveFromBody } from '../lib/dom-utils.js'
 
 export interface ExplorePageProps {
   tag?: string
@@ -139,7 +140,7 @@ export class ExplorePage {
         posts: postsData.results || [],
         users: usersData.results || [],
         onClose: () => {
-          document.body.removeChild(searchResults)
+          safeRemoveFromBody(searchResults)
         }
       })
 

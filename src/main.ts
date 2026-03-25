@@ -17,6 +17,7 @@ import { createAdminUsersTab } from './components/AdminUsersTab.js'
 import { createAdminAdsTab } from './components/AdminAdsTab.js'
 import { createSettingsPage } from './components/SettingsPage.js'
 import { initPerformanceMonitoring } from './lib/performance.js'
+import { safeRemoveFromBody } from './lib/dom-utils.js'
 
 console.log('Flaxia initialized')
 
@@ -598,10 +599,10 @@ document.addEventListener('DOMContentLoaded', async () => {
               // Show trending modal
               const trendingModal = createTrendingModal({
                 onClose: () => {
-                  document.body.removeChild(trendingModal)
+                  safeRemoveFromBody(trendingModal)
                 },
                 onTagClick: (tag) => {
-                  document.body.removeChild(trendingModal)
+                  safeRemoveFromBody(trendingModal)
                   window.history.pushState({}, '', `/explore?tag=${encodeURIComponent(tag)}`)
                   navigateTo('explore', undefined, undefined, tag)
                 }
@@ -693,10 +694,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             } else if (item === 'trending') {
               const trendingModal = createTrendingModal({
                 onClose: () => {
-                  document.body.removeChild(trendingModal)
+                  safeRemoveFromBody(trendingModal)
                 },
                 onTagClick: (tag) => {
-                  document.body.removeChild(trendingModal)
+                  safeRemoveFromBody(trendingModal)
                   window.history.pushState({}, '', `/explore?tag=${encodeURIComponent(tag)}`)
                   navigateTo('explore', undefined, undefined, tag)
                 }
@@ -788,10 +789,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             } else if (item === 'trending') {
               const trendingModal = createTrendingModal({
                 onClose: () => {
-                  document.body.removeChild(trendingModal)
+                  safeRemoveFromBody(trendingModal)
                 },
                 onTagClick: (tag) => {
-                  document.body.removeChild(trendingModal)
+                  safeRemoveFromBody(trendingModal)
                   window.history.pushState({}, '', `/explore?tag=${encodeURIComponent(tag)}`)
                   navigateTo('explore', undefined, undefined, tag)
                 }
@@ -925,10 +926,10 @@ document.addEventListener('DOMContentLoaded', async () => {
               // Show trending modal
               const trendingModal = createTrendingModal({
                 onClose: () => {
-                  document.body.removeChild(trendingModal)
+                  safeRemoveFromBody(trendingModal)
                 },
                 onTagClick: (tag) => {
-                  document.body.removeChild(trendingModal)
+                  safeRemoveFromBody(trendingModal)
                   window.history.pushState({}, '', `/explore?tag=${encodeURIComponent(tag)}`)
                   navigateTo('explore', undefined, undefined, tag)
                 }

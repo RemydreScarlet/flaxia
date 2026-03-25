@@ -69,9 +69,9 @@ async function handleFollowActivity(activity: any, username: string, actorId: st
 
   // Send Accept activity automatically
   try {
-    // Get user's private key for signing
+    // Get user's keys for signing
     const keyResult = await env.DB.prepare(`
-      SELECT ak.private_key_pem FROM actor_keys ak
+      SELECT ak.private_key_pem, ak.public_key_pem FROM actor_keys ak
       JOIN users u ON u.id = ak.user_id
       WHERE u.username = ?
     `).bind(username).first()
@@ -82,6 +82,7 @@ async function handleFollowActivity(activity: any, username: string, actorId: st
     }
 
     const privateKeyPem = keyResult.private_key_pem as string
+    const publicKeyPem = keyResult.public_key_pem as string
     const keyId = `${env.BASE_URL}/actors/${username}#main-key`
 
     console.log('Using inbox URL:', inboxUrl)
@@ -101,7 +102,7 @@ async function handleFollowActivity(activity: any, username: string, actorId: st
     console.log('Accept activity:', JSON.stringify(acceptActivity, null, 2))
 
     const body = JSON.stringify(acceptActivity)
-    const headers = await signRequest(inboxUrl, body, privateKeyPem, keyId)
+    const headers = await signRequest(inboxUrl, body, privateKeyPem, publicKeyPem, keyId)
 
     console.log('Sending Accept activity to:', inboxUrl)
     console.log('Headers:', Object.fromEntries(headers.entries()))
@@ -114,6 +115,9 @@ async function handleFollowActivity(activity: any, username: string, actorId: st
 
     if (response.ok) {
       console.log('Accept activity sent successfully to:', actorId, 'status:', response.status)
+    console.log('Response headers:', Object.fromEntries(response.headers.entries()))
+    const responseText = await response.text()
+    console.log('Response body:', responseText.substring(0, 500))
     } else {
       const responseText = await response.text()
       console.error('Failed to send Accept activity:', {
@@ -190,19 +194,22 @@ app.post('/', async (c) => {
       return c.json({ error: 'Activity must have an actor' }, 400)
     }
 
-    console.log('Skipping signature verification for testing')
-    // const publicKeyPem = await fetchActorPublicKey(actorId)
-    // if (!publicKeyPem) {
-    //   console.error('Could not fetch public key for actor:', actorId)
-    //   return c.json({ error: 'Could not verify actor' }, 401)
-    // }
+    const publicKeyPem = await fetchActorPublicKey(actorId)
+    if (!publicKeyPem) {
+      console.error('Could not fetch public key for actor:', actorId)
+      return c.json({ error: 'Could not verify actor' }, 401)
+    }
 
-    const signatureValid = true // await verifyHttpSignature(c.req.raw, publicKeyPem)
+    const signatureValid = await verifyHttpSignature(c.req.raw, publicKeyPem)
     console.log('Signature verification result:', signatureValid)
 
-    console.log('Skipping digest verification for testing')
-    const digestValid = true // await verifyDigest(c.req.raw, body)
+    const digestValid = await verifyDigest(c.req.raw, body)
     console.log('Digest verification result:', digestValid)
+
+    if (!signatureValid || !digestValid) {
+      console.error('Signature or digest verification failed')
+      return c.json({ error: 'Invalid signature or digest' }, 401)
+    }
 
     const message: InboxMessage = {
       type: 'inbox',

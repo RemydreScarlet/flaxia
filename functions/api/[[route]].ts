@@ -1254,6 +1254,176 @@ app.get('/api/users/:username', async (c) => {
   }
 })
 
+// GET /api/users/:username/followers - get paginated followers list
+app.get('/api/users/:username/followers', async (c) => {
+  try {
+    const username = c.req.param('username')
+    const cursor = c.req.query('cursor')
+    const limit = Math.min(Number(c.req.query('limit') || '20'), 50)
+    
+    if (!username) {
+      return c.json({ error: 'Username required' }, 400)
+    }
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    // Get target user
+    const user = await c.env.DB.prepare(`
+      SELECT id, username, display_name, bio, avatar_key, created_at 
+      FROM users 
+      WHERE username = ? COLLATE NOCASE
+    `).bind(username).first()
+    
+    if (!user) {
+      return c.json({ error: 'User not found' }, 404)
+    }
+    
+    // Get current user for follow status (optional)
+    let currentUserId: string | null = null
+    const token = getSessionToken(c.req.raw)
+    const sessionData = token ? await getSession(c.env, token) : null
+    if (sessionData) {
+      currentUserId = sessionData.user.id
+    }
+    
+    // Build query for followers with cursor-based pagination
+    let query = `
+      SELECT 
+        u.id, u.username, u.display_name, u.avatar_key,
+        u.created_at,
+        (SELECT COUNT(*) FROM follows WHERE followee_id = u.id) as followers_count,
+        (SELECT COUNT(*) FROM follows WHERE follower_id = u.id) as following_count,
+        CASE WHEN ? IS NOT NULL AND EXISTS (
+          SELECT 1 FROM follows f2 
+          WHERE f2.follower_id = ? AND f2.followee_id = u.id
+        ) THEN 1 ELSE 0 END as is_following
+      FROM follows f
+      JOIN users u ON f.follower_id = u.id
+      WHERE f.followee_id = ?
+    `
+    
+    const params: any[] = [currentUserId, currentUserId, user.id]
+    
+    if (cursor) {
+      query += ` AND u.username > ?`
+      params.push(cursor)
+    }
+    
+    query += ` ORDER BY u.username ASC LIMIT ?`
+    params.push(limit + 1) // Get one extra to check if there are more
+    
+    const results = await c.env.DB.prepare(query).bind(...params).all()
+    
+    if (!results.results) {
+      return c.json({ 
+        users: [], 
+        next_cursor: null, 
+        has_more: false 
+      })
+    }
+    
+    const users = results.results.slice(0, limit)
+    const hasMore = results.results.length > limit
+    const nextCursor = hasMore ? (users[users.length - 1] as any).username : null
+    
+    return c.json({
+      users,
+      next_cursor: nextCursor,
+      has_more: hasMore
+    })
+  } catch (error: any) {
+    console.error('Get followers error:', error)
+    return c.json({ error: 'Failed to get followers', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
+// GET /api/users/:username/following - get paginated following list
+app.get('/api/users/:username/following', async (c) => {
+  try {
+    const username = c.req.param('username')
+    const cursor = c.req.query('cursor')
+    const limit = Math.min(Number(c.req.query('limit') || '20'), 50)
+    
+    if (!username) {
+      return c.json({ error: 'Username required' }, 400)
+    }
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+    
+    // Get target user
+    const user = await c.env.DB.prepare(`
+      SELECT id, username, display_name, bio, avatar_key, created_at 
+      FROM users 
+      WHERE username = ? COLLATE NOCASE
+    `).bind(username).first()
+    
+    if (!user) {
+      return c.json({ error: 'User not found' }, 404)
+    }
+    
+    // Get current user for follow status (optional)
+    let currentUserId: string | null = null
+    const token = getSessionToken(c.req.raw)
+    const sessionData = token ? await getSession(c.env, token) : null
+    if (sessionData) {
+      currentUserId = sessionData.user.id
+    }
+    
+    // Build query for following with cursor-based pagination
+    let query = `
+      SELECT 
+        u.id, u.username, u.display_name, u.avatar_key,
+        u.created_at,
+        (SELECT COUNT(*) FROM follows WHERE followee_id = u.id) as followers_count,
+        (SELECT COUNT(*) FROM follows WHERE follower_id = u.id) as following_count,
+        CASE WHEN ? IS NOT NULL AND EXISTS (
+          SELECT 1 FROM follows f2 
+          WHERE f2.follower_id = ? AND f2.followee_id = u.id
+        ) THEN 1 ELSE 0 END as is_following
+      FROM follows f
+      JOIN users u ON f.followee_id = u.id
+      WHERE f.follower_id = ?
+    `
+    
+    const params: any[] = [currentUserId, currentUserId, user.id]
+    
+    if (cursor) {
+      query += ` AND u.username > ?`
+      params.push(cursor)
+    }
+    
+    query += ` ORDER BY u.username ASC LIMIT ?`
+    params.push(limit + 1) // Get one extra to check if there are more
+    
+    const results = await c.env.DB.prepare(query).bind(...params).all()
+    
+    if (!results.results) {
+      return c.json({ 
+        users: [], 
+        next_cursor: null, 
+        has_more: false 
+      })
+    }
+    
+    const users = results.results.slice(0, limit)
+    const hasMore = results.results.length > limit
+    const nextCursor = hasMore ? (users[users.length - 1] as any).username : null
+    
+    return c.json({
+      users,
+      next_cursor: nextCursor,
+      has_more: hasMore
+    })
+  } catch (error: any) {
+    console.error('Get following error:', error)
+    return c.json({ error: 'Failed to get following', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
 // PATCH /api/users/me - update current user profile (protected)
 app.patch('/api/users/me', requireAuth, async (c) => {
   try {
@@ -1909,7 +2079,7 @@ app.get('/api/ads/active', async (c) => {
       return c.json({ error: 'Database not available' }, 500)
     }
 
-    const result = await c.env.DB.prepare('SELECT id, body_text, payload_key, payload_type, thumbnail_key, click_url, impressions, clicks, active, created_at FROM ads WHERE active = 1').all()
+    const result = await c.env.DB.prepare('SELECT id, body_text, payload_key, payload_type, thumbnail_key, click_url, impressions, clicks, active, created_at, adsense_slot, adsense_client, ad_type FROM ads WHERE active = 1').all()
     
     if (!result.success) {
       console.error('Database query failed:', result)
@@ -3980,27 +4150,29 @@ app.post('/api/users/:username/inbox', async (c) => {
     try {
       console.log('Starting signature verification...')
       
-      // Temporarily skip signature verification for testing Follow processing
       const signatureHeader = c.req.raw.headers.get('Signature')
-      if (signatureHeader) {
-        console.log('Signature header found - but skipping verification for testing')
-        isValidSignature = true // Temporarily allow all signed requests
-      } else {
-        console.log('No signature header - allowing for debugging')
-        isValidSignature = true // Temporarily allow unsigned requests
+      if (!signatureHeader) {
+        console.error('No signature header found')
+        return c.json({ error: 'Missing signature' }, 401)
       }
+
+      const publicKeyPem = await fetchActorPublicKey(actor)
+      if (!publicKeyPem) {
+        console.error('Could not fetch public key for actor:', actor)
+        return c.json({ error: 'Could not verify actor' }, 401)
+      }
+
+      isValidSignature = await verifyHttpSignature(c.req.raw, publicKeyPem)
+      console.log('Signature verification result:', isValidSignature)
     } catch (error: any) {
       console.error('Signature verification error:', error?.message || error)
       console.error('Full error:', error)
-      isValidSignature = true // Temporarily allow all requests for debugging
+      return c.json({ error: 'Signature verification failed' }, 401)
     }
-    
-    console.log('Signature verification result:', isValidSignature)
     
     if (!isValidSignature) {
       console.error('Signature verification failed')
-      // Temporarily allow unsigned requests for debugging
-      // return c.json({ error: 'Invalid signature' }, 401)
+      return c.json({ error: 'Invalid signature' }, 401)
     }
 
     // Process activity based on type
@@ -4097,9 +4269,9 @@ app.post('/api/users/:username/inbox', async (c) => {
         try {
           console.log('Sending Accept activity for follow from:', actor, 'to user:', username)
           
-          // Get user's private key for signing
+          // Get user's keys for signing
           const keyResult = await c.env.DB.prepare(`
-            SELECT ak.private_key_pem FROM actor_keys ak
+            SELECT ak.private_key_pem, ak.public_key_pem FROM actor_keys ak
             JOIN users u ON u.id = ak.user_id
             WHERE u.username = ?
           `).bind(username).first()
@@ -4108,6 +4280,7 @@ app.post('/api/users/:username/inbox', async (c) => {
             console.error('No private key found for user:', username)
           } else {
             const privateKeyPem = keyResult.private_key_pem as string
+            const publicKeyPem = keyResult.public_key_pem as string
             const keyId = `${c.env.BASE_URL}/actors/${username}#main-key`
 
             // Get follower's inbox URL
@@ -4143,7 +4316,7 @@ app.post('/api/users/:username/inbox', async (c) => {
             console.log('Accept activity:', JSON.stringify(acceptActivity, null, 2))
 
             const body = JSON.stringify(acceptActivity)
-            const headers = await signRequest(inboxUrl, body, privateKeyPem, keyId)
+            const headers = await signRequest(inboxUrl, body, privateKeyPem, publicKeyPem, keyId)
 
             console.log('Sending Accept activity to:', inboxUrl)
             console.log('Headers:', Object.fromEntries(headers.entries()))

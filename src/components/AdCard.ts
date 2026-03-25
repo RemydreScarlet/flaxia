@@ -172,7 +172,12 @@ function mountAdSense(ad: Ad, placeholder: HTMLElement): void {
   // Create AdSense ad container
   const adContainer = document.createElement('ins')
   adContainer.className = 'adsbygoogle'
-  adContainer.style.cssText = 'display:block'
+  adContainer.style.cssText = `
+    display: block !important;
+    width: 100%;
+    min-width: 250px;
+    min-height: 100px;
+  `
   adContainer.setAttribute('data-ad-client', ad.adsense_client || 'ca-pub-8703789531673358')
   adContainer.setAttribute('data-ad-slot', ad.adsense_slot || '6262283560')
   adContainer.setAttribute('data-ad-format', 'auto')
