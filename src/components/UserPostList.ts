@@ -94,7 +94,7 @@ export function createUserPostList(props: {
       intersectionObserver.disconnect()
     }
 
-    // Create new intersection observer
+    // Create new intersection observer optimized for mobile
     intersectionObserver = new IntersectionObserver(
       (entries) => {
         const entry = entries[0]
@@ -104,8 +104,8 @@ export function createUserPostList(props: {
       },
       {
         root: null, // Use viewport as root
-        rootMargin: '100px', // Start loading 100px before sentinel comes into view
-        threshold: 0.1 // Trigger when 10% of sentinel is visible
+        rootMargin: '300px', // Start loading 300px before sentinel comes into view (better for mobile)
+        threshold: 0.1 // Trigger when 10% is visible (more reliable than 0.1)
       }
     )
 
@@ -152,7 +152,7 @@ export function createUserPostList(props: {
         cursor = data.posts[data.posts.length - 1].created_at
       }
       
-      hasMore = data.posts.length === 20 && data.posts.length > 0
+      hasMore = data.posts.length === 20
       renderPosts()
 
     } catch (error) {
@@ -189,7 +189,7 @@ export function createUserPostList(props: {
         cursor = data.posts[data.posts.length - 1].created_at
       }
       
-      hasMore = data.posts.length === 20 && data.posts.length > 0
+      hasMore = data.posts.length === 20
       renderPosts()
 
     } catch (error) {

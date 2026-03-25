@@ -1845,7 +1845,7 @@ app.get('/api/posts', async (c) => {
           )
           AND p.status = 'published' AND p.hidden = 0 AND p.parent_id IS NULL AND p.created_at < ?
           ORDER BY p.created_at DESC LIMIT ?`
-        params.push(currentUserId, currentUserId, cursor)
+        params.unshift(cursor)
       }
     } else if (username) {
       // Username filter - show posts from specific user

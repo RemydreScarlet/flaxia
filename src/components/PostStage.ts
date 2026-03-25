@@ -432,8 +432,8 @@ async function updateStageContent(container: HTMLElement, props: PostStageProps)
     
     container.appendChild(mediaElement)
     
-    // Add click hint for non-ZIP and non-SWF files
-    if (!props.post.payload_key?.startsWith('zip/') && !props.post.swf_key?.startsWith('swf/')) {
+    // Add click hint only for executable content (not images or audio)
+    if (!props.post.payload_key?.startsWith('zip/') && !props.post.swf_key?.startsWith('swf/') && !props.post.gif_key) {
       const hint = document.createElement('div')
       hint.className = 'stage-hint'
       hint.textContent = 'Click to run'

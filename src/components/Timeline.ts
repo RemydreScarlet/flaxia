@@ -305,23 +305,19 @@ export class Timeline {
       this.intersectionObserver.disconnect()
     }
 
-    // Create new intersection observer with performance optimizations
+    // Create new intersection observer optimized for mobile
     this.intersectionObserver = new IntersectionObserver(
       (entries) => {
         const entry = entries[0]
         if (entry.isIntersecting && !this.state.loading && this.state.hasMore) {
-          // Use requestIdleCallback for better performance
-          if ('requestIdleCallback' in window) {
-            requestIdleCallback(() => this.loadMorePosts(), { timeout: 1000 })
-          } else {
-            setTimeout(() => this.loadMorePosts(), 100)
-          }
+          // Immediate loading for better mobile performance
+          this.loadMorePosts()
         }
       },
       {
         root: null, // Use viewport as root
-        rootMargin: '200px', // Start loading 200px before sentinel comes into view
-        threshold: 0.01 // Trigger as soon as any part is visible
+        rootMargin: '300px', // Start loading 300px before sentinel comes into view (better for mobile)
+        threshold: 0.1 // Trigger when 10% is visible (more reliable than 0.01)
       }
     )
 
@@ -370,7 +366,7 @@ export class Timeline {
         this.state.cursor = data.posts[data.posts.length - 1].created_at
       }
       
-      this.state.hasMore = data.posts.length === 20 && data.posts.length > 0
+      this.state.hasMore = data.posts.length === 20
       this.renderPostList()
 
     } catch (error) {
@@ -422,7 +418,7 @@ export class Timeline {
         this.state.cursor = data.posts[data.posts.length - 1].created_at
       }
       
-      this.state.hasMore = data.posts.length === 20 && data.posts.length > 0
+      this.state.hasMore = data.posts.length === 20
       this.renderPostList()
 
     } catch (error) {

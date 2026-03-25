@@ -237,7 +237,7 @@ function mountAdStage(ad: Ad, placeholder: HTMLElement): void {
     // Show click-to-run button
     const runButton = createExecutionButton({
       postId: ad.id,
-      label: '🚀 Click to Run',
+      label: '🚀 Play',
       icon: '📦',
       thumbnailUrl: ad.thumbnail_key ? `/api/thumbnail/${ad.id}` : undefined,
       onClick: async () => {
