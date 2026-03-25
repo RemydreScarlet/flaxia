@@ -1,7 +1,7 @@
 export interface AdminAd {
   id: string
   title: string
-  ad_type: 'self_hosted' | 'adsense'
+  ad_type: 'self_hosted' | 'adsense' | 'admax'
   body_text: string
   click_url: string | null
   payload_key: string | null
@@ -125,6 +125,7 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
 
   const getFormatLabel = (payloadType: string | null, adType?: string): string => {
     if (adType === 'adsense') return 'AdSense'
+    if (adType === 'admax') return 'Admax'
     switch (payloadType) {
       case 'zip': return 'ZIP'
       case 'swf': return 'SWF'
@@ -330,8 +331,16 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
 
       // Ad Type column
       const adType = document.createElement('div')
-      adType.textContent = ad.ad_type === 'adsense' ? 'AdSense' : 'Self'
-      adType.style.cssText = `color: ${ad.ad_type === 'adsense' ? '#3b82f6' : '#22c55e'}; font-weight: 500;`
+      if (ad.ad_type === 'adsense') {
+        adType.textContent = 'AdSense'
+        adType.style.cssText = 'color: #3b82f6; font-weight: 500;'
+      } else if (ad.ad_type === 'admax') {
+        adType.textContent = 'Admax'
+        adType.style.cssText = 'color: #8b5cf6; font-weight: 500;'
+      } else {
+        adType.textContent = 'Self'
+        adType.style.cssText = 'color: #22c55e; font-weight: 500;'
+      }
       row.appendChild(adType)
 
       const format = document.createElement('div')
@@ -554,8 +563,13 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
     adsenseOption.value = 'adsense'
     adsenseOption.textContent = 'Google AdSense'
     
+    const admaxOption = document.createElement('option')
+    admaxOption.value = 'admax'
+    admaxOption.textContent = 'Admax (JavaScript ads)'
+    
     adTypeSelect.appendChild(selfHostedOption)
     adTypeSelect.appendChild(adsenseOption)
+    adTypeSelect.appendChild(admaxOption)
     
     if (editingAd?.ad_type) {
       adTypeSelect.value = editingAd.ad_type
@@ -759,8 +773,9 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
     // Function to toggle field visibility based on ad type (now defined after all fields)
     const toggleFieldVisibility = () => {
       const isAdSense = adTypeSelect.value === 'adsense'
-      payloadField.style.display = isAdSense ? 'none' : 'flex'
-      thumbnailField.style.display = isAdSense ? 'none' : 'flex'
+      const isAdmax = adTypeSelect.value === 'admax'
+      payloadField.style.display = (isAdSense || isAdmax) ? 'none' : 'flex'
+      thumbnailField.style.display = (isAdSense || isAdmax) ? 'none' : 'flex'
       adsenseSlotField.style.display = isAdSense ? 'flex' : 'none'
     }
 
@@ -822,7 +837,7 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
       const title = titleInput.value.trim()
       const bodyText = bodyTextarea.value.trim()
       const clickUrl = urlInput.value.trim() || null
-      const adType = adTypeSelect.value as 'self_hosted' | 'adsense'
+      const adType = adTypeSelect.value as 'self_hosted' | 'adsense' | 'admax'
       const adsenseSlot = adsenseSlotInput.value.trim() || '6262283560'
 
       if (!title || !bodyText) {
@@ -833,6 +848,12 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
       // Validate AdSense ads
       if (adType === 'adsense' && !adsenseSlot) {
         alert('AdSense Slot ID is required for AdSense ads')
+        return
+      }
+
+      // Validate admax ads (no payload files allowed)
+      if (adType === 'admax' && payloadInput.files?.[0]) {
+        alert('Admax ads do not support payload files')
         return
       }
 

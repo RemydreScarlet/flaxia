@@ -135,6 +135,27 @@ function handleDirectClick(ad: Ad): void {
   window.open(ad.click_url, '_blank', 'noopener')
 }
 
+function mountAdmax(ad: Ad, placeholder: HTMLElement): void {
+  // Set placeholder styles for admax
+  placeholder.style.cssText = `
+    position: relative;
+    width: 100%;
+    min-height: 250px;
+    overflow: hidden;
+    background: #f0f0f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  `
+
+  // Create admax script element properly
+  const script = document.createElement('script')
+  script.src = 'https://adm.shinobi.jp/s/b5b3413a80d7c47326e75bfa57b8c41b'
+  script.async = true
+  
+  placeholder.appendChild(script)
+}
+
 function mountAdSense(ad: Ad, placeholder: HTMLElement): void {
   // Set placeholder styles for AdSense
   placeholder.style.cssText = `
@@ -177,6 +198,12 @@ function mountAdStage(ad: Ad, placeholder: HTMLElement): void {
   // Handle AdSense ads
   if (ad.ad_type === 'adsense') {
     mountAdSense(ad, placeholder)
+    return
+  }
+
+  // Handle admax ads
+  if (ad.ad_type === 'admax') {
+    mountAdmax(ad, placeholder)
     return
   }
 
@@ -346,17 +373,31 @@ export function createAdCard(ad: Ad): HTMLElement {
   adContent.className = 'ad-content'
   
   // Create ad label
-  const adLabel = document.createElement('span')
+  const adLabel = document.createElement('a')
   adLabel.className = 'ad-label'
   adLabel.textContent = 'Sponsored'
+  adLabel.style.cssText = `
+    color: inherit;
+    text-decoration: none;
+  `
+  
+  // Add hover effect
+  adLabel.addEventListener('mouseenter', () => {
+    adLabel.style.textDecoration = 'underline'
+  })
+  adLabel.addEventListener('mouseleave', () => {
+    adLabel.style.textDecoration = 'none'
+  })
   
   // Make label clickable if click_url is set
   if (ad.click_url) {
-    adLabel.style.cursor = 'pointer'
-    adLabel.style.textDecoration = 'underline'
+    adLabel.href = ad.click_url
+    adLabel.target = '_blank'
+    adLabel.rel = 'noopener noreferrer'
     adLabel.addEventListener('click', (e) => {
       e.stopPropagation()
-      handleDirectClick(ad)
+      // Track click
+      fetch(`/api/ads/${ad.id}/click`, { method: 'POST' }).catch(console.error)
     })
   }
   
@@ -365,22 +406,36 @@ export function createAdCard(ad: Ad): HTMLElement {
   // Create ad placeholder with skeleton
   const adPlaceholder = document.createElement('div')
   adPlaceholder.className = 'ad-placeholder'
-  const aspectRatio = ad.payload_type === 'swf' ? '4 / 3' : '16 / 9'
-  adPlaceholder.style.cssText = `
-    position: relative;
-    width: 100%;
-    aspect-ratio: ${aspectRatio};
-    overflow: hidden;
-    background: #f0f0f0;
-  `
+  
+  // Set appropriate styling based on ad type
+  if (ad.ad_type === 'admax' || ad.ad_type === 'adsense') {
+    // Script-based ads use fixed height
+    adPlaceholder.style.cssText = `
+      position: relative;
+      width: 100%;
+      min-height: 250px;
+      overflow: hidden;
+      background: #f0f0f0;
+    `
+  } else {
+    // Content-based ads use aspect ratio
+    const aspectRatio = ad.payload_type === 'swf' ? '4 / 3' : '16 / 9'
+    adPlaceholder.style.cssText = `
+      position: relative;
+      width: 100%;
+      aspect-ratio: ${aspectRatio};
+      overflow: hidden;
+      background: #f0f0f0;
+    `
+  }
   
   // Render based on payload_type and ad_type
-  if (ad.ad_type === 'adsense') {
-    // AdSense ads always use lazy loading
+  if (ad.ad_type === 'adsense' || ad.ad_type === 'admax') {
+    // AdSense and admax ads always use lazy loading
     const observer = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
         if (entry.isIntersecting) {
-          // 1. Load AdSense ad
+          // 1. Load ad
           mountAdStage(ad, adPlaceholder)
 
           // 2. Track impression

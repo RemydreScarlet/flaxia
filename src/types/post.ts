@@ -105,7 +105,7 @@ export interface TimelineState {
 
 export interface Ad {
   id: string
-  ad_type: 'self_hosted' | 'adsense'
+  ad_type: 'self_hosted' | 'adsense' | 'admax'
   body_text: string
   payload_key: string | null
   payload_type: 'zip' | 'swf' | 'gif' | 'image' | null
@@ -120,7 +120,7 @@ export interface Ad {
 export interface AdminAd {
   id: string
   title: string
-  ad_type: 'self_hosted' | 'adsense'
+  ad_type: 'self_hosted' | 'adsense' | 'admax'
   body_text: string
   click_url: string | null
   payload_key: string | null
