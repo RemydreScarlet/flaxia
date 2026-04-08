@@ -45,7 +45,8 @@ const ALLOWED_EXTENSIONS: Record<string, string> = {
   '.data': 'application/octet-stream',
   '.wasm.code': 'application/wasm',
   '.wasm.framework': 'application/octet-stream',
-  '.ico': 'image/x-icon'
+  '.ico': 'image/x-icon',
+  '.rsp': 'text/plain'
 }
 
 export async function executeZip(

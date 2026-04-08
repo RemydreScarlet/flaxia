@@ -7,6 +7,7 @@ import { createReplyComposer, ReplyComposer } from './ReplyComposer.js'
 import { createShareModal } from './ShareModal.js'
 import { useSandboxBridge } from '../lib/sandbox-bridge.js'
 import { showSignInPrompt } from './SignInPrompt.js'
+import { impressionTracker } from '../lib/impression-tracker.js'
 
 export class PostCard {
   private element: HTMLElement
@@ -16,6 +17,7 @@ export class PostCard {
   private freshCount: number
   private replyCount: number
   private impressions: number
+  private impressionTracked: boolean = false
   private postStageElement?: HTMLElement
   private sandboxBridge?: ReturnType<typeof useSandboxBridge>
   private replyComposer?: ReplyComposer
@@ -225,21 +227,18 @@ export class PostCard {
     observer.observe(this.element)
   }
 
-  private async trackImpression(): Promise<void> {
-    try {
-      const response = await fetch(`/api/posts/${this.props.post.id}/impression`, {
-        method: 'POST',
-        credentials: 'include'
-      })
-
-      if (response.ok) {
-        // Optimistically update impression count
-        this.impressions += 1
-        this.updateActions()
-      }
-    } catch (error) {
-      console.error('Failed to track impression:', error)
-    }
+  private trackImpression(): void {
+    // Prevent duplicate tracking
+    if (this.impressionTracked) return
+    
+    this.impressionTracked = true
+    
+    // Use global batch tracker
+    impressionTracker.trackImpression(this.props.post.id)
+    
+    // Optimistically update impression count
+    this.impressions += 1
+    this.updateActions()
   }
 
   private handleModeChange(newMode: PostCardMode): void {
@@ -300,6 +299,7 @@ export class PostCard {
 
     this.updateActions()
   }
+
 
   private handleReplyToggle(): void {
     // Check if user is logged in

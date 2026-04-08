@@ -25,7 +25,7 @@ export class Database {
   
   async getPosts(cursor?: string, limit = 10): Promise<Post[]> {
     let query = 'SELECT * FROM posts ORDER BY created_at DESC LIMIT ?'
-    const params = [limit]
+    const params: any[] = [limit]
     
     if (cursor) {
       query = 'SELECT * FROM posts WHERE created_at < ? ORDER BY created_at DESC LIMIT ?'
@@ -33,10 +33,10 @@ export class Database {
     }
     
     const result = await this.db.prepare(query).bind(...params).all()
-    return result.results as Post[]
+    return (result.results as unknown) as Post[]
   }
   
-  async createPost(post: Omit<Post, 'created_at' | 'fresh_count'>): Promise<string> {
+  async createPost(post: Omit<Post, 'created_at' | 'fresh_count' | 'favorite_count'>): Promise<string> {
     const id = crypto.randomUUID()
     await this.db.prepare(`
       INSERT INTO posts (id, user_id, username, text, hashtags, gif_key, payload_key)
@@ -99,4 +99,5 @@ export class Database {
     ).bind(userId).all()
     return (result.results as any[]).map(r => r.followee_id)
   }
-}
+
+  }

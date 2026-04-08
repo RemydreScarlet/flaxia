@@ -2162,6 +2162,49 @@ app.post('/api/posts/:id/impression', async (c) => {
   }
 })
 
+// POST /api/posts/impressions/batch - track multiple post impressions (public endpoint)
+app.post('/api/posts/impressions/batch', async (c) => {
+  try {
+    const body = await c.req.json() as { post_ids: string[] }
+    
+    if (!body.post_ids || !Array.isArray(body.post_ids) || body.post_ids.length === 0) {
+      return c.json({ error: 'Invalid request: post_ids array required' }, 400)
+    }
+
+    if (body.post_ids.length > 100) {
+      return c.json({ error: 'Too many post IDs (max 100)' }, 400)
+    }
+
+    const ip = c.req.header('CF-Connecting-IP') ?? 'unknown'
+    const rl = await checkRateLimit(c.env.RATE_LIMIT, {
+      key: `post-imp-batch:${ip}`,
+      limit: 10,
+      windowSeconds: 60
+    })
+    if (!rl.allowed) return rateLimitResponse(c, rl.resetIn, 10)
+    
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500)
+    }
+
+    // Create placeholders for batch update
+    const placeholders = body.post_ids.map(() => '?').join(',')
+    const result = await c.env.DB.prepare(
+      `UPDATE posts SET impressions = impressions + 1 WHERE id IN (${placeholders})`
+    ).bind(...body.post_ids).run()
+
+    if (!result.success) {
+      console.error('Batch database update failed:', result)
+      return c.json({ error: 'Failed to record impressions' }, 500)
+    }
+
+    return c.json({ ok: true, updated: result.meta?.changes || 0 })
+  } catch (error: any) {
+    console.error('Batch post impressions error:', error)
+    return c.json({ error: 'Failed to record impressions', details: error?.message || 'Unknown error' }, 500)
+  }
+})
+
 // POST /api/ads/:id/click - track ad click (public endpoint)
 app.post('/api/ads/:id/click', async (c) => {
   try {
@@ -3050,6 +3093,7 @@ app.post('/api/posts/:id/fresh', requireAuth, async (c) => {
     return c.json({ freshed: true })
   }
 })
+
 
 // GET /api/posts/:id/replies - get direct replies
 app.get('/api/posts/:id/replies', async (c) => {

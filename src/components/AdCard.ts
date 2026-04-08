@@ -1,6 +1,7 @@
 import { Ad } from '../types/post.js'
 import { executeUniversalZip, UniversalZipExecutorHandle } from '../lib/zip-manager.js'
 import { executeFlash, FlashPlayerHandle } from './FlashPlayer.js'
+import { adImpressionTracker } from '../lib/ad-impression-tracker.js'
 
 // TypeScript declaration for AdSense global
 declare global {
@@ -443,8 +444,8 @@ export function createAdCard(ad: Ad): HTMLElement {
           // 1. Load ad
           mountAdStage(ad, adPlaceholder)
 
-          // 2. Track impression
-          fetch(`/api/ads/${ad.id}/impression`, { method: 'POST' })
+          // 2. Track impression using batch tracker
+          adImpressionTracker.trackImpression(ad.id)
 
           // 3. Stop observing
           observer.unobserve(entry.target)
@@ -466,8 +467,8 @@ export function createAdCard(ad: Ad): HTMLElement {
           // 1. Load stage content (lazy)
           mountAdStage(ad, adPlaceholder)
 
-          // 2. Track impression
-          fetch(`/api/ads/${ad.id}/impression`, { method: 'POST' })
+          // 2. Track impression using batch tracker
+          adImpressionTracker.trackImpression(ad.id)
 
           // 3. Stop observing
           observer.unobserve(entry.target)

@@ -30,7 +30,7 @@ const MAX_FILE_COUNT = 1000;
 const ALLOWED_EXTENSIONS = new Set([
   'html', 'css', 'js', 'mjs', 'json', 'svg',
   'png', 'jpg', 'jpeg', 'gif', 'ico', 'webp',
-  'woff', 'woff2', 'ttf', 'mp4', 'webm', 'mp3', 'wav', 'wasm'
+  'woff', 'woff2', 'ttf', 'mp4', 'webm', 'mp3', 'wav', 'wasm', 'rsp'
 ]);
 
 // 仮想ファイルシステム: path → Uint8Array
@@ -212,7 +212,7 @@ function getMime(path) {
     gif:'image/gif', ico:'image/x-icon',
     woff:'font/woff', woff2:'font/woff2', ttf:'font/ttf',
     webp:'image/webp', mp4:'video/mp4', webm:'video/webm',
-    mp3:'audio/mpeg', wav:'audio/wav',wasm:'application/wasm'
+    mp3:'audio/mpeg', wav:'audio/wav',wasm:'application/wasm', rsp:'text/plain'
   }
   return map[ext] ?? 'application/octet-stream'
 }`

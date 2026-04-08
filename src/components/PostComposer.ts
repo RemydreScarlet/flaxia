@@ -237,7 +237,7 @@ export class PostComposer {
 
     // Check file extension
     const ext = file.name.toLowerCase().split('.').pop()
-    const allowedExts = ['gif', 'jpg', 'jpeg', 'png', 'swf', 'js', 'wasm', 'zip']
+    const allowedExts = ['gif', 'jpg', 'jpeg', 'png', 'swf', 'js', 'wasm', 'zip', 'rsp']
     
     if (!ext || !allowedExts.includes(ext)) {
       return { valid: false, error: 'Unsupported file type' }
@@ -300,11 +300,11 @@ export class PostComposer {
     }
 
     // Check if file is an accepted format (MIME type validation)
-    const allowedTypes = ['image/gif', 'image/png', 'image/jpeg', 'image/jpg', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/webm', 'application/zip', 'application/x-shockwave-flash', 'application/javascript', 'text/javascript', 'application/wasm']
+    const allowedTypes = ['image/gif', 'image/png', 'image/jpeg', 'image/jpg', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/webm', 'application/zip', 'application/x-shockwave-flash', 'application/javascript', 'text/javascript', 'application/wasm', 'text/plain']
     
     // Also check file extension for SWF files (browsers may not report correct MIME type)
     const isSwfByExtension = file.name.toLowerCase().endsWith('.swf')
-    const isValidType = allowedTypes.includes(file.type) || isSwfByExtension || file.name.toLowerCase().endsWith('.js') || file.name.toLowerCase().endsWith('.wasm') || file.name.toLowerCase().endsWith('.zip')
+    const isValidType = allowedTypes.includes(file.type) || isSwfByExtension || file.name.toLowerCase().endsWith('.js') || file.name.toLowerCase().endsWith('.wasm') || file.name.toLowerCase().endsWith('.zip') || file.name.toLowerCase().endsWith('.rsp')
     
     if (!isValidType) {
       this.showError('Unsupported file type')
