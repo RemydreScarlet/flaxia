@@ -1,0 +1,5 @@
+-- Add impressions column to posts table
+ALTER TABLE posts ADD COLUMN impressions INTEGER NOT NULL DEFAULT 0;
+
+-- Create index for impression queries if needed for performance
+CREATE INDEX IF NOT EXISTS idx_posts_impressions ON posts(impressions DESC);

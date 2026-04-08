@@ -15,6 +15,7 @@ export class PostCard {
   private isFreshed: boolean
   private freshCount: number
   private replyCount: number
+  private impressions: number
   private postStageElement?: HTMLElement
   private sandboxBridge?: ReturnType<typeof useSandboxBridge>
   private replyComposer?: ReplyComposer
@@ -28,6 +29,7 @@ export class PostCard {
     this.isFreshed = props.post.is_freshed || false
     this.freshCount = props.post.fresh_count
     this.replyCount = props.post.reply_count || 0
+    this.impressions = props.post.impressions || 0
     this.element = this.createElement()
     this.setupEventListeners()
   }
@@ -129,6 +131,7 @@ export class PostCard {
       postId: this.props.post.id,
       freshCount: this.freshCount,
       replyCount: this.replyCount,
+      impressions: this.impressions,
       isFreshed: this.isFreshed,
       onFreshToggle: () => this.handleFreshToggle(),
       onReplyToggle: () => this.handleReplyToggle(),
@@ -152,6 +155,9 @@ export class PostCard {
   private setupEventListeners(): void {
     // Setup sandbox bridge when iframe is available
     this.setupSandboxBridge()
+    
+    // Setup impression tracking using Intersection Observer
+    this.setupImpressionTracking()
     
     // Add click handler for post navigation (but not for buttons/inputs)
     this.element.addEventListener('click', (e) => {
@@ -195,6 +201,44 @@ export class PostCard {
     } else {
       // Iframe might not be ready yet, try again after a delay
       setTimeout(() => this.setupSandboxBridge(), 100)
+    }
+  }
+
+  private setupImpressionTracking(): void {
+    // Track impressions when post becomes visible in viewport
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            // Post is visible, track impression
+            this.trackImpression()
+            // Only track once per post view
+            observer.unobserve(entry.target)
+          }
+        })
+      },
+      {
+        threshold: 0.5 // Track when 50% of post is visible
+      }
+    )
+
+    observer.observe(this.element)
+  }
+
+  private async trackImpression(): Promise<void> {
+    try {
+      const response = await fetch(`/api/posts/${this.props.post.id}/impression`, {
+        method: 'POST',
+        credentials: 'include'
+      })
+
+      if (response.ok) {
+        // Optimistically update impression count
+        this.impressions += 1
+        this.updateActions()
+      }
+    } catch (error) {
+      console.error('Failed to track impression:', error)
     }
   }
 
@@ -357,6 +401,7 @@ export class PostCard {
         postId: this.props.post.id,
         freshCount: this.freshCount,
         replyCount: this.replyCount,
+        impressions: this.impressions,
         isFreshed: this.isFreshed,
         onFreshToggle: () => this.handleFreshToggle(),
         onReplyToggle: () => this.handleReplyToggle(),

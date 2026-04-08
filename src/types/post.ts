@@ -26,6 +26,7 @@ export interface Post {
   thumbnail_key?: string  // Stores thumbnail image for ZIP/SWF posts
   fresh_count: number
   reply_count: number
+  impressions: number
   parent_id?: string
   root_id?: string
   depth: number
@@ -80,6 +81,7 @@ export interface PostActionsProps {
   postId: string
   freshCount: number
   replyCount: number
+  impressions: number
   isFreshed: boolean
   onFreshToggle: () => void
   onReplyToggle: () => void

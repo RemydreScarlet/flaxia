@@ -12,6 +12,10 @@ export function createPostActions(props: PostActionsProps): HTMLElement {
   const replyButton = createActionButton('reply', props.replyCount.toString(), false)
   replyButton.addEventListener('click', props.onReplyToggle)
 
+  // Impressions button (display only, not clickable)
+  const impressionsButton = createActionButton('impressions', props.impressions.toString(), false)
+  impressionsButton.style.cursor = 'default'
+
   // Share button
   const shareButton = createActionButton('share', '0', false)
   shareButton.addEventListener('click', () => {
@@ -22,12 +26,13 @@ export function createPostActions(props: PostActionsProps): HTMLElement {
 
   container.appendChild(freshButton)
   container.appendChild(replyButton)
+  container.appendChild(impressionsButton)
   container.appendChild(shareButton)
 
   return container
 }
 
-function createActionButton(type: 'fresh' | 'reply' | 'share', count: string, isActive: boolean): HTMLElement {
+function createActionButton(type: 'fresh' | 'reply' | 'share' | 'impressions', count: string, isActive: boolean): HTMLElement {
   const button = document.createElement('button')
   button.className = `action-button action-button--${type}`
   button.setAttribute('aria-label', `${type} post`)
@@ -64,7 +69,7 @@ function createActionButton(type: 'fresh' | 'reply' | 'share', count: string, is
   return button
 }
 
-function getIconForType(type: 'fresh' | 'reply' | 'share'): string {
+function getIconForType(type: 'fresh' | 'reply' | 'share' | 'impressions'): string {
   switch (type) {
     case 'fresh':
       return '🍃' // Leaf emoji for Fresh!
@@ -72,6 +77,8 @@ function getIconForType(type: 'fresh' | 'reply' | 'share'): string {
       return '💬' // Message emoji for Reply
     case 'share':
       return '🔗' // Link emoji for Share
+    case 'impressions':
+      return '👀' // Eye emoji for Impressions
     default:
       return ''
   }
