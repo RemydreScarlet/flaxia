@@ -1,4 +1,5 @@
 import { validateZipLegacy } from './zip-executor'
+import { getMimeType } from './file-extensions'
 
 // Server-side WVFS functions (to be used in Workers)
 export async function extractZipToWvfs(zipData: ArrayBuffer, postId: string): Promise<void> {
@@ -58,8 +59,37 @@ export async function serveFileFromWvfs(postId: string, filePath: string): Promi
   const extractDir = `/tmp/wvfs-zip-${postId}`
   const fullPath = path.join(extractDir, filePath)
   
-  // Security: ensure path is within extractDir
+  // Security: ensure path is within extractDir and validate path components
   if (!fullPath.startsWith(extractDir)) {
+    console.warn('Path traversal attempt detected:', filePath)
+    return null
+  }
+  
+  // Additional path validation
+  const relativePath = filePath.replace(/^\//, '')
+  const segments = relativePath.split('/')
+  
+  for (const segment of segments) {
+    // Check for path traversal attempts
+    if (segment === '..') {
+      console.warn('Path traversal attempt detected:', filePath)
+      return null
+    }
+    // Check for invalid characters
+    if (segment.includes('\0') || /[<>:"|?*]/.test(segment)) {
+      console.warn('Invalid path segment detected:', segment)
+      return null
+    }
+    // Check for empty segments (which could indicate //)
+    if (segment === '') {
+      console.warn('Empty path segment detected:', filePath)
+      return null
+    }
+  }
+  
+  // Check path depth
+  if (segments.length > 10) {
+    console.warn('Path too deep:', filePath)
     return null
   }
   
@@ -71,29 +101,8 @@ export async function serveFileFromWvfs(postId: string, filePath: string): Promi
     const fileData = fs.readFileSync(fullPath)
     const ext = path.extname(filePath).toLowerCase()
     
-    // Determine content type
-    let contentType = 'text/plain'
-    const mimeTypes: Record<string, string> = {
-      '.html': 'text/html',
-      '.css': 'text/css',
-      '.js': 'text/javascript',
-      '.wasm': 'application/wasm',
-      '.png': 'image/png',
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.gif': 'image/gif',
-      '.webp': 'image/webp',
-      '.svg': 'image/svg+xml',
-      '.mp3': 'audio/mpeg',
-      '.wav': 'audio/wav',
-      '.ogg': 'audio/ogg',
-      '.mp4': 'video/mp4',
-      '.webm': 'video/webm',
-      '.json': 'application/json',
-      '.txt': 'text/plain'
-    }
-    
-    contentType = mimeTypes[ext] || 'text/plain'
+    // Determine content type using unified MIME type validation
+    const contentType = getMimeType(filePath)
     
     return new Response(fileData, {
       headers: {
@@ -103,7 +112,14 @@ export async function serveFileFromWvfs(postId: string, filePath: string): Promi
       }
     })
   } catch (error) {
+    // Log detailed error for debugging, but return generic error to user
     console.error('Error serving file from WVFS:', error)
+    
+    // Don't expose internal error details to prevent information leakage
+    if (error instanceof Error && error.message.includes('Path traversal')) {
+      console.warn('Security violation: Path traversal attempt detected')
+    }
+    
     return null
   }
 }

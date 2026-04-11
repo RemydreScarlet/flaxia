@@ -17,7 +17,7 @@
 }
 
 body {
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Noto Sans', system-ui, -apple-system, sans-serif;
   background: var(--bg-primary);
   color: var(--text-primary);
   line-height: 1.6;
@@ -516,7 +516,7 @@ p {
   border-radius: 9999px;
   color: var(--text-primary);
   cursor: pointer;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Noto Sans', system-ui, -apple-system, sans-serif;
   font-size: 1rem;
   font-weight: 400;
   transition: all 0.2s ease;
@@ -608,7 +608,7 @@ p {
   border: 1px solid var(--border);
   border-radius: 9999px;
   color: var(--text-primary);
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Noto Sans', system-ui, -apple-system, sans-serif;
   font-size: 0.875rem;
   outline: none;
   transition: border-color 0.2s ease;
@@ -701,7 +701,7 @@ p {
 .trending-hashtag {
   color: var(--text-primary);
   font-weight: 600;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Noto Sans', system-ui, -apple-system, sans-serif;
 }
 
 .trending-count {
@@ -748,7 +748,7 @@ p {
 .follow-name {
   color: var(--text-primary);
   font-weight: 600;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Noto Sans', system-ui, -apple-system, sans-serif;
   font-size: 0.875rem;
   white-space: nowrap;
   overflow: hidden;
@@ -758,7 +758,7 @@ p {
 .follow-handle {
   color: var(--text-muted);
   font-size: 0.875rem;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Noto Sans', system-ui, -apple-system, sans-serif;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -770,7 +770,7 @@ p {
   color: var(--accent);
   border: 1px solid var(--accent);
   border-radius: 9999px;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Noto Sans', system-ui, -apple-system, sans-serif;
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
@@ -1195,7 +1195,7 @@ p {
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Noto Sans', system-ui, -apple-system, sans-serif;
   font-size: 0.875rem;
   font-weight: 500;
   transition: all 0.2s ease;
@@ -1607,7 +1607,7 @@ img {
 
 /* Optimize font loading - system fonts don't need @font-face */
 html {
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Noto Sans', system-ui, -apple-system, sans-serif;
   font-display: swap;
 }
 
@@ -1949,7 +1949,7 @@ html {
   color: var(--accent);
   border: 1px solid var(--accent);
   border-radius: 0.25rem;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Noto Sans', system-ui, -apple-system, sans-serif;
   font-size: 0.75rem;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -1999,7 +1999,7 @@ html {
   gap: 0.5rem;
   padding: 1rem;
   color: var(--text-muted);
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Noto Sans', system-ui, -apple-system, sans-serif;
   font-size: 0.875rem;
 }
 
@@ -2063,7 +2063,7 @@ html {
   font-size: 1.75rem;
   font-weight: 600;
   margin-bottom: 0.5rem;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Noto Sans', system-ui, -apple-system, sans-serif;
 }
 
 .legal-effective-date {
@@ -2085,7 +2085,7 @@ html {
   font-size: 1.5rem;
   font-weight: 600;
   margin: 2rem 0 1rem 0;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Noto Sans', system-ui, -apple-system, sans-serif;
 }
 
 .legal-body h2 {
@@ -2093,7 +2093,7 @@ html {
   font-size: 1.25rem;
   font-weight: 600;
   margin: 1.5rem 0 0.75rem 0;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Noto Sans', system-ui, -apple-system, sans-serif;
 }
 
 .legal-body h3 {
@@ -2101,13 +2101,13 @@ html {
   font-size: 1.125rem;
   font-weight: 600;
   margin: 1.25rem 0 0.5rem 0;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Noto Sans', system-ui, -apple-system, sans-serif;
 }
 
 .legal-body p {
   color: var(--text-primary);
   margin-bottom: 1rem;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Noto Sans', system-ui, -apple-system, sans-serif;
 }
 
 .legal-body ul {
@@ -2118,7 +2118,7 @@ html {
 
 .legal-body li {
   margin-bottom: 0.5rem;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Noto Sans', system-ui, -apple-system, sans-serif;
 }
 
 .legal-body a {
@@ -2155,14 +2155,14 @@ html {
   font-weight: 600;
   color: var(--text-primary);
   border-bottom: 1px solid var(--border);
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Noto Sans', system-ui, -apple-system, sans-serif;
 }
 
 .legal-table td {
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border);
   color: var(--text-primary);
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Noto Sans', system-ui, -apple-system, sans-serif;
 }
 
 .legal-table tr:last-child td {
@@ -2227,7 +2227,7 @@ html {
   color: var(--text-muted);
   font-size: 13px;
   line-height: 1.4;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Noto Sans', system-ui, -apple-system, sans-serif;
 }
 
 .consent-link {
@@ -2286,7 +2286,7 @@ html {
   margin-top: 1rem;
   color: var(--text-muted);
   font-size: 13px;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Noto Sans', system-ui, -apple-system, sans-serif;
 }
 
 .legal-notice-link {

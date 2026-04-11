@@ -1,4 +1,5 @@
 import { validateZipLegacy } from './zip-executor'
+import { getMimeType } from './file-extensions'
 
 // In-memory WVFS storage for Cloudflare Workers
 const wvfsStorage = new Map<string, Map<string, Uint8Array>>()
@@ -16,14 +17,27 @@ function normalizePath(path: string): string {
       // Skip empty segments and current directory references
       continue
     } else if (segment === '..') {
-      // Go up one directory if possible
-      if (normalized.length > 0) {
-        normalized.pop()
+      // Prevent path traversal beyond root directory
+      if (normalized.length === 0) {
+        throw new Error('Path traversal detected: attempt to go beyond root directory')
       }
+      normalized.pop()
     } else {
-      // Add normal segment
+      // Validate for invalid characters
+      if (segment.includes('\0') || /[<>:"|?*]/.test(segment)) {
+        throw new Error(`Invalid path segment: ${segment}`)
+      }
+      // Check for path length
+      if (segment.length > 255) {
+        throw new Error(`Path segment too long: ${segment}`)
+      }
       normalized.push(segment)
     }
+  }
+  
+  // Check total path depth
+  if (normalized.length > 10) {
+    throw new Error(`Path too deep: ${normalized.join('/')}`)
   }
   
   // If result is empty, return index.html
@@ -125,35 +139,8 @@ export async function serveFileFromWvfs(postId: string, filePath: string): Promi
       fileData = new TextEncoder().encode(modifiedHtml)
     }
     
-    // Determine content type
-    let contentType = 'text/plain'
-    const mimeTypes: Record<string, string> = {
-      'html': 'text/html',
-      'css': 'text/css',
-      'js': 'text/javascript',
-      'mjs': 'text/javascript',
-      'wasm': 'application/wasm',
-      'png': 'image/png',
-      'jpg': 'image/jpeg',
-      'jpeg': 'image/jpeg',
-      'gif': 'image/gif',
-      'webp': 'image/webp',
-      'svg': 'image/svg+xml',
-      'mp3': 'audio/mpeg',
-      'wav': 'audio/wav',
-      'ogg': 'audio/ogg',
-      'mp4': 'video/mp4',
-      'webm': 'video/webm',
-      'json': 'application/json',
-      'txt': 'text/plain',
-      'unityweb': 'application/octet-stream',
-      'data': 'application/octet-stream',
-      'wasm.code': 'application/wasm',
-      'wasm.framework': 'application/octet-stream',
-      'ico': 'image/x-icon'
-    }
-    
-    contentType = mimeTypes[ext || ''] || 'text/plain'
+    // Determine content type using unified MIME type validation
+    const contentType = getMimeType(normalizedPath)
     
     return new Response(new Uint8Array(fileData), {
       headers: {
@@ -163,7 +150,14 @@ export async function serveFileFromWvfs(postId: string, filePath: string): Promi
       }
     })
   } catch (error) {
+    // Log detailed error for debugging, but return generic error to user
     console.error('Error serving file from WVFS:', error)
+    
+    // Don't expose internal error details to prevent information leakage
+    if (error instanceof Error && error.message.includes('Path traversal')) {
+      console.warn('Security violation: Path traversal attempt detected')
+    }
+    
     return null
   }
 }

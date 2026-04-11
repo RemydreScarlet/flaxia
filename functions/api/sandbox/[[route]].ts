@@ -27,10 +27,12 @@ console.log('fflate loaded:', typeof fflate !== 'undefined')
 // --- セキュリティ設定 & リソース制限 ---
 const MAX_TOTAL_SIZE = 100 * 1024 * 1024; // 100MB
 const MAX_FILE_COUNT = 1000;
+// Import unified extensions from main codebase
 const ALLOWED_EXTENSIONS = new Set([
   'html', 'css', 'js', 'mjs', 'json', 'svg',
   'png', 'jpg', 'jpeg', 'gif', 'ico', 'webp',
-  'woff', 'woff2', 'ttf', 'mp4', 'webm', 'mp3', 'wav', 'wasm', 'rsp'
+  'woff', 'woff2', 'ttf', 'mp4', 'webm', 'mp3', 'wav', 'wasm', 
+  'txt', 'glsl', 'wgsl', 'data', 'unityweb', 'wasm.code', 'wasm.framework', 'rsp'
 ]);
 
 // 仮想ファイルシステム: path → Uint8Array
@@ -44,14 +46,33 @@ function validatePath(path) {
   // null/undefined チェック
   if (!path || typeof path !== 'string') return false;
   
+  // パス長の検証
+  if (path.length > 255) {
+    console.warn('Blocked path too long:', path);
+    return false;
+  }
+  
   // ディレクトリトラバーサル攻撃の防止
   if (path.includes('..') || path.includes('//') || path.includes('\\\\')) {
     console.warn('Blocked path traversal attempt:', path);
     return false;
   }
   
+  // 無効文字のチェック
+  if (path.includes('\0') || /[<>:"|?*]/.test(path)) {
+    console.warn('Blocked invalid characters in path:', path);
+    return false;
+  }
+  
   // 先頭のスラッシュを正規化
   const normalizedPath = path.startsWith('/') ? path.substring(1) : path;
+  
+  // パス深度のチェック
+  const depth = (normalizedPath.match(/\//g) || []).length;
+  if (depth > 10) {
+    console.warn('Blocked path too deep:', path);
+    return false;
+  }
   
   // 拡張子の検証
   const ext = normalizedPath.split('.').pop()?.toLowerCase();

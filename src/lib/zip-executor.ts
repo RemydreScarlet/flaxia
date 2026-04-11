@@ -1,3 +1,4 @@
+import { ALLOWED_EXTENSIONS, validateFileType } from './file-extensions'
 
 export interface ZipExecutorHandle {
   destroy: () => void
@@ -20,34 +21,6 @@ async function getJSZip() {
   return (JSZipModule as any).default
 }
 
-// Allowed extensions and their MIME types
-const ALLOWED_EXTENSIONS: Record<string, string> = {
-  '.html': 'text/html',
-  '.css': 'text/css',
-  '.js': 'text/javascript',
-  '.wasm': 'application/wasm',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
-  '.svg': 'image/svg+xml',
-  '.mp3': 'audio/mpeg',
-  '.wav': 'audio/wav',
-  '.ogg': 'audio/ogg',
-  '.mp4': 'video/mp4',
-  '.webm': 'video/webm',
-  '.json': 'application/json',
-  '.txt': 'text/plain',
-  '.glsl': 'text/plain',
-  '.wgsl': 'text/plain',
-  '.unityweb': 'application/octet-stream',
-  '.data': 'application/octet-stream',
-  '.wasm.code': 'application/wasm',
-  '.wasm.framework': 'application/octet-stream',
-  '.ico': 'image/x-icon',
-  '.rsp': 'text/plain'
-}
 
 export async function executeZip(
   postId: string,
@@ -203,18 +176,6 @@ async function createSandboxIframe(postId: string, containerEl: HTMLElement, blo
       iframe.parentNode.removeChild(iframe)
     }
   }
-  
-  return { iframe, cleanup }
-}
-
-// Legacy functions kept for backward compatibility (used by tests)
-export async function validateZipLegacy(zipData: ArrayBuffer): Promise<void> {
-  const JSZip = await getJSZip()
-  const zip = await JSZip.loadAsync(zipData)
-  validateZip(zip)
-}
-
-export async function generateBlobUrlMapLegacy(zipData: ArrayBuffer): Promise<Map<string, string>> {
   const JSZip = await getJSZip()
   const zip = await JSZip.loadAsync(zipData)
   return generateBlobUrlMap(zip)
@@ -276,8 +237,8 @@ function validateZip(zip: any): void {
       hasIndexHtml = true
     }
 
-    const ext = path.substring(path.lastIndexOf('.')).toLowerCase()
-    if (!ALLOWED_EXTENSIONS[ext]) {
+    const { allowed } = validateFileType(path)
+    if (!allowed) {
       throw new Error(`File type not allowed: ${path}`)
     }
   }
@@ -287,6 +248,13 @@ function validateZip(zip: any): void {
   }
 }
 
+// Legacy functions kept for backward compatibility (used by tests)
+export async function validateZipLegacy(zipData: ArrayBuffer): Promise<void> {
+  const JSZip = await getJSZip()
+  const zip = await JSZip.loadAsync(zipData)
+  validateZip(zip)
+}
+
 async function generateBlobUrlMap(zip: any): Promise<Map<string, string>> {
   const blobUrlMap = new Map<string, string>()
 
@@ -294,8 +262,7 @@ async function generateBlobUrlMap(zip: any): Promise<Map<string, string>> {
     if ((file as any).dir) continue
 
     const normalizedPath = path.replace(/^\.\//, '')
-    const ext = path.substring(path.lastIndexOf('.')).toLowerCase()
-    const mimeType = ALLOWED_EXTENSIONS[ext]
+    const { mimeType } = validateFileType(path)
 
     if (mimeType) {
       const content = await (file as any).async('uint8array')

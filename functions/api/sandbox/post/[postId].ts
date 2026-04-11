@@ -44,9 +44,13 @@ app.get('/:postId', async (c) => {
   <meta charset="UTF-8">
   <title>Flaxia Sandbox</title>
   <meta http-equiv="Content-Security-Policy" content="
-    default-src 'self';
-    script-src 'self' 'unsafe-inline';
-    connect-src 'self' /api/zip/*;
+    default-src 'none';
+    script-src 'self';
+    connect-src 'self' /api/zip/* /api/wvfs-zip/* /api/wvfs/*;
+    style-src 'self';
+    img-src 'self' data: blob:;
+    media-src 'self' blob:;
+    font-src 'self';
     frame-src 'none';
     object-src 'none';
     base-uri 'self';
@@ -62,13 +66,35 @@ app.get('/:postId', async (c) => {
 <body>
   <div id="loading">Loading ZIP content...</div>
   <div id="error"></div>
-  <iframe id="content" style="display:none;" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"></iframe>
+  <iframe id="content" style="display:none;" sandbox="allow-scripts allow-modals"></iframe>
   
 <script>
   const postId = location.pathname.split('/')[3]
 
   // セキュリティ: 親ページとの通信を制限
-  const ALLOWED_ORIGIN = 'https://flaxia.app';
+  const ALLOWED_ORIGINS = [
+    'https://flaxia.app',
+    'https://*.flaxia.app',
+    'https://*.pages.dev'  // Cloudflare Pages preview
+  ];
+
+  function isOriginAllowed(origin) {
+    return ALLOWED_ORIGINS.some(allowed => {
+      if (allowed.includes('*')) {
+        const pattern = allowed.replace('*', '.*')
+        return new RegExp('^' + pattern + '$').test(origin)
+      }
+      return origin === allowed
+    })
+  }
+
+  function validateMessageOrigin(event) {
+    if (!event.origin || !isOriginAllowed(event.origin)) {
+      console.warn('Blocked message from unauthorized origin:', event.origin)
+      return false
+    }
+    return true
+  }
   
   async function init() {
     // 1. SW登録 (iframe内では実行しない)
@@ -77,7 +103,7 @@ app.get('/:postId', async (c) => {
     }
 
     
-    const reg = await navigator.serviceWorker.register('/api/sandbox/sw.js', { scope: '/api/sandbox/' })
+    const reg = await navigator.serviceWorker.register('/api/sandbox/sw.js', { scope: '/api/sandbox/post/' })
     await reg.update()
 
     // 2. SW制御権を確実に取得
@@ -88,7 +114,12 @@ app.get('/:postId', async (c) => {
     if (!res.ok) return showError('ZIP not found')
     const zipData = await res.arrayBuffer()
 
-    // 4. SWにZIPを送信 → ZIP_READYを待つ
+    // 4. ZIPサイズ検証 (50MB制限)
+    if (zipData.byteLength > 50 * 1024 * 1024) {
+      return showError('ZIPファイルが大きすぎます (最大50MB)')
+    }
+
+    // 5. SWにZIPを送信 → ZIP_READYを待つ
     navigator.serviceWorker.controller.postMessage({ type: 'SETUP_ZIP', zipData })
 
     // ウォッチドッグタイマー: 5秒でタイムアウト

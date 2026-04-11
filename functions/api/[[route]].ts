@@ -229,6 +229,15 @@ app.get('/api/zip/:postId', async (c) => {
 // GET /api/wvfs-zip/:postId - serve ZIP files using WVFS
 // GET /api/wvfs-zip/:postId/* - serve individual files from ZIP using WVFS
 app.get('/api/wvfs-zip/:postId/*', async (c) => {
+  // Add rate limiting for WVFS endpoints
+  const ip = c.req.header('CF-Connecting-IP') ?? 'unknown'
+  const rl = await checkRateLimit(c.env.RATE_LIMIT, {
+    key: `wvfs:${ip}`,
+    limit: 100,  // 100 requests per minute
+    windowSeconds: 60
+  })
+  if (!rl.allowed) return rateLimitResponse(c, rl.resetIn, 100)
+
   try {
     const postId = c.req.param('postId')
     
@@ -297,8 +306,16 @@ app.get('/api/wvfs-zip/:postId/*', async (c) => {
     return c.json({ error: 'File not found in ZIP', path: filePath }, 404)
     
   } catch (error: any) {
+    // Log detailed error for debugging
     console.error('WVFS ZIP error:', error)
-    return c.json({ error: 'WVFS ZIP failed', details: error?.message || 'Unknown error' }, 500)
+    
+    // Don't expose internal error details to prevent information leakage
+    if (error instanceof Error && error.message.includes('Path traversal')) {
+      console.warn('Security violation: Path traversal attempt detected')
+    }
+    
+    // Return generic error message to user
+    return c.json({ error: 'Failed to process ZIP file' }, 500)
   }
 })
 
