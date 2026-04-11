@@ -176,6 +176,30 @@ export class LeftNav {
     legalLinks.appendChild(privacyLink)
     legalLinks.appendChild(termsLink)
     legalLinks.appendChild(aboutLink)
+    
+    // Create White Paper link
+    const whitepaperLink = document.createElement('a')
+    whitepaperLink.href = '/whitepaper'
+    whitepaperLink.textContent = 'Technical White Paper'
+    whitepaperLink.style.cssText = `
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.875rem;
+      font-family: monospace;
+      transition: color 0.2s;
+    `
+    whitepaperLink.addEventListener('click', (e) => {
+      e.preventDefault()
+      window.location.href = '/whitepaper'
+    })
+    whitepaperLink.addEventListener('mouseenter', () => {
+      whitepaperLink.style.color = 'var(--text-primary)'
+    })
+    whitepaperLink.addEventListener('mouseleave', () => {
+      whitepaperLink.style.color = 'var(--text-muted)'
+    })
+    
+    legalLinks.appendChild(whitepaperLink)
     nav.appendChild(legalLinks)
 
     if (this.props.currentUser) {
@@ -737,6 +761,30 @@ export function updateLeftNavUser(leftNav: LeftNav, currentUser: {
   legalLinks.appendChild(privacyLink)
   legalLinks.appendChild(termsLink)
   legalLinks.appendChild(aboutLink)
+  
+  // Create White Paper link
+  const whitepaperLink = document.createElement('a')
+  whitepaperLink.href = '/whitepaper'
+  whitepaperLink.textContent = 'Technical White Paper'
+  whitepaperLink.style.cssText = `
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.875rem;
+    font-family: monospace;
+    transition: color 0.2s;
+  `
+  whitepaperLink.addEventListener('click', (e) => {
+    e.preventDefault()
+    window.location.href = '/whitepaper'
+  })
+  whitepaperLink.addEventListener('mouseenter', () => {
+    whitepaperLink.style.color = 'var(--text-primary)'
+  })
+  whitepaperLink.addEventListener('mouseleave', () => {
+    whitepaperLink.style.color = 'var(--text-muted)'
+  })
+  
+  legalLinks.appendChild(whitepaperLink)
   leftNav.getElement().appendChild(legalLinks)
   
   // Add new user area if user is available

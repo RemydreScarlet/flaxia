@@ -1,5 +1,5 @@
 interface LegalPageProps {
-  type: 'terms' | 'privacy' | 'about'
+  type: 'terms' | 'privacy' | 'about' | 'whitepaper'
 }
 
 export function createLegalPage({ type }: LegalPageProps) {
@@ -33,8 +33,8 @@ export function createLegalPage({ type }: LegalPageProps) {
 
   // Load and render markdown
   const loadContent = async () => {
-    const fileName = type === 'terms' ? 'terms.md' : type === 'privacy' ? 'privacy.md' : 'about.md'
-    const title = type === 'terms' ? 'Terms of Service' : type === 'privacy' ? 'Privacy Policy' : 'About Flaxia'
+    const fileName = type === 'terms' ? 'terms.md' : type === 'privacy' ? 'privacy.md' : type === 'about' ? 'about.md' : 'whitepaper.md'
+    const title = type === 'terms' ? 'Terms of Service' : type === 'privacy' ? 'Privacy Policy' : type === 'about' ? 'About Flaxia' : 'Technical White Paper'
 
     try {
       const response = await fetch(`/legal/${fileName}`)
@@ -235,7 +235,17 @@ export function createLegalPage({ type }: LegalPageProps) {
     window.dispatchEvent(new PopStateEvent('popstate'))
   })
   
-  // Add links in order: Terms, Privacy, About
+  const whitepaperLink = document.createElement('a')
+  whitepaperLink.href = '/whitepaper'
+  whitepaperLink.textContent = 'Technical White Paper'
+  whitepaperLink.className = 'legal-footer-link'
+  whitepaperLink.addEventListener('click', (e) => {
+    e.preventDefault()
+    window.history.pushState({}, '', '/whitepaper')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+  
+  // Add links in order: Terms, Privacy, About, Whitepaper
   footerLinks.appendChild(termsLink)
   
   // Add separator
@@ -253,6 +263,14 @@ export function createLegalPage({ type }: LegalPageProps) {
   footerLinks.appendChild(separator2)
   
   footerLinks.appendChild(aboutLink)
+  
+  // Add separator
+  const separator3 = document.createElement('span')
+  separator3.className = 'legal-footer-separator'
+  separator3.textContent = ' | '
+  footerLinks.appendChild(separator3)
+  
+  footerLinks.appendChild(whitepaperLink)
   
   footer.appendChild(footerLinks)
 

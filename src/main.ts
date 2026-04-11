@@ -31,7 +31,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('App mounted')
     
     // Routing state
-    let currentView: 'timeline' | 'thread' | 'login' | 'register' | 'profile' | 'explore' | 'notifications' | 'terms' | 'privacy' | 'about' | 'admin' | 'settings' = 'timeline'
+    let currentView: 'timeline' | 'thread' | 'login' | 'register' | 'profile' | 'explore' | 'notifications' | 'terms' | 'privacy' | 'about' | 'whitepaper' | 'admin' | 'settings' = 'timeline'
     let currentPostId: string | null = null
     let currentUsername: string | null = null
     let currentTag: string | null = null
@@ -133,7 +133,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       // - /explore (with or without tag parameter)
       // - /users/:username (profile pages)
       // - /thread/:id (thread pages)
-      // - /terms, /privacy, /about (legal pages)
+      // - /terms, /privacy, /about, /whitepaper (legal pages)
       // - /login, /register (auth pages)
       const isPublicRoute = 
         cleanPath === '' || 
@@ -144,6 +144,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         cleanPath === '/terms' ||
         cleanPath === '/privacy' ||
         cleanPath === '/about' ||
+        cleanPath === '/whitepaper' ||
         cleanPath.startsWith('/users/') ||
         cleanPath.startsWith('/thread/')
       
@@ -206,6 +207,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (cleanPath === '/about') {
         console.log('About route detected')
         return { view: 'about' as const, postId: null, username: null, tag: null }
+      }
+
+      if (cleanPath === '/whitepaper') {
+        console.log('Whitepaper route detected')
+        return { view: 'whitepaper' as const, postId: null, username: null, tag: null }
       }
       
       // Explore route - public, no auth required
@@ -280,7 +286,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     
     // Navigate to view
-    const navigateTo = async (view: 'timeline' | 'thread' | 'login' | 'register' | 'profile' | 'explore' | 'notifications' | 'terms' | 'privacy' | 'about' | 'admin' | 'settings', postId?: string, username?: string, tag?: string, adminTab?: 'alerts' | 'hidden' | 'users') => {
+    const navigateTo = async (view: 'timeline' | 'thread' | 'login' | 'register' | 'profile' | 'explore' | 'notifications' | 'terms' | 'privacy' | 'about' | 'whitepaper' | 'admin' | 'settings', postId?: string, username?: string, tag?: string, adminTab?: 'alerts' | 'hidden' | 'users') => {
       console.log('Navigate to:', view, postId, username, tag, 'Current view:', currentView, 'adminTab:', adminTab)
       
       // For auth routes, proceed directly
@@ -393,7 +399,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
       // Handle legal pages (public, no auth required, no layout)
-      if (view === 'terms' || view === 'privacy' || view === 'about') {
+      if (view === 'terms' || view === 'privacy' || view === 'about' || view === 'whitepaper') {
         currentView = view
         currentPostId = null
         currentUsername = null
