@@ -151,8 +151,31 @@ export class LeftNav {
       termsLink.style.color = 'var(--text-muted)'
     })
 
+    // Create About flaxia link
+    const aboutLink = document.createElement('a')
+    aboutLink.href = '/about'
+    aboutLink.textContent = 'About flaxia'
+    aboutLink.style.cssText = `
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.875rem;
+      font-family: monospace;
+      transition: color 0.2s;
+    `
+    aboutLink.addEventListener('click', (e) => {
+      e.preventDefault()
+      window.location.href = '/about'
+    })
+    aboutLink.addEventListener('mouseenter', () => {
+      aboutLink.style.color = 'var(--text-primary)'
+    })
+    aboutLink.addEventListener('mouseleave', () => {
+      aboutLink.style.color = 'var(--text-muted)'
+    })
+
     legalLinks.appendChild(privacyLink)
     legalLinks.appendChild(termsLink)
+    legalLinks.appendChild(aboutLink)
     nav.appendChild(legalLinks)
 
     if (this.props.currentUser) {
@@ -689,8 +712,31 @@ export function updateLeftNavUser(leftNav: LeftNav, currentUser: {
     termsLink.style.color = 'var(--text-muted)'
   })
 
+  // Create About flaxia link
+  const aboutLink = document.createElement('a')
+  aboutLink.href = '/about'
+  aboutLink.textContent = 'About flaxia'
+  aboutLink.style.cssText = `
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.875rem;
+    font-family: monospace;
+    transition: color 0.2s;
+  `
+  aboutLink.addEventListener('click', (e) => {
+    e.preventDefault()
+    window.location.href = '/about'
+  })
+  aboutLink.addEventListener('mouseenter', () => {
+    aboutLink.style.color = 'var(--text-primary)'
+  })
+  aboutLink.addEventListener('mouseleave', () => {
+    aboutLink.style.color = 'var(--text-muted)'
+  })
+
   legalLinks.appendChild(privacyLink)
   legalLinks.appendChild(termsLink)
+  legalLinks.appendChild(aboutLink)
   leftNav.getElement().appendChild(legalLinks)
   
   // Add new user area if user is available

@@ -3034,10 +3034,10 @@ app.post('/api/posts/:id/fresh', requireAuth, async (c) => {
   const isTestEnvironment = c.req.url.includes('localhost:8788')
   const rl = await checkRateLimit(c.env.RATE_LIMIT, {
     key: `fresh:${c.get('user')?.id}`,
-    limit: 10,
+    limit: 1,
     windowSeconds: 60
   })
-  if (!rl.allowed) return rateLimitResponse(c, rl.resetIn, 10)
+  if (!rl.allowed) return rateLimitResponse(c, rl.resetIn, 1)
 
   const postId = c.req.param('id')
   const userId = c.get('user')?.id || ''
@@ -3158,11 +3158,12 @@ app.get('/api/tags/trending', async (c) => {
     
     // Query trending tags using json_each to extract array elements
     const result = await c.env.DB.prepare(`
-      SELECT value AS tag, COUNT(*) AS post_count
-      FROM posts, json_each(posts.hashtags)
-      GROUP BY value
-      ORDER BY post_count DESC
-      LIMIT 5
+SELECT value AS tag, COUNT(*) AS post_count
+FROM posts, json_each(posts.hashtags)
+WHERE posts.hidden = 0 AND posts.status = 'published'
+GROUP BY value
+ORDER BY post_count DESC
+LIMIT 5
     `).all()
     
     if (!result.success) {
@@ -3171,9 +3172,8 @@ app.get('/api/tags/trending', async (c) => {
     
     const tags = result.results || []
     
-    // Return response with cache headers for 5 minutes
     return c.json({ tags }, 200, {
-      'Cache-Control': 'public, max-age=300'
+      'Cache-Control': 'public, max-age=60'
     })
   } catch (error: any) {
     console.error('Trending tags error:', error)
@@ -3678,7 +3678,7 @@ app.get('/api/posts/:id', async (c) => {
 // Helper function to get threshold for a category
 function getThreshold(category: ReportCategory): number {
   const thresholds: Record<ReportCategory, number> = {
-    spam: 3,
+    spam: 1,
     harassment: 3,
     inappropriate: 3,
     misinformation: 3,

@@ -1,5 +1,5 @@
 interface LegalPageProps {
-  type: 'terms' | 'privacy'
+  type: 'terms' | 'privacy' | 'about'
 }
 
 export function createLegalPage({ type }: LegalPageProps) {
@@ -33,8 +33,8 @@ export function createLegalPage({ type }: LegalPageProps) {
 
   // Load and render markdown
   const loadContent = async () => {
-    const fileName = type === 'terms' ? 'terms.md' : 'privacy.md'
-    const title = type === 'terms' ? 'Terms of Service' : 'Privacy Policy'
+    const fileName = type === 'terms' ? 'terms.md' : type === 'privacy' ? 'privacy.md' : 'about.md'
+    const title = type === 'terms' ? 'Terms of Service' : type === 'privacy' ? 'Privacy Policy' : 'About Flaxia'
 
     try {
       const response = await fetch(`/legal/${fileName}`)
@@ -198,9 +198,68 @@ export function createLegalPage({ type }: LegalPageProps) {
     return html
   }
 
+  // Create footer with navigation links
+  const footer = document.createElement('footer')
+  footer.className = 'legal-footer'
+  
+  const footerLinks = document.createElement('div')
+  footerLinks.className = 'legal-footer-links'
+  
+  const termsLink = document.createElement('a')
+  termsLink.href = '/terms'
+  termsLink.textContent = 'Terms of Service'
+  termsLink.className = 'legal-footer-link'
+  termsLink.addEventListener('click', (e) => {
+    e.preventDefault()
+    window.history.pushState({}, '', '/terms')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+  
+  const privacyLink = document.createElement('a')
+  privacyLink.href = '/privacy'
+  privacyLink.textContent = 'Privacy Policy'
+  privacyLink.className = 'legal-footer-link'
+  privacyLink.addEventListener('click', (e) => {
+    e.preventDefault()
+    window.history.pushState({}, '', '/privacy')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+  
+  const aboutLink = document.createElement('a')
+  aboutLink.href = '/about'
+  aboutLink.textContent = 'About flaxia'
+  aboutLink.className = 'legal-footer-link'
+  aboutLink.addEventListener('click', (e) => {
+    e.preventDefault()
+    window.history.pushState({}, '', '/about')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+  
+  // Add links in order: Terms, Privacy, About
+  footerLinks.appendChild(termsLink)
+  
+  // Add separator
+  const separator1 = document.createElement('span')
+  separator1.className = 'legal-footer-separator'
+  separator1.textContent = ' | '
+  footerLinks.appendChild(separator1)
+  
+  footerLinks.appendChild(privacyLink)
+  
+  // Add separator
+  const separator2 = document.createElement('span')
+  separator2.className = 'legal-footer-separator'
+  separator2.textContent = ' | '
+  footerLinks.appendChild(separator2)
+  
+  footerLinks.appendChild(aboutLink)
+  
+  footer.appendChild(footerLinks)
+
   // Assemble
   contentWrapper.appendChild(header)
   contentWrapper.appendChild(content)
+  contentWrapper.appendChild(footer)
   container.appendChild(contentWrapper)
 
   // Load content
