@@ -47,10 +47,10 @@ Flaxia operates on a modern edge computing stack designed for global scalability
   /swf/*           - Flash file serving
   /ads/*           - Advertisement payloads
   /thumbnail/*     - Thumbnail images
-  /actors/*        - ActivityPub actor endpoints
-  /.well-known/*   - WebFinger protocol
-  /notifications/*- User notifications
-  /admin/*         - Administrative functions
+  /actors/*        - ActivityPub actor endpoints (WIP)
+  /.well-known/*   - WebFinger protocol (WIP)
+  /notifications/* - User notifications (WIP)
+  /admin/*         - Administrative functions (WIP)
 ```
 
 **Authentication Middleware**:
