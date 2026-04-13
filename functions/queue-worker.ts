@@ -59,9 +59,9 @@ async function handleDeliveryActivity(msg: DeliveryMessage, env: Env, message: a
   let timeoutId: number | undefined
 
   try {
-    // Get user's private key for signing
+    // Get user's private and public keys for signing
     const keyResult = await env.DB.prepare(`
-      SELECT ak.private_key_pem FROM actor_keys ak
+      SELECT ak.private_key_pem, ak.public_key_pem FROM actor_keys ak
       JOIN users u ON u.id = ak.user_id
       WHERE u.username = ?
     `).bind(senderUsername).first()
@@ -73,11 +73,12 @@ async function handleDeliveryActivity(msg: DeliveryMessage, env: Env, message: a
     }
 
     const privateKeyPem = keyResult.private_key_pem as string
+    const publicKeyPem = keyResult.public_key_pem as string
     const keyId = `${env.BASE_URL}/actors/${senderUsername}#main-key`
 
     const { signRequest } = await import('./lib/activitypub/signature')
     const body = JSON.stringify(activity)
-    const headers = await signRequest(inboxUrl, body, privateKeyPem, keyId)
+    const headers = await signRequest(inboxUrl, body, privateKeyPem, publicKeyPem, keyId)
 
     // Add timeout and better error handling
     const controller = new AbortController()
@@ -347,9 +348,9 @@ async function handleFollowActivity(activity: any, username: string, actorId: st
     
     const { signRequest } = await import('./lib/activitypub/signature')
     
-    // Get user's private key for signing
+    // Get user's private and public keys for signing
     const keyResult = await env.DB.prepare(`
-      SELECT ak.private_key_pem FROM actor_keys ak
+      SELECT ak.private_key_pem, ak.public_key_pem FROM actor_keys ak
       JOIN users u ON u.id = ak.user_id
       WHERE u.username = ?
     `).bind(username).first()
@@ -360,6 +361,7 @@ async function handleFollowActivity(activity: any, username: string, actorId: st
     }
 
     const privateKeyPem = keyResult.private_key_pem as string
+    const publicKeyPem = keyResult.public_key_pem as string
     const keyId = `${env.BASE_URL}/actors/${username}#main-key`
 
     console.log('Using inbox URL:', inboxUrl)
@@ -379,7 +381,7 @@ async function handleFollowActivity(activity: any, username: string, actorId: st
     console.log('Accept activity:', JSON.stringify(acceptActivity, null, 2))
 
     const body = JSON.stringify(acceptActivity)
-    const headers = await signRequest(inboxUrl, body, privateKeyPem, keyId)
+    const headers = await signRequest(inboxUrl, body, privateKeyPem, publicKeyPem, keyId)
 
     console.log('Sending Accept activity to:', inboxUrl)
     console.log('Headers:', Object.fromEntries(headers.entries()))
@@ -390,8 +392,10 @@ async function handleFollowActivity(activity: any, username: string, actorId: st
       body: body
     })
 
-    if (response.ok) {
+    if (response.status === 200) {
       console.log('Accept activity sent successfully to:', actorId, 'status:', response.status)
+    } else if (response.status === 202) {
+      console.warn('Accept activity accepted but not processed yet (202) - this may cause follow approval issues:', actorId)
     } else {
       const responseText = await response.text()
       console.error('Failed to send Accept activity:', {
