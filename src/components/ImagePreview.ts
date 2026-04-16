@@ -97,9 +97,10 @@ export function createImagePreview(props: GifPreviewProps): HTMLElement {
       justify-content: center;
       background: var(--bg-secondary);
       color: var(--text-muted);
-      font-family: monospace;
+      font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       font-size: 0.875rem;
-      border-radius: 8px;
+      text-align: center;
+      padding: 2rem;
     `
     fallback.textContent = 'Image failed to load'
     imageContainer.appendChild(fallback)

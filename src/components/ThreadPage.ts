@@ -33,7 +33,7 @@ export class ThreadPage {
     container.style.cssText = `
       background: #ffffff;
       min-height: 100vh;
-      font-family: system-ui, -apple-system, sans-serif;
+      font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     `
 
     // Create main container with 3-column layout
@@ -106,7 +106,7 @@ export class ThreadPage {
     loading.textContent = 'Loading thread...'
     loading.style.cssText = `
       color: #64748b;
-      font-family: system-ui, -apple-system, sans-serif;
+      font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       text-align: center;
       padding: 4rem 2rem;
       font-size: 1.125rem;
@@ -144,7 +144,7 @@ export class ThreadPage {
       background: none;
       border: none;
       color: #22c55e;
-      font-family: system-ui, -apple-system, sans-serif;
+      font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       font-size: 1rem;
       cursor: pointer;
       padding: 0.5rem;
@@ -156,7 +156,7 @@ export class ThreadPage {
     title.textContent = 'Thread'
     title.style.cssText = `
       color: #0f172a;
-      font-family: system-ui, -apple-system, sans-serif;
+      font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       font-size: 1.25rem;
       margin: 0;
       font-weight: normal;
@@ -287,7 +287,7 @@ export class ThreadPage {
       repliesHeader.textContent = `Replies (${data.replies.length})`
       repliesHeader.style.cssText = `
         color: #64748b;
-        font-family: system-ui, -apple-system, sans-serif;
+        font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         font-size: 1rem;
         margin: 0 0 1rem 0;
         font-weight: normal;
@@ -317,7 +317,7 @@ export class ThreadPage {
         noReplies.textContent = 'No replies yet. Be the first to reply!'
         noReplies.style.cssText = `
           color: #64748b;
-          font-family: system-ui, -apple-system, sans-serif;
+          font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
           text-align: center;
           padding: 2rem;
           font-style: italic;

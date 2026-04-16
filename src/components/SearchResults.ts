@@ -192,7 +192,7 @@ export function createSearchResults(props: SearchResultsProps): HTMLElement {
       postText.style.cssText = `
         color: var(--text-primary);
         line-height: 1.4;
-        font-family: monospace;
+        font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         font-size: 0.875rem;
       `
       postText.textContent = post.text
@@ -208,7 +208,7 @@ export function createSearchResults(props: SearchResultsProps): HTMLElement {
   // No results
   if (props.posts.length === 0 && props.users.length === 0) {
     content.innerHTML = `
-      <div style="text-align: center; padding: 2rem; color: var(--text-muted); font-family: monospace;">
+      <div style="text-align: center; padding: 2rem; color: var(--text-muted); font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
         No results found for "${props.query}"
       </div>
     `

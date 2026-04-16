@@ -48,7 +48,7 @@ export class ThreadView {
     title.textContent = 'Thread'
     title.style.cssText = `
       color: #f8fafc;
-      font-family: monospace;
+      font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       font-size: 1rem;
       margin: 0;
     `
@@ -84,7 +84,7 @@ export class ThreadView {
     loading.textContent = 'Loading thread...'
     loading.style.cssText = `
       color: #94a3b8;
-      font-family: monospace;
+      font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       text-align: center;
       padding: 2rem;
     `

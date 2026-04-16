@@ -201,8 +201,8 @@ export class RightPanel {
       
       item.innerHTML = `
         <div class="trending-content">
-          <div class="trending-hashtag" style="font-family: monospace; color: var(--accent); font-size: 15px; font-weight: 600;"># ${tag}</div>
-          <div class="trending-count" style="font-family: monospace; color: var(--text-muted); font-size: 13px;">${post_count} posts</div>
+          <div class="trending-hashtag" style="font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: var(--accent); font-size: 15px; font-weight: 600;"># ${tag}</div>
+          <div class="trending-count" style="font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: var(--text-muted); font-size: 13px;">${post_count} posts</div>
         </div>
       `
 
@@ -307,7 +307,7 @@ export class RightPanel {
       const handle = document.createElement('div')
       handle.className = 'follow-handle'
       handle.style.cssText = `
-        font-family: monospace;
+        font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         color: var(--text-muted);
         font-size: 13px;
       `

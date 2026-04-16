@@ -46,7 +46,7 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
 
   const joinedDate = document.createElement('div')
   joinedDate.className = 'profile-joined-date'
-  joinedDate.style.cssText = 'color: var(--text-muted); font-family: monospace; font-size: 0.875rem; margin-top: 0.5rem;'
+  joinedDate.style.cssText = 'color: var(--text-muted); font-family: \'Noto Sans\', monospace, -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; font-size: 0.875rem; margin-top: 0.5rem;'
   joinedDate.textContent = 'Joined: Loading...'
 
   info.appendChild(displayName)

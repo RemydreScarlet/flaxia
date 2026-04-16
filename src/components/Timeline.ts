@@ -184,10 +184,9 @@ export class Timeline {
     `
     loadingSpinner.style.cssText = `
       display: none;
-      text-align: center;
-      padding: 1rem;
+      font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 0.875rem;
       color: var(--text-muted);
-      font-family: monospace;
     `
     
     // Add skeleton cards for loading more posts

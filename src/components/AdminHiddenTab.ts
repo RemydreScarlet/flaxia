@@ -175,15 +175,16 @@ export function createAdminHiddenTab({ onNavigateToTab }: AdminHiddenTabProps) {
     title.textContent = 'Hidden posts'
     title.style.cssText = `
       color: #f1f5f9;
-      font-size: 24px;
-      font-weight: 600;
-      margin-bottom: 24px;
+      font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 0.875rem;
+      color: var(--text-muted);
     `
     element.appendChild(title)
 
     if (posts.length === 0) {
       const empty = document.createElement('div')
       empty.textContent = 'No hidden posts'
+      empty.style.cssText = 'color: #64748b; font-size: 14px; padding: 24px; text-align: center; font-family: "Noto Sans", monospace, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;'
       empty.style.cssText = 'color: #64748b; font-size: 14px; padding: 24px; text-align: center;'
       element.appendChild(empty)
     } else {

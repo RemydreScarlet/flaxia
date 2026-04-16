@@ -14,7 +14,7 @@ export function createAdminLayout({ activeTab, onTabChange }: AdminLayoutProps) 
       min-height: 100vh;
       background: #0f172a;
       color: #f1f5f9;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     `
 
     const header = document.createElement('div')

@@ -112,7 +112,7 @@ async function loadTrendingTags(container: HTMLElement, onTagClick: (tag: string
 
     if (tags.length === 0) {
       container.innerHTML = `
-        <div style="text-align: center; padding: 2rem; color: var(--text-muted); font-family: monospace;">
+        <div style="text-align: center; padding: 2rem; color: var(--text-muted); font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
           No trending tags yet
         </div>
       `
@@ -130,8 +130,8 @@ async function loadTrendingTags(container: HTMLElement, onTagClick: (tag: string
       `
       
       item.innerHTML = `
-        <div style="font-family: monospace; color: var(--accent); font-size: 1rem; font-weight: 600; margin-bottom: 0.25rem;"># ${tag}</div>
-        <div style="font-family: monospace; color: var(--text-muted); font-size: 0.875rem;">${post_count} posts</div>
+        <div style="font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: var(--accent); font-size: 1rem; font-weight: 600; margin-bottom: 0.25rem;"># ${tag}</div>
+        <div style="font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: var(--text-muted); font-size: 0.875rem;">${post_count} posts</div>
       `
 
       item.onmouseover = () => item.style.background = 'var(--bg-secondary)'
@@ -147,7 +147,7 @@ async function loadTrendingTags(container: HTMLElement, onTagClick: (tag: string
   } catch (error) {
     console.error('Failed to load trending tags:', error)
     container.innerHTML = `
-      <div style="text-align: center; padding: 2rem; color: var(--danger); font-family: monospace;">
+      <div style="text-align: center; padding: 2rem; color: var(--danger); font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
         Failed to load trending topics
       </div>
     `

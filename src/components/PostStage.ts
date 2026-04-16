@@ -284,7 +284,7 @@ function createThumbnailWithOverlay(props: {
       justify-content: center;
       background: var(--bg-secondary);
       color: var(--text-muted);
-      font-family: monospace;
+      font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       font-size: 0.875rem;
     `
     fallback.textContent = 'Thumbnail unavailable'

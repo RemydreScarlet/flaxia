@@ -73,9 +73,8 @@ export class LeftNav {
           itemContent += `<span class="nav-badge" style="
             margin-left: auto;
             background: var(--accent);
-            color: #000;
-            font-family: monospace;
-            font-size: 12px;
+            font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 0.75rem;
             padding: 2px 8px;
             border-radius: 9999px;
             min-width: 20px;
@@ -247,7 +246,7 @@ export class LeftNav {
         this.props.onSignIn?.()
       })
 
-      // Sign up button
+      // Sign up button (hidden on mobile via CSS)
       const signUpButton = document.createElement('button')
       signUpButton.className = 'nav-signup-button'
       signUpButton.textContent = 'Sign up'
@@ -838,6 +837,7 @@ export function updateLeftNavUser(leftNav: LeftNav, currentUser: {
       ;(leftNav as any).props.onSignIn?.()
     })
 
+    // Sign up button (hidden on mobile via CSS)
     const signUpButton = document.createElement('button')
     signUpButton.className = 'nav-signup-button'
     signUpButton.textContent = 'Sign up'

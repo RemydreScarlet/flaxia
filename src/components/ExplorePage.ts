@@ -70,7 +70,7 @@ export class ExplorePage {
           type="text" 
           class="search-input" 
           placeholder="Search Flaxia"
-          style="width: 100%; padding: 0.75rem 1rem 0.75rem 2.5rem; background: var(--bg-input); border: 1px solid var(--border); border-radius: 9999px; color: var(--text-primary); font-family: system-ui, -apple-system, sans-serif; font-size: 0.875rem; outline: none; transition: border-color 0.2s ease;"
+          style="width: 100%; padding: 0.75rem 1rem 0.75rem 2.5rem; background: var(--bg-input); border: 1px solid var(--border); border-radius: 9999px; color: var(--text-primary); font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 0.875rem; outline: none; transition: border-color 0.2s ease;"
         />
         <span class="search-icon" style="position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.875rem;">🔍</span>
       </div>
@@ -269,7 +269,7 @@ export class ExplorePage {
 
     if (tags.length === 0) {
       trendingContainer.innerHTML = `
-        <div style="text-align: center; padding: 2rem; color: var(--text-muted); font-family: monospace;">
+        <div style="text-align: center; padding: 2rem; color: var(--text-muted); font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
           No trending tags yet
         </div>
       `
@@ -287,8 +287,8 @@ export class ExplorePage {
       `
       
       item.innerHTML = `
-        <div style="font-family: monospace; color: var(--accent); font-size: 1rem; font-weight: 600; margin-bottom: 0.25rem;"># ${tag}</div>
-        <div style="font-family: monospace; color: var(--text-muted); font-size: 0.875rem;">${post_count} posts</div>
+        <div style="font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: var(--accent); font-size: 1rem; font-weight: 600; margin-bottom: 0.25rem;"># ${tag}</div>
+        <div style="font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: var(--text-muted); font-size: 0.875rem;">${post_count} posts</div>
       `
 
       item.onmouseover = () => item.style.background = 'var(--bg-secondary)'

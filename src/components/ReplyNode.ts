@@ -29,7 +29,7 @@ export class ReplyNode {
     container.className = 'reply-node'
     container.style.cssText = `
       margin-bottom: 0.75rem;
-      font-family: system-ui, -apple-system, sans-serif;
+      font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       border-left: 1px solid #e2e8f0;
       padding-left: calc(${this.props.node.post.depth} * 1.25rem);
     `

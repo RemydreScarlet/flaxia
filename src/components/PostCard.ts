@@ -73,7 +73,7 @@ export class PostCard {
     textElement.style.cssText = `
       margin-bottom: 1rem;
       line-height: 1.6;
-      font-family: monospace;
+      font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       color: var(--text-primary);
       white-space: pre-wrap;
       word-break: break-word;
@@ -757,7 +757,7 @@ export class PostCard {
           border: none;
           border-radius: 9999px;
           color: #000;
-          font-family: monospace;
+          font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
           font-size: 14px;
           cursor: pointer;
           opacity: 0.5;
@@ -961,7 +961,7 @@ export class PostCard {
         padding: 4px 12px;
         background: var(--bg-secondary);
         color: var(--accent);
-        font-family: monospace;
+        font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         font-size: 13px;
         border-radius: 9999px;
         text-decoration: none;

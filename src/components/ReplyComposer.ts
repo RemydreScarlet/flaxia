@@ -34,7 +34,7 @@ export class ReplyComposer {
       padding: 1rem;
       margin-top: 0.75rem;
       background: #ffffff;
-      font-family: system-ui, -apple-system, sans-serif;
+      font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     `
     
     container.innerHTML = `
@@ -76,7 +76,7 @@ export class ReplyComposer {
               color: #22c55e;
               padding: 0.375rem 0.75rem;
               border-radius: 0;
-              font-family: system-ui, -apple-system, sans-serif;
+              font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
               font-size: 0.75rem;
               cursor: pointer;
               margin-right: 0.5rem;
@@ -87,7 +87,7 @@ export class ReplyComposer {
               color: #000;
               padding: 0.375rem 0.75rem;
               border-radius: 0;
-              font-family: monospace;
+              font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
               font-size: 0.75rem;
               font-weight: bold;
               cursor: pointer;

@@ -48,7 +48,7 @@ export function renderOgHtml(options: OgHtmlOptions, baseUrl: string): string {
     body {
       margin: 0;
       padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #f8f9fa;
       display: flex;
       justify-content: center;

@@ -292,9 +292,9 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
       gap: 1px;
       background: #0f172a;
       padding: 12px 16px;
-      font-size: 14px;
-      font-weight: 600;
-      color: #94a3b8;
+      font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 0.875rem;
+      color: var(--text-muted);
     `
     header.innerHTML = `
       <div>Title</div>
