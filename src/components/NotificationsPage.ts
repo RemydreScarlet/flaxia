@@ -1,6 +1,6 @@
 export interface Notification {
   id: string
-  type: 'reported' | 'fresh' | 'warned' | 'hidden' | 'ap_follow' | 'ap_like' | 'ap_announce'
+  type: 'reported' | 'fresh' | 'warned' | 'hidden' | 'ap_follow' | 'ap_like' | 'ap_announce' | 'reply'
   post_id: string | null
   post_text_preview: string | null
   actor?: {
@@ -165,6 +165,9 @@ export class NotificationsPage {
       case 'ap_announce':
         icon.textContent = '📣'
         break
+      case 'reply':
+        icon.textContent = '💬'
+        break
       case 'reported':
         icon.textContent = '🚩'
         break
@@ -206,13 +209,22 @@ export class NotificationsPage {
           `
         }
         break
+      case 'reply':
+        if (notification.actor) {
+          mainText.innerHTML = `
+            <strong>@${notification.actor.username}</strong> 
+            <span style="color: var(--text-muted);">(${notification.actor.display_name})</span>
+            リプライされました
+          `
+        }
+        break
       case 'ap_follow':
         if (notification.actor) {
           // Local user follow
           mainText.innerHTML = `
             <strong>@${notification.actor.username}</strong> 
             <span style="color: var(--text-muted);">(${notification.actor.display_name})</span>
-            started following you
+            フォローされました
           `
         } else {
           // External actor follow - use actor_data if available
@@ -247,7 +259,7 @@ export class NotificationsPage {
           mainText.innerHTML = `
             <strong>@${notification.actor.username}</strong> 
             <span style="color: var(--text-muted);">(${notification.actor.display_name})</span>
-            announced (boosted) your post
+            投稿をブーストしました
           `
         } else {
           const actorUrl = notification.actor_id || 'external user'
@@ -259,8 +271,8 @@ export class NotificationsPage {
         break
       default:
         mainText.innerHTML = `
-          <strong>Your post has been reported</strong> multiple times. 
-          Please review and consider deleting it.
+          <strong> あなたの投稿が複数回報告されました</strong> 
+          見直しし、削除を検討してください。
         `
     }
     content.appendChild(mainText)
