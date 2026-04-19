@@ -113,6 +113,7 @@ export interface Ad {
   payload_type: 'zip' | 'swf' | 'gif' | 'image' | null
   thumbnail_key?: string
   click_url: string | null
+  script_url?: string
   impressions: number
   clicks: number
 }
@@ -126,6 +127,7 @@ export interface AdminAd {
   payload_key: string | null
   payload_type: 'zip' | 'swf' | 'gif' | 'image' | null
   thumbnail_key?: string
+  script_url?: string
   impressions: number
   clicks: number
   active: number

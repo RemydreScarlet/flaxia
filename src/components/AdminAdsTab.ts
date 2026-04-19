@@ -34,15 +34,20 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
     try {
       const response = await fetch('/api/admin/ads', { credentials: 'include' })
       if (response.status === 403) {
-        return null
+        console.error('Admin access denied - check if user has admin privileges')
+        alert('Admin access denied. You need admin privileges to manage ads.')
+        return []
       }
       if (!response.ok) {
-        throw new Error('Failed to fetch ads')
+        const errorText = await response.text()
+        console.error('Failed to fetch ads:', response.status, errorText)
+        throw new Error(`Failed to fetch ads: ${response.status}`)
       }
       const data = await response.json()
       return (data as { ads: AdminAd[] }).ads || []
     } catch (error) {
       console.error('Fetch ads error:', error)
+      alert(`Failed to load ads: ${error instanceof Error ? error.message : 'Unknown error'}`)
       return []
     }
   }
@@ -51,10 +56,13 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
     try {
       const response = await fetch('/api/admin/ads/config', { credentials: 'include' })
       if (response.status === 403) {
+        console.error('Admin access denied for config - check if user has admin privileges')
         return 8
       }
       if (!response.ok) {
-        throw new Error('Failed to fetch config')
+        const errorText = await response.text()
+        console.error('Failed to fetch config:', response.status, errorText)
+        throw new Error(`Failed to fetch config: ${response.status}`)
       }
       const data = await response.json()
       return (data as { every_n: number }).every_n || 8
@@ -835,7 +843,33 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
             }),
           })
           if (!response.ok) {
-            throw new Error('Failed to create ad')
+            throw new Error('Failed to update ad')
+          }
+        } else {
+          // Create new ad
+          const formData = new FormData()
+          formData.append('title', title)
+          formData.append('body_text', bodyText)
+          formData.append('ad_type', adType)
+          if (clickUrl) {
+            formData.append('click_url', clickUrl)
+          }
+          if (payloadInput.files?.[0]) {
+            formData.append('payload', payloadInput.files[0])
+          }
+          if (thumbnailInput.files?.[0]) {
+            formData.append('thumbnail', thumbnailInput.files[0])
+          }
+
+          const response = await fetch('/api/admin/ads', {
+            method: 'POST',
+            body: formData,
+            credentials: 'include'
+          })
+          
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({})) as { error?: string }
+            throw new Error(errorData.error || `Failed to create ad (${response.status})`)
           }
         }
 

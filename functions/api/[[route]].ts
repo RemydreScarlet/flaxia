@@ -2444,13 +2444,14 @@ app.post('/api/admin/ads', requireAuth, async (c) => {
     const adId = nanoid()
 
     const contentType = c.req.header('content-type')
-    let title: string, body_text: string, click_url: string, payloadFile: File | undefined, thumbnailFile: File | undefined
+    let title: string, body_text: string, click_url: string, ad_type: string, payloadFile: File | undefined, thumbnailFile: File | undefined
 
     if (contentType?.includes('multipart/form-data')) {
       const formData = await c.req.formData()
       title = formData.get('title') as string
       body_text = formData.get('body_text') as string
       click_url = formData.get('click_url') as string
+      ad_type = formData.get('ad_type') as string
       payloadFile = formData.get('payload') as File | null || undefined
       thumbnailFile = formData.get('thumbnail') as File | null || undefined
     } else {
@@ -2458,6 +2459,7 @@ app.post('/api/admin/ads', requireAuth, async (c) => {
       title = body.title
       body_text = body.body_text
       click_url = body.click_url
+      ad_type = body.ad_type
     }
 
     // Validate required fields
@@ -2465,10 +2467,20 @@ app.post('/api/admin/ads', requireAuth, async (c) => {
       return c.json({ error: 'title and body_text are required' }, 400)
     }
 
+    // Validate ad_type
+    if (!ad_type || !['self_hosted', 'admax'].includes(ad_type)) {
+      return c.json({ error: 'ad_type must be either "self_hosted" or "admax"' }, 400)
+    }
+
+    // For admax ads, payload files are not allowed
+    if (ad_type === 'admax' && payloadFile && payloadFile.size > 0) {
+      return c.json({ error: 'Admax ads do not support payload files' }, 400)
+    }
+
     let payload_key: string | null = null
     let payload_type: 'zip' | 'swf' | 'gif' | 'image' | null = null
 
-    // Handle payload file if present
+    // Handle payload file if present (only for self_hosted ads)
     if (payloadFile && payloadFile.size > 0) {
       // Validate size ≤ 100MB (Cloudflare Free/Pro plan limit)
       const maxSize = 100 * 1024 * 1024
@@ -2560,9 +2572,9 @@ app.post('/api/admin/ads', requireAuth, async (c) => {
     }
 
     const result = await c.env.DB.prepare(`
-      INSERT INTO ads (id, title, body_text, click_url, payload_key, payload_type, thumbnail_key, impressions, clicks, active, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 1, datetime('now'))
-    `).bind(adId, title, body_text, click_url || null, payload_key, payload_type, thumbnail_key).run()
+      INSERT INTO ads (id, title, body_text, click_url, payload_key, payload_type, thumbnail_key, impressions, clicks, active, created_at, ad_type)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 1, datetime('now'), ?)
+    `).bind(adId, title, body_text, click_url || null, payload_key, payload_type, thumbnail_key, ad_type).run()
 
     if (!result.success) {
       console.error('Database insert failed:', result)
@@ -3052,13 +3064,6 @@ app.post('/api/posts', requireAuth, async (c) => {
 
 // POST /api/posts/:id/fresh - toggle Fresh! (protected)
 app.post('/api/posts/:id/fresh', requireAuth, async (c) => {
-  const isTestEnvironment = c.req.url.includes('localhost:8788')
-  const rl = await checkRateLimit(c.env.RATE_LIMIT, {
-    key: `fresh:${c.get('user')?.id}`,
-    limit: 1,
-    windowSeconds: 60
-  })
-  if (!rl.allowed) return rateLimitResponse(c, rl.resetIn, 1)
 
   const postId = c.req.param('id')
   const userId = c.get('user')?.id || ''

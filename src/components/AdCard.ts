@@ -131,29 +131,58 @@ function handleDirectClick(ad: Ad): void {
 }
 
 function mountAdmax(ad: Ad, placeholder: HTMLElement): void {
-  // Set placeholder styles for admax
-  placeholder.style.cssText = `
-    position: relative;
-    width: 100%;
-    min-height: 250px;
-    overflow: hidden;
-    background: #f0f0f0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  `
-
-  // Create admax script element properly
-  const script = document.createElement('script')
-  script.src = 'https://adm.shinobi.jp/s/b5b3413a80d7c47326e75bfa57b8c41b'
-  script.async = true
+  // Create iframe for isolated ad environment
+  const iframe = document.createElement('iframe')
+  iframe.style.width = '100%'
+  iframe.style.height = '250px'
+  iframe.style.border = 'none'
+  iframe.style.margin = '0 auto'
+  iframe.style.display = 'block'
   
-  placeholder.appendChild(script)
+  // Set up iframe content
+  iframe.onload = () => {
+    try {
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document
+      if (iframeDoc) {
+        iframeDoc.open()
+        // Use the new ad HTML provided by the user
+        iframeDoc.write(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8">
+            <style>
+              body { margin: 0; padding: 0; width: 300px; height: 250px; overflow: hidden; }
+            </style>
+          </head>
+          <body>
+            <script src="https://adm.shinobi.jp/o/c450decd2d1550cfac1b91646d8f7f2a"></script>
+          </body>
+          </html>
+        `)
+        iframeDoc.close()
+      }
+    } catch (error) {
+      console.error('Failed to setup iframe:', error)
+    }
+  }
+  
+  placeholder.appendChild(iframe)
 }
 
 function mountAdStage(ad: Ad, placeholder: HTMLElement): void {
+  // Debug logging
+  console.log('mountAdStage called with ad:', {
+    id: ad.id,
+    body_text: ad.body_text,
+    ad_type: ad.ad_type,
+    payload_type: ad.payload_type,
+    payload_key: ad.payload_key
+  })
+
   // Handle admax ads
   if (ad.ad_type === 'admax') {
+    console.log('Ad is admax type, calling mountAdmax')
     mountAdmax(ad, placeholder)
     return
   }
@@ -170,7 +199,22 @@ function mountAdStage(ad: Ad, placeholder: HTMLElement): void {
 
   // Render based on payload_type
   if (ad.payload_type === null) {
-    // Body text only - no stage rendered
+    console.log('Ad has no payload_type, showing admax iframe')
+    // Body text only - show admax iframe
+    // Update placeholder styles for admax
+    placeholder.style.cssText = `
+      position: relative;
+      width: 100%;
+      height: 250px;
+      background: #f8f9fa;
+      border: 1px solid #e9ecef;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    `
+    mountAdmax(ad, placeholder)
+    return
   } else if (ad.payload_type === 'gif' || ad.payload_type === 'image') {
     // Render image
     const img = document.createElement('img')
