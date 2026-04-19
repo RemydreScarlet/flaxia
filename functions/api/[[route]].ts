@@ -2100,7 +2100,7 @@ app.get('/api/ads/active', async (c) => {
       return c.json({ error: 'Database not available' }, 500)
     }
 
-    const result = await c.env.DB.prepare('SELECT id, body_text, payload_key, payload_type, thumbnail_key, click_url, impressions, clicks, active, created_at, adsense_slot, adsense_client, ad_type FROM ads WHERE active = 1').all()
+    const result = await c.env.DB.prepare('SELECT id, body_text, payload_key, payload_type, thumbnail_key, click_url, impressions, clicks, active, created_at, ad_type FROM ads WHERE active = 1').all()
     
     if (!result.success) {
       console.error('Database query failed:', result)

@@ -663,7 +663,8 @@ p {
 }
 
 .trending-section,
-.follow-section {
+.follow-section,
+.ad-section {
   margin-bottom: 1.5rem;
 }
 
@@ -788,6 +789,7 @@ p {
   background: var(--accent);
   color: #000;
 }
+
 
 /* PostCard Styles */
 .post-card {

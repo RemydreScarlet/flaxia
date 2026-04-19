@@ -17,11 +17,10 @@
 
 ### **アクセス解析・広告配信情報**
 - **Cloudflare Web Analytics** — IPアドレスを収集しないプライバシーファーストな解析ツール。クッキー不使用。
-- **Google AdSense** — 広告配信プロセスの過程で、Cookieやデバイス識別子等の情報を収集する場合があります。詳細は第12条をご確認ください。
 - **プレイアブル広告の計測** — API側でのユーザー情報を収集せず、集計カウントのみを行います。
 
 ## **第2条 収集しない情報**
-- 当サービス独自による広告トラッキングは行いません。ただし、第三者配信事業者（Google AdSense）によるCookieを使用した広告配信が行われる場合があります。詳細は第12条をご確認ください。
+- 当サービス独自による広告トラッキングは行いません。
 - 第三者へのデータ販売・直接的な提供は行いません。
 - 決済情報は収集しません。
 
@@ -37,7 +36,6 @@
 | ----- | ----- | ----- |
 | Cloudflare | インフラ・DDoS対策・Web Analytics | [link](https://cloudflare.com/privacypolicy) |
 | Ruffle | Flashコンテンツ再生 | [link](https://unpkg.com/) |
-| Google AdSense | 広告配信 | [link](https://policies.google.com/technologies/ads) |
 
 ## **第5条 データの保持期間**
 - アカウントデータはアカウント削除まで保持します。
@@ -45,7 +43,7 @@
 - セッションデータはログアウト時に即時削除されます。
 
 ## **第6条 クッキー（Cookie）**
-当サービスは、ログインセッション管理のために独自のCookie（httpOnly、Secure、SameSite=Lax）を使用します。また、第12条に記載する通り、広告配信を目的として第三者（Google等）によるCookieが使用される場合があります。
+当サービスは、ログインセッション管理のために独自のCookie（httpOnly、Secure、SameSite=Lax）を使用します。
 
 ## **第7条 ユーザーの権利**
 
@@ -85,12 +83,6 @@
 ## **第11条 プライバシーポリシーの変更**
 本ポリシーを変更する場合、施行日の7日前までにFlaxia上でお知らせします。
 
-## **第12条 第三者による広告配信について（Google AdSense）**
-本サービスでは、第三者配信事業者であるGoogleが提供する広告サービス「Google AdSense」を利用しています。
-
-1.  Googleなどの第三者配信事業者は、Cookieを使用して、ユーザーが当サイトや他のウェブサイトに過去にアクセスした際の情報に基づいて広告を配信します。
-2.  Googleが広告Cookieを使用することにより、ユーザーが当サイトや他のサイトにアクセスした際の情報に基づいて、Googleやそのパートナーが適切な広告をユーザーに表示できます。
-3.  ユーザーは、Googleアカウントの[広告設定](https://adssettings.google.com/authenticated)でパーソナライズ広告を無効にできます。または、[www.aboutads.info](https://www.aboutads.info) にアクセスすれば、第三者配信事業者がパーソナライズ広告の掲載で使用するCookieを無効にできます。
 
 ## **第13条 お問い合わせ・苦情窓口**
 - メール：[RemydreS@proton.me](mailto:RemydreS@proton.me)

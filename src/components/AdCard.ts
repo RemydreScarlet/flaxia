@@ -3,12 +3,6 @@ import { executeUniversalZip, UniversalZipExecutorHandle } from '../lib/zip-mana
 import { executeFlash, FlashPlayerHandle } from './FlashPlayer.js'
 import { adImpressionTracker } from '../lib/ad-impression-tracker.js'
 
-// TypeScript declaration for AdSense global
-declare global {
-  interface Window {
-    adsbygoogle: any[]
-  }
-}
 
 // Global handles for cleanup
 let activeZipHandle: UniversalZipExecutorHandle | null = null
@@ -157,56 +151,7 @@ function mountAdmax(ad: Ad, placeholder: HTMLElement): void {
   placeholder.appendChild(script)
 }
 
-function mountAdSense(ad: Ad, placeholder: HTMLElement): void {
-  // Set placeholder styles for AdSense
-  placeholder.style.cssText = `
-    position: relative;
-    width: 100%;
-    min-height: 250px;
-    overflow: hidden;
-    background: #f0f0f0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  `
-
-  // Create AdSense ad container
-  const adContainer = document.createElement('ins')
-  adContainer.className = 'adsbygoogle'
-  adContainer.style.cssText = `
-    display: block !important;
-    width: 100%;
-    min-width: 250px;
-    min-height: 100px;
-  `
-  adContainer.setAttribute('data-ad-client', ad.adsense_client || 'ca-pub-8703789531673358')
-  adContainer.setAttribute('data-ad-slot', ad.adsense_slot || '6262283560')
-  adContainer.setAttribute('data-ad-format', 'auto')
-  adContainer.setAttribute('data-full-width-responsive', 'true')
-  
-  placeholder.appendChild(adContainer)
-  
-  // Load AdSense ad
-  try {
-    (window.adsbygoogle = window.adsbygoogle || []).push({})
-  } catch (error) {
-    console.error('AdSense error:', error)
-    // Show error message
-    placeholder.innerHTML = `
-      <div style="color: #666; font-size: 14px; text-align: center; padding: 20px;">
-        Ad could not be loaded
-      </div>
-    `
-  }
-}
-
 function mountAdStage(ad: Ad, placeholder: HTMLElement): void {
-  // Handle AdSense ads
-  if (ad.ad_type === 'adsense') {
-    mountAdSense(ad, placeholder)
-    return
-  }
-
   // Handle admax ads
   if (ad.ad_type === 'admax') {
     mountAdmax(ad, placeholder)
@@ -414,14 +359,18 @@ export function createAdCard(ad: Ad): HTMLElement {
   adPlaceholder.className = 'ad-placeholder'
   
   // Set appropriate styling based on ad type
-  if (ad.ad_type === 'admax' || ad.ad_type === 'adsense') {
+  if (ad.ad_type === 'admax') {
     // Script-based ads use fixed height
     adPlaceholder.style.cssText = `
       position: relative;
       width: 100%;
-      min-height: 250px;
-      overflow: hidden;
-      background: #f0f0f0;
+      height: 250px;
+      background: #f8f9fa;
+      border: 1px solid #e9ecef;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     `
   } else {
     // Content-based ads use aspect ratio
@@ -436,8 +385,8 @@ export function createAdCard(ad: Ad): HTMLElement {
   }
   
   // Render based on payload_type and ad_type
-  if (ad.ad_type === 'adsense' || ad.ad_type === 'admax') {
-    // AdSense and admax ads always use lazy loading
+  if (ad.ad_type === 'admax') {
+    // Admax ads use lazy loading
     const observer = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
         if (entry.isIntersecting) {

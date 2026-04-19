@@ -1,0 +1,27 @@
+/*
+  X-Frame-Options: SAMEORIGIN
+
+/assets/*.js
+  Content-Type: application/javascript
+  X-Content-Type-Options: nosniff
+
+# Ad network MIME type fixes
+/AdServer/js/*.js
+  Content-Type: application/javascript
+  X-Content-Type-Options: nosniff
+
+/AdServer/*.js
+  Content-Type: application/javascript
+  X-Content-Type-Options: nosniff
+
+/usync.js
+  Content-Type: application/javascript
+  X-Content-Type-Options: nosniff
+
+/async_usersync
+  Content-Type: application/javascript
+  X-Content-Type-Options: nosniff
+
+/showad.js
+  Content-Type: application/javascript
+  X-Content-Type-Options: nosniff

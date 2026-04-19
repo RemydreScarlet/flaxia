@@ -43,6 +43,10 @@ export class RightPanel {
     const followSection = this.createFollowSection()
     container.appendChild(followSection)
 
+    // Admax ad section
+    const adSection = this.createAdSection()
+    container.appendChild(adSection)
+
     return container
   }
 
@@ -90,6 +94,50 @@ export class RightPanel {
       </div>
     `
 
+    return section
+  }
+
+  private createAdSection(): HTMLElement {
+    const section = document.createElement('div')
+    section.className = 'ad-section'
+    
+    // Create iframe for isolated ad environment
+    const iframe = document.createElement('iframe')
+    iframe.style.width = '318px'
+    iframe.style.height = '600px'
+    iframe.style.border = 'none'
+    iframe.style.margin = '0 auto'
+    iframe.style.display = 'block'
+    
+    // Set up iframe content with Admax script
+    iframe.onload = () => {
+      try {
+        const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document
+        if (iframeDoc) {
+          iframeDoc.open()
+          iframeDoc.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="utf-8">
+              <style>
+                body { margin: 0; padding: 0; width: 318px; height: 600px; overflow: hidden; }
+              </style>
+            </head>
+            <body>
+              <script src="https://adm.shinobi.jp/s/3c3cb145b843f9b7f75cf28c25df7b0e"></script>
+            </body>
+            </html>
+          `)
+          iframeDoc.close()
+        }
+      } catch (error) {
+        console.error('Failed to setup iframe:', error)
+      }
+    }
+    
+    section.appendChild(iframe)
+    
     return section
   }
 

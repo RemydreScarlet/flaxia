@@ -1,14 +1,12 @@
 export interface AdminAd {
   id: string
   title: string
-  ad_type: 'self_hosted' | 'adsense' | 'admax'
+  ad_type: 'self_hosted' | 'admax'
   body_text: string
   click_url: string | null
   payload_key: string | null
   payload_type: 'zip' | 'swf' | 'gif' | 'image' | null
   thumbnail_key?: string
-  adsense_slot?: string
-  adsense_client?: string
   impressions: number
   clicks: number
   active: number
@@ -124,7 +122,6 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
   }
 
   const getFormatLabel = (payloadType: string | null, adType?: string): string => {
-    if (adType === 'adsense') return 'AdSense'
     if (adType === 'admax') return 'Admax'
     switch (payloadType) {
       case 'zip': return 'ZIP'
@@ -331,10 +328,7 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
 
       // Ad Type column
       const adType = document.createElement('div')
-      if (ad.ad_type === 'adsense') {
-        adType.textContent = 'AdSense'
-        adType.style.cssText = 'color: #3b82f6; font-weight: 500;'
-      } else if (ad.ad_type === 'admax') {
+      if (ad.ad_type === 'admax') {
         adType.textContent = 'Admax'
         adType.style.cssText = 'color: #8b5cf6; font-weight: 500;'
       } else {
@@ -559,16 +553,11 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
     selfHostedOption.value = 'self_hosted'
     selfHostedOption.textContent = 'Self-hosted (ZIP/SWF/GIF/Image)'
     
-    const adsenseOption = document.createElement('option')
-    adsenseOption.value = 'adsense'
-    adsenseOption.textContent = 'Google AdSense'
-    
     const admaxOption = document.createElement('option')
     admaxOption.value = 'admax'
     admaxOption.textContent = 'Admax (JavaScript ads)'
     
     adTypeSelect.appendChild(selfHostedOption)
-    adTypeSelect.appendChild(adsenseOption)
     adTypeSelect.appendChild(admaxOption)
     
     if (editingAd?.ad_type) {
@@ -673,35 +662,6 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
     urlField.appendChild(urlInput)
     form.appendChild(urlField)
 
-    // AdSense Slot field (shown only for AdSense ads)
-    const adsenseSlotField = document.createElement('div')
-    adsenseSlotField.style.cssText = 'display: flex; flex-direction: column; gap: 8px;'
-
-    const adsenseSlotLabel = document.createElement('label')
-    adsenseSlotLabel.textContent = 'AdSense Slot ID'
-    adsenseSlotLabel.style.cssText = 'color: #f1f5f9; font-size: 14px; font-weight: 500;'
-    adsenseSlotField.appendChild(adsenseSlotLabel)
-
-    const adsenseSlotInput = document.createElement('input')
-    adsenseSlotInput.type = 'text'
-    adsenseSlotInput.value = editingAd?.adsense_slot || '6262283560'
-    adsenseSlotInput.placeholder = '6262283560'
-    adsenseSlotInput.style.cssText = `
-      background: #0f172a;
-      border: 1px solid #334155;
-      color: #f1f5f9;
-      padding: 12px;
-      border-radius: 4px;
-      font-size: 14px;
-    `
-
-    const adsenseSlotHint = document.createElement('div')
-    adsenseSlotHint.textContent = 'Google AdSense ad slot ID'
-    adsenseSlotHint.style.cssText = 'color: #64748b; font-size: 12px; margin-top: 4px;'
-
-    adsenseSlotField.appendChild(adsenseSlotInput)
-    adsenseSlotField.appendChild(adsenseSlotHint)
-    form.appendChild(adsenseSlotField)
 
     // Payload field
     const payloadField = document.createElement('div')
@@ -772,11 +732,9 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
 
     // Function to toggle field visibility based on ad type (now defined after all fields)
     const toggleFieldVisibility = () => {
-      const isAdSense = adTypeSelect.value === 'adsense'
       const isAdmax = adTypeSelect.value === 'admax'
-      payloadField.style.display = (isAdSense || isAdmax) ? 'none' : 'flex'
-      thumbnailField.style.display = (isAdSense || isAdmax) ? 'none' : 'flex'
-      adsenseSlotField.style.display = isAdSense ? 'flex' : 'none'
+      payloadField.style.display = isAdmax ? 'none' : 'flex'
+      thumbnailField.style.display = isAdmax ? 'none' : 'flex'
     }
 
     // Add event listener to ad type selector
@@ -837,17 +795,10 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
       const title = titleInput.value.trim()
       const bodyText = bodyTextarea.value.trim()
       const clickUrl = urlInput.value.trim() || null
-      const adType = adTypeSelect.value as 'self_hosted' | 'adsense' | 'admax'
-      const adsenseSlot = adsenseSlotInput.value.trim() || '6262283560'
+      const adType = adTypeSelect.value as 'self_hosted' | 'admax'
 
       if (!title || !bodyText) {
         alert('Title and body text are required')
-        return
-      }
-
-      // Validate AdSense ads
-      if (adType === 'adsense' && !adsenseSlot) {
-        alert('AdSense Slot ID is required for AdSense ads')
         return
       }
 
@@ -880,31 +831,8 @@ export function createAdminAdsTab({ onNavigateToTab }: AdminAdsTabProps) {
               title, 
               body_text: bodyText, 
               click_url: clickUrl,
-              ad_type: adType,
-              adsense_slot: adType === 'adsense' ? adsenseSlot : null
+              ad_type: adType
             }),
-            credentials: 'include'
-          })
-          if (!response.ok) {
-            throw new Error('Failed to update ad')
-          }
-        } else {
-          // Create new ad
-          const formData = new FormData()
-          formData.append('title', title)
-          formData.append('body_text', bodyText)
-          formData.append('ad_type', adType)
-          if (clickUrl) formData.append('click_url', clickUrl)
-          if (adType === 'adsense') {
-            formData.append('adsense_slot', adsenseSlot)
-          }
-          if (payloadInput.files?.[0]) formData.append('payload', payloadInput.files[0])
-          if (thumbnailInput.files?.[0]) formData.append('thumbnail', thumbnailInput.files[0])
-
-          const response = await fetch('/api/admin/ads', {
-            method: 'POST',
-            body: formData,
-            credentials: 'include'
           })
           if (!response.ok) {
             throw new Error('Failed to create ad')
