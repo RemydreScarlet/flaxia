@@ -166,7 +166,6 @@ function mountAdmax(ad: Ad, placeholder: HTMLElement): void {
       console.error('Failed to setup iframe:', error)
     }
   }
-  
   placeholder.appendChild(iframe)
 }
 

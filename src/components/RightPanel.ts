@@ -43,11 +43,9 @@ export class RightPanel {
     const followSection = this.createFollowSection()
     container.appendChild(followSection)
 
-    // Admax ad section 3 times
-    for (let i = 0; i < 3; i++) {
-      const adSection = this.createAdSection()
-      container.appendChild(adSection)
-    }
+    // Admax ad section
+    const adSection = this.createAdSection()
+    container.appendChild(adSection)
 
     return container
   }
@@ -105,8 +103,8 @@ export class RightPanel {
     
     // Create iframe for isolated ad environment
     const iframe = document.createElement('iframe')
-    iframe.style.width = '300px'
-    iframe.style.height = '250px'
+    iframe.style.width = '160px'
+    iframe.style.height = '600px'
     iframe.style.border = 'none'
     iframe.style.margin = '0 auto'
     iframe.style.display = 'block'
@@ -123,11 +121,11 @@ export class RightPanel {
             <head>
               <meta charset="utf-8">
               <style>
-                body { margin: 0; padding: 0; width: 300px; height: 250px; overflow: hidden; }
+                body { margin: 0; padding: 0; width: 160px; height: 600px; overflow: hidden; }
               </style>
             </head>
             <body>
-              <script src="https://adm.shinobi.jp/o/c450decd2d1550cfac1b91646d8f7f2a"></script>
+              <script src="https://adm.shinobi.jp/s/3c3cb145b843f9b7f75cf28c25df7b0e"></script>
             </body>
             </html>
           `)

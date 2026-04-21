@@ -1,6 +1,7 @@
 import { createPostCard } from './PostCard.js'
 import { Post } from '../types/post.js'
 import { safeRemoveFromBody } from '../lib/dom-utils.js'
+import { createSkeletonCard } from './SkeletonCard.js'
 
 export interface ExplorePageProps {
   tag?: string
@@ -14,6 +15,10 @@ export class ExplorePage {
   private cursor?: string
   private loading = false
   private hasMore = true
+  private intersectionObserver: IntersectionObserver | null = null
+  private loadMoreSentinel: HTMLElement | null = null
+  private retryCount = 0
+  private maxRetries = 3
 
   constructor(props: ExplorePageProps) {
     this.props = props
@@ -50,8 +55,24 @@ export class ExplorePage {
       container.appendChild(document.createElement('div')).className = 'explore-trending'
     }
 
-    container.appendChild(document.createElement('div')).className = 'explore-loading'
-    container.querySelector('.explore-loading')!.setAttribute('style', 'display: none;')
+    // Add loading container
+    const loadingContainer = document.createElement('div')
+    loadingContainer.className = 'explore-loading'
+    loadingContainer.style.cssText = 'display: none;'
+    container.appendChild(loadingContainer)
+    
+    // Add sentinel for intersection observer
+    this.loadMoreSentinel = document.createElement('div')
+    this.loadMoreSentinel.className = 'explore-sentinel'
+    this.loadMoreSentinel.style.cssText = `
+      height: 100px;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 1rem;
+    `
+    container.appendChild(this.loadMoreSentinel)
     
     return container
   }
@@ -97,17 +118,8 @@ export class ExplorePage {
       })
     }
 
-    // Infinite scroll
-    window.addEventListener('scroll', () => {
-      if (this.loading || !this.hasMore) return
-
-      const scrollPosition = window.innerHeight + window.scrollY
-      const threshold = document.body.offsetHeight - 500
-
-      if (scrollPosition >= threshold) {
-        this.loadMorePosts()
-      }
-    })
+    // Setup intersection observer for infinite scroll
+    this.setupIntersectionObserver()
   }
 
   private async performSearch(query: string): Promise<void> {
@@ -208,7 +220,7 @@ export class ExplorePage {
 
       const response = await fetch(url)
       if (!response.ok) {
-        throw new Error('Failed to load more posts')
+        throw new Error(`Failed to load more posts: ${response.status}`)
       }
 
       const data = await response.json() as { posts: Post[] }
@@ -217,13 +229,24 @@ export class ExplorePage {
       if (newPosts.length > 0) {
         this.posts.push(...newPosts)
         this.cursor = newPosts[newPosts.length - 1].created_at
-        this.hasMore = newPosts.length === 20 && newPosts.length > 0
-        this.renderPosts()
+        this.hasMore = newPosts.length === 10 && newPosts.length > 0
+        this.appendNewPosts(newPosts)
+        this.retryCount = 0 // Reset retry count on success
       } else {
         this.hasMore = false
+        this.showEndOfPosts()
       }
     } catch (error) {
       console.error('Failed to load more posts:', error)
+      this.retryCount++
+      
+      if (this.retryCount < this.maxRetries) {
+        // Retry with exponential backoff
+        const delay = Math.pow(2, this.retryCount) * 1000
+        setTimeout(() => this.loadMorePosts(), delay)
+      } else {
+        this.showLoadError()
+      }
     } finally {
       this.loading = false
       this.updateLoadingState(false)
@@ -250,15 +273,42 @@ export class ExplorePage {
     const postsContainer = this.element.querySelector('.explore-posts') as HTMLElement
     if (!postsContainer) return
 
-    postsContainer.innerHTML = ''
+    // Only clear and re-render if this is the initial load or if we need to refresh
+    // For infinite scroll, we'll append new posts instead
+    if (this.cursor === undefined || postsContainer.children.length === 0) {
+      postsContainer.innerHTML = ''
+      
+      // Use document fragment for better performance
+      const fragment = document.createDocumentFragment()
+      
+      this.posts.forEach(post => {
+        const postCard = createPostCard({
+          post,
+          sandboxOrigin: this.props.sandboxOrigin
+        })
+        fragment.appendChild(postCard.getElement())
+      })
+      
+      postsContainer.appendChild(fragment)
+    }
+  }
 
-    this.posts.forEach(post => {
+  private appendNewPosts(newPosts: Post[]): void {
+    const postsContainer = this.element.querySelector('.explore-posts') as HTMLElement
+    if (!postsContainer) return
+
+    // Use document fragment for better performance
+    const fragment = document.createDocumentFragment()
+    
+    newPosts.forEach(post => {
       const postCard = createPostCard({
         post,
         sandboxOrigin: this.props.sandboxOrigin
       })
-      postsContainer.appendChild(postCard.getElement())
+      fragment.appendChild(postCard.getElement())
     })
+    
+    postsContainer.appendChild(fragment)
   }
 
   private renderTrendingTags(tags: Array<{ tag: string; post_count: number }>): void {
@@ -308,9 +358,74 @@ export class ExplorePage {
     if (loadingElement) {
       loadingElement.style.display = isLoading ? 'block' : 'none'
       if (isLoading) {
-        loadingElement.innerHTML = '<span>Loading...</span>'
+        // Show skeleton cards while loading more posts
+        loadingElement.innerHTML = ''
+        for (let i = 0; i < 2; i++) {
+          loadingElement.appendChild(createSkeletonCard())
+        }
       }
     }
+  }
+
+  private showEndOfPosts(): void {
+    const loadingElement = this.element.querySelector('.explore-loading') as HTMLElement
+    if (loadingElement) {
+      loadingElement.style.display = 'block'
+      loadingElement.innerHTML = `
+        <div style="text-align: center; padding: 2rem; color: var(--text-muted); font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+          <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">🎉</div>
+          <div>You've reached the end!</div>
+          <div style="font-size: 0.875rem; margin-top: 0.5rem;">No more posts with #${this.props.tag}</div>
+        </div>
+      `
+    }
+  }
+
+  private showLoadError(): void {
+    const loadingElement = this.element.querySelector('.explore-loading') as HTMLElement
+    if (loadingElement) {
+      loadingElement.style.display = 'block'
+      loadingElement.innerHTML = `
+        <div style="text-align: center; padding: 2rem; color: var(--text-muted); font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+          <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">⚠️</div>
+          <div>Failed to load more posts</div>
+          <button 
+            onclick="this.parentElement.parentElement.style.display='none'; document.querySelector('.explore-sentinel').click();"
+            style="margin-top: 1rem; padding: 0.5rem 1rem; background: var(--accent); color: white; border: none; border-radius: 4px; cursor: pointer; font-family: inherit;"
+          >
+            Retry
+          </button>
+        </div>
+      `
+    }
+  }
+
+  private setupIntersectionObserver(): void {
+    if (!this.loadMoreSentinel) return
+
+    // Disconnect existing observer if any
+    if (this.intersectionObserver) {
+      this.intersectionObserver.disconnect()
+    }
+
+    // Create new intersection observer optimized for mobile
+    this.intersectionObserver = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0]
+        if (entry.isIntersecting && !this.loading && this.hasMore) {
+          // Immediate loading for better mobile performance
+          this.loadMorePosts()
+        }
+      },
+      {
+        root: null, // Use viewport as root
+        rootMargin: '300px', // Start loading 300px before sentinel comes into view (better for mobile)
+        threshold: 0.1 // Trigger when 10% is visible (more reliable than 0.01)
+      }
+    )
+
+    // Start observing sentinel
+    this.intersectionObserver.observe(this.loadMoreSentinel)
   }
 
   public getElement(): HTMLElement {
@@ -318,7 +433,13 @@ export class ExplorePage {
   }
 
   public destroy(): void {
-    // Cleanup
+    // Cleanup intersection observer
+    if (this.intersectionObserver) {
+      this.intersectionObserver.disconnect()
+      this.intersectionObserver = null
+    }
+    
+    // Cleanup scroll event listeners (if any remain)
     window.removeEventListener('scroll', () => {})
   }
 }
