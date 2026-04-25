@@ -257,6 +257,11 @@ export class Timeline {
 
     // Setup intersection observer for infinite scroll
     this.setupIntersectionObserver()
+    
+    // Listen for profile updates to refresh composer avatar
+    window.addEventListener('profileUpdated', () => {
+      this.handleProfileUpdate()
+    })
   }
 
   private handleNewPost(post: any): void {
@@ -271,6 +276,19 @@ export class Timeline {
     if (postCard) {
       // PostCard will handle showing/hiding its inline reply composer
       postCard.handleReplyTogglePublic()
+    }
+  }
+
+  private async handleProfileUpdate(): Promise<void> {
+    // Refresh current user data from cache
+    const updatedUser = await getMe()
+    if (updatedUser && this.composer) {
+      // Update the composer with the new user data
+      this.composer.updateCurrentUser({
+        username: updatedUser.username,
+        display_name: updatedUser.display_name,
+        avatar_key: updatedUser.avatar_key
+      })
     }
   }
 

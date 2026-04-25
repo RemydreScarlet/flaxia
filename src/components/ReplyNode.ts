@@ -17,6 +17,7 @@ export class ReplyNode {
   private replyComposer?: ReplyComposer
   private childReplyNodes: ReplyNode[] = []
   private isReplyComposerOpen: boolean = false
+  private globalReplyListener?: (e: Event) => void
 
   constructor(props: ReplyNodeProps) {
     this.props = props
@@ -38,7 +39,9 @@ export class ReplyNode {
     this.postCard = createPostCard({
       post: this.props.node.post,
       sandboxOrigin: this.props.sandboxOrigin,
-      currentUser: this.props.currentUser || undefined
+      currentUser: this.props.currentUser || undefined,
+      onDelete: () => {}, // Add empty onDelete handler to prevent errors
+      disableReplyComposer: true // Disable only PostCard's reply composer, ReplyNode handles replies
     })
     container.appendChild(this.postCard.getElement())
 
@@ -88,6 +91,14 @@ export class ReplyNode {
         }
       })
     }
+
+    // Listen for global reply composer open events to close other composers
+    this.globalReplyListener = (e: any) => {
+      if (e.detail.postId !== this.props.node.post.id && this.isReplyComposerOpen) {
+        this.hideReplyComposer()
+      }
+    }
+    document.addEventListener('replyComposerOpen', this.globalReplyListener)
   }
 
   private toggleReplyComposer(): void {
@@ -100,6 +111,11 @@ export class ReplyNode {
 
   private showReplyComposer(): void {
     if (this.replyComposer && this.props.node.post.depth < 5) {
+      // Dispatch global event to close other reply composers
+      document.dispatchEvent(new CustomEvent('replyComposerOpen', {
+        detail: { postId: this.props.node.post.id }
+      }))
+      
       this.replyComposer.getElement().style.display = 'block'
       this.isReplyComposerOpen = true
     }
@@ -132,6 +148,12 @@ export class ReplyNode {
   }
 
   public destroy(): void {
+    // Cleanup global event listener
+    if (this.globalReplyListener) {
+      document.removeEventListener('replyComposerOpen', this.globalReplyListener)
+      this.globalReplyListener = undefined
+    }
+
     // Cleanup child reply nodes
     this.childReplyNodes.forEach(node => node.destroy())
     this.childReplyNodes = []

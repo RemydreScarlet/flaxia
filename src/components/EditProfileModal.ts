@@ -102,7 +102,15 @@ export function createEditProfileModal({ currentUser, onSave }: EditProfileModal
     overflow: hidden;
     border: 4px solid var(--bg-primary);
   `
-  avatar.textContent = currentUser.username.charAt(0).toUpperCase()
+  // Display existing avatar if available
+  if (currentUser.avatar_key) {
+    avatar.style.backgroundImage = `url(/api/images/${currentUser.avatar_key})`
+    avatar.style.backgroundSize = 'cover'
+    avatar.style.backgroundPosition = 'center'
+    avatar.textContent = ''
+  } else {
+    avatar.textContent = currentUser.username.charAt(0).toUpperCase()
+  }
 
   const avatarOverlay = document.createElement('div')
   avatarOverlay.className = 'avatar-overlay'
@@ -406,6 +414,11 @@ export function createEditProfileModal({ currentUser, onSave }: EditProfileModal
         // Update cache with new user data
         const updatedUser = await response.json()
         updateMeCache(updatedUser)
+        
+        // Dispatch event to notify components of profile update
+        window.dispatchEvent(new CustomEvent('profileUpdated', { 
+          detail: updatedUser 
+        }))
         
         if (avatarPreviewUrl) {
           URL.revokeObjectURL(avatarPreviewUrl)

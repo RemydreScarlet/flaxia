@@ -2,6 +2,7 @@ import { Post } from '../types/post.js'
 import { buildTree, PostNode } from '../lib/thread.js'
 import { createPostCard } from './PostCard.js'
 import { createReplyNode, ReplyNode } from './ReplyNode.js'
+import { createReplyComposer, ReplyComposer } from './ReplyComposer.js'
 import { createLeftNav } from './LeftNav.js'
 import { createRightPanel } from './RightPanel.js'
 
@@ -16,6 +17,8 @@ export class ThreadPage {
   private element: HTMLElement
   private props: ThreadPageProps
   private rootPostCard?: ReturnType<typeof createPostCard>
+  private rootReplyComposer?: ReplyComposer
+  private isRootReplyComposerOpen: boolean = false
   private replyNodes: ReplyNode[] = []
   private isLoading: boolean = false
   private leftNav?: ReturnType<typeof createLeftNav>
@@ -250,10 +253,38 @@ export class ThreadPage {
     container.appendChild(style)
   }
 
+  private clearThreadContent(): void {
+    const content = this.element.querySelector('.thread-content') as HTMLElement
+    if (!content) return
+
+    // Clean up existing reply nodes
+    this.replyNodes.forEach(node => node.destroy())
+    this.replyNodes = []
+
+    // Clean up root post card
+    if (this.rootPostCard) {
+      this.rootPostCard.destroy()
+      this.rootPostCard = undefined
+    }
+
+    // Clean up root reply composer
+    if (this.rootReplyComposer) {
+      this.rootReplyComposer.destroy()
+      this.rootReplyComposer = undefined
+    }
+
+    // Clear all content
+    content.innerHTML = ''
+    this.isRootReplyComposerOpen = false
+  }
+
   private async loadThread(): Promise<void> {
     this.isLoading = true
     const content = this.element.querySelector('.thread-content') as HTMLElement
     const loading = this.element.querySelector('.thread-loading') as HTMLElement
+
+    // Clear existing content before reloading
+    this.clearThreadContent()
 
     try {
       const response = await fetch(`/api/posts/${this.props.postId}/thread`)
@@ -266,13 +297,32 @@ export class ThreadPage {
       // Clear loading state
       loading.style.display = 'none'
 
-      // Create root post card (without reply functionality since we're on thread page)
+      // Create root post card (with reply button but without built-in reply composer)
       this.rootPostCard = createPostCard({
         post: data.root,
         sandboxOrigin: this.props.sandboxOrigin,
-        currentUser: this.props.currentUser || undefined
+        currentUser: this.props.currentUser || undefined,
+        onDelete: () => {}, // Add empty onDelete handler to prevent errors
+        disableReplyComposer: true // Disable only built-in reply composer, ThreadPage will handle replies
       })
       content.appendChild(this.rootPostCard.getElement())
+
+      // Root reply composer (hidden by default)
+      this.rootReplyComposer = createReplyComposer({
+        postId: data.root.id,
+        sandboxOrigin: this.props.sandboxOrigin,
+        onReplyCreated: (newReply) => this.handleRootReplyCreated(newReply),
+        onCancel: () => this.hideRootReplyComposer()
+      })
+      this.rootReplyComposer.getElement().style.display = 'none'
+      content.appendChild(this.rootReplyComposer.getElement())
+
+      // Setup event listener for root post reply toggle
+      this.rootPostCard.getElement().addEventListener('replyToggle', (e: any) => {
+        if (e.detail.postId === data.root.id) {
+          this.toggleRootReplyComposer()
+        }
+      })
 
       // Add separator
       const separator = document.createElement('div')
@@ -334,15 +384,44 @@ export class ThreadPage {
     }
   }
 
-  private handleReplyCreated(newReply: Post): void {
-    // Increment reply count on root post
-    if (this.rootPostCard) {
-      this.rootPostCard.updatePost({
-        reply_count: (this.rootPostCard['props'].post.reply_count || 0) + 1
-      })
-    }
+  private handleRootReplyCreated(newReply: Post): void {
+    // Hide root reply composer after successful reply
+    this.hideRootReplyComposer()
+    
+    // Reload the thread to show the new reply with updated counts from server
+    this.loadThread()
+  }
 
-    // Reload the thread to show the new reply
+  private toggleRootReplyComposer(): void {
+    if (this.isRootReplyComposerOpen) {
+      this.hideRootReplyComposer()
+    } else {
+      this.showRootReplyComposer()
+    }
+  }
+
+  private showRootReplyComposer(): void {
+    if (this.rootReplyComposer) {
+      // Dispatch global event to close other reply composers
+      document.dispatchEvent(new CustomEvent('replyComposerOpen', {
+        detail: { postId: this.props.postId }
+      }))
+      
+      this.rootReplyComposer.getElement().style.display = 'block'
+      this.isRootReplyComposerOpen = true
+      this.rootReplyComposer.focus()
+    }
+  }
+
+  private hideRootReplyComposer(): void {
+    if (this.rootReplyComposer) {
+      this.rootReplyComposer.getElement().style.display = 'none'
+      this.isRootReplyComposerOpen = false
+    }
+  }
+
+  private handleReplyCreated(newReply: Post): void {
+    // Reload the thread to show the new reply with updated counts from server
     this.loadThread()
   }
 
@@ -359,6 +438,12 @@ export class ThreadPage {
     if (this.rootPostCard) {
       this.rootPostCard.destroy()
       this.rootPostCard = undefined
+    }
+
+    // Cleanup root reply composer
+    if (this.rootReplyComposer) {
+      this.rootReplyComposer.destroy()
+      this.rootReplyComposer = undefined
     }
 
     // Cleanup left nav

@@ -690,6 +690,38 @@ export class PostComposer {
     this.textarea.focus()
   }
 
+  public updateCurrentUser(currentUser: { username: string; display_name?: string; avatar_key?: string } | null): void {
+    this.props.currentUser = currentUser
+    this.updateAvatar()
+  }
+
+  private updateAvatar(): void {
+    const avatar = this.element.querySelector('.composer-avatar') as HTMLElement
+    if (!avatar) return
+
+    if (this.props.currentUser) {
+      avatar.style.width = '40px'
+      avatar.style.height = '40px'
+      avatar.style.borderRadius = '50%'
+      avatar.style.display = 'flex'
+      avatar.style.alignItems = 'center'
+      avatar.style.justifyContent = 'center'
+      avatar.style.fontSize = '1.2rem'
+      avatar.style.color = 'white'
+      avatar.style.background = 'var(--accent)'
+      avatar.style.flexShrink = '0'
+      
+      if (this.props.currentUser.avatar_key) {
+        avatar.style.backgroundImage = `url(/api/images/${this.props.currentUser.avatar_key})`
+        avatar.style.backgroundSize = 'cover'
+        avatar.style.backgroundPosition = 'center'
+        avatar.textContent = ''
+      } else {
+        avatar.textContent = this.props.currentUser.username.charAt(0).toUpperCase()
+      }
+    }
+  }
+
   public destroy(): void {
     this.element.remove()
   }

@@ -6,7 +6,7 @@ export interface SignInPromptProps {
 }
 
 export function createSignInPrompt(props: SignInPromptProps = {}) {
-  const subtitle = props.subtitle || 'Sign in to Fresh!, follow people, and join the conversation.'
+  const subtitle = props.subtitle || 'Sign up to Flaxia, follow people, and join the conversation.'
 
   // Create overlay
   const overlay = document.createElement('div')
@@ -38,7 +38,7 @@ export function createSignInPrompt(props: SignInPromptProps = {}) {
   `
 
   dialog.innerHTML = `
-    <h3 style="margin: 0 0 0.5rem 0; color: var(--text-primary); font-size: 1.25rem; font-weight: 600;">Sign in to Flaxia</h3>
+    <h3 style="margin: 0 0 0.5rem 0; color: var(--text-primary); font-size: 1.25rem; font-weight: 600;">Sign up to Flaxia</h3>
     <p style="margin: 0 0 1.5rem 0; color: var(--text-muted); font-size: 0.875rem; line-height: 1.5;">${subtitle}</p>
     <div style="display: flex; gap: 1rem; justify-content: center;">
       <button class="signin-btn" style="
@@ -51,7 +51,7 @@ export function createSignInPrompt(props: SignInPromptProps = {}) {
         font-size: 0.875rem;
         font-weight: 600;
         transition: opacity 0.2s;
-      ">Sign in</button>
+      ">Sign up</button>
       <button class="signup-btn" style="
         padding: 0.75rem 1.5rem;
         background: transparent;
@@ -62,14 +62,14 @@ export function createSignInPrompt(props: SignInPromptProps = {}) {
         font-size: 0.875rem;
         font-weight: 600;
         transition: all 0.2s;
-      ">Sign up</button>
+      ">Sign in</button>
     </div>
   `
 
   const signInBtn = dialog.querySelector('.signin-btn') as HTMLButtonElement
   const signUpBtn = dialog.querySelector('.signup-btn') as HTMLButtonElement
 
-  // Hover effects for sign in button
+  // Hover effects for primary sign up button (was sign in button)
   signInBtn.addEventListener('mouseenter', () => {
     signInBtn.style.opacity = '0.8'
   })
@@ -78,10 +78,10 @@ export function createSignInPrompt(props: SignInPromptProps = {}) {
   })
   signInBtn.addEventListener('click', () => {
     destroy()
-    props.onSignIn?.()
+    props.onSignUp?.()
   })
 
-  // Hover effects for sign up button
+  // Hover effects for secondary sign in button (was sign up button)
   signUpBtn.addEventListener('mouseenter', () => {
     signUpBtn.style.background = 'var(--accent)'
     signUpBtn.style.color = '#000'
@@ -92,7 +92,7 @@ export function createSignInPrompt(props: SignInPromptProps = {}) {
   })
   signUpBtn.addEventListener('click', () => {
     destroy()
-    props.onSignUp?.()
+    props.onSignIn?.()
   })
 
   overlay.appendChild(dialog)

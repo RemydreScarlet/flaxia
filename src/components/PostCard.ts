@@ -128,28 +128,32 @@ export class PostCard {
       container.appendChild(this.postStageElement)
     }
 
-    // Post actions
-    const actions = createPostActions({
-      postId: this.props.post.id,
-      freshCount: this.freshCount,
-      replyCount: this.replyCount,
-      impressions: this.impressions,
-      isFreshed: this.isFreshed,
-      onFreshToggle: () => this.handleFreshToggle(),
-      onReplyToggle: () => this.handleReplyToggle(),
-      onShare: () => this.handleShare()
-    })
-    container.appendChild(actions)
+    // Post actions (only if reply is not disabled)
+    if (!this.props.disableReply) {
+      const actions = createPostActions({
+        postId: this.props.post.id,
+        freshCount: this.freshCount,
+        replyCount: this.replyCount,
+        impressions: this.impressions,
+        isFreshed: this.isFreshed,
+        onFreshToggle: () => this.handleFreshToggle(),
+        onReplyToggle: () => this.handleReplyToggle(),
+        onShare: () => this.handleShare()
+      })
+      container.appendChild(actions)
+    }
 
-    // Reply composer (hidden by default)
-    this.replyComposer = createReplyComposer({
-      postId: this.props.post.id,
-      sandboxOrigin: this.props.sandboxOrigin,
-      onReplyCreated: (newReply) => this.handleReplyCreated(newReply),
-      onCancel: () => this.hideReplyComposer()
-    })
-    this.replyComposer.getElement().style.display = 'none'
-    container.appendChild(this.replyComposer.getElement())
+    // Reply composer (hidden by default, only if reply composer is not disabled)
+    if (!this.props.disableReply && !this.props.disableReplyComposer) {
+      this.replyComposer = createReplyComposer({
+        postId: this.props.post.id,
+        sandboxOrigin: this.props.sandboxOrigin,
+        onReplyCreated: (newReply) => this.handleReplyCreated(newReply),
+        onCancel: () => this.hideReplyComposer()
+      })
+      this.replyComposer.getElement().style.display = 'none'
+      container.appendChild(this.replyComposer.getElement())
+    }
 
     return container
   }
@@ -161,7 +165,7 @@ export class PostCard {
     // Setup impression tracking using Intersection Observer
     this.setupImpressionTracking()
     
-    // Add click handler for post navigation (but not for buttons/inputs)
+    // Add click handler for post navigation (but not for buttons/inputs or during text selection)
     this.element.addEventListener('click', (e) => {
       console.log('PostCard clicked, target:', e.target)
       
@@ -172,15 +176,21 @@ export class PostCard {
       const closestTextarea = target.closest('textarea')
       const closestLink = target.closest('a')
       
+      // Check if text is being selected
+      const selection = window.getSelection()
+      const isSelectingText = selection && selection.toString().length > 0
+      
       console.log('Checking if should prevent navigation:', {
         closestButton,
         closestInput,
         closestTextarea,
-        closestLink
+        closestLink,
+        isSelectingText,
+        selectedText: selection?.toString()
       })
       
-      if (closestButton || closestInput || closestTextarea || closestLink) {
-        console.log('Navigation prevented - clicked on interactive element')
+      if (closestButton || closestInput || closestTextarea || closestLink || isSelectingText) {
+        console.log('Navigation prevented - clicked on interactive element or text is being selected')
         return
       }
       

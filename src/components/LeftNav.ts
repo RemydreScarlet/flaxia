@@ -221,11 +221,11 @@ export class LeftNav {
         margin-top: 1rem;
       `
 
-      // Sign in button
-      const signInButton = document.createElement('button')
-      signInButton.className = 'nav-signin-button'
-      signInButton.textContent = 'Sign in'
-      signInButton.style.cssText = `
+      // Sign up button (changed from sign in)
+      const signUpButton = document.createElement('button')
+      signUpButton.className = 'nav-signin-button'
+      signUpButton.textContent = 'Sign up'
+      signUpButton.style.cssText = `
         padding: 0.75rem 1.5rem;
         background: var(--text-primary);
         color: var(--bg-primary);
@@ -236,44 +236,17 @@ export class LeftNav {
         font-weight: 600;
         transition: opacity 0.2s;
       `
-      signInButton.addEventListener('mouseenter', () => {
-        signInButton.style.opacity = '0.8'
-      })
-      signInButton.addEventListener('mouseleave', () => {
-        signInButton.style.opacity = '1'
-      })
-      signInButton.addEventListener('click', () => {
-        this.props.onSignIn?.()
-      })
-
-      // Sign up button (hidden on mobile via CSS)
-      const signUpButton = document.createElement('button')
-      signUpButton.className = 'nav-signup-button'
-      signUpButton.textContent = 'Sign up'
-      signUpButton.style.cssText = `
-        padding: 0.75rem 1.5rem;
-        background: transparent;
-        color: var(--accent);
-        border: 1px solid var(--accent);
-        border-radius: 9999px;
-        cursor: pointer;
-        font-size: 0.875rem;
-        font-weight: 600;
-        transition: all 0.2s;
-      `
       signUpButton.addEventListener('mouseenter', () => {
-        signUpButton.style.background = 'var(--accent)'
-        signUpButton.style.color = '#000'
+        signUpButton.style.opacity = '0.8'
       })
       signUpButton.addEventListener('mouseleave', () => {
-        signUpButton.style.background = 'transparent'
-        signUpButton.style.color = 'var(--accent)'
+        signUpButton.style.opacity = '1'
       })
       signUpButton.addEventListener('click', () => {
         this.props.onSignUp?.()
       })
 
-      authButtons.appendChild(signInButton)
+      
       authButtons.appendChild(signUpButton)
       nav.appendChild(authButtons)
     }
@@ -813,10 +786,10 @@ export function updateLeftNavUser(leftNav: LeftNav, currentUser: {
       margin-top: 1rem;
     `
 
-    const signInButton = document.createElement('button')
-    signInButton.className = 'nav-signin-button'
-    signInButton.textContent = 'Sign in'
-    signInButton.style.cssText = `
+    const signUpButton = document.createElement('button')
+    signUpButton.className = 'nav-signin-button'
+    signUpButton.textContent = 'Sign up'
+    signUpButton.style.cssText = `
       padding: 0.75rem 1.5rem;
       background: var(--text-primary);
       color: var(--bg-primary);
@@ -827,44 +800,16 @@ export function updateLeftNavUser(leftNav: LeftNav, currentUser: {
       font-weight: 600;
       transition: opacity 0.2s;
     `
-    signInButton.addEventListener('mouseenter', () => {
-      signInButton.style.opacity = '0.8'
-    })
-    signInButton.addEventListener('mouseleave', () => {
-      signInButton.style.opacity = '1'
-    })
-    signInButton.addEventListener('click', () => {
-      ;(leftNav as any).props.onSignIn?.()
-    })
-
-    // Sign up button (hidden on mobile via CSS)
-    const signUpButton = document.createElement('button')
-    signUpButton.className = 'nav-signup-button'
-    signUpButton.textContent = 'Sign up'
-    signUpButton.style.cssText = `
-      padding: 0.75rem 1.5rem;
-      background: transparent;
-      color: var(--accent);
-      border: 1px solid var(--accent);
-      border-radius: 9999px;
-      cursor: pointer;
-      font-size: 0.875rem;
-      font-weight: 600;
-      transition: all 0.2s;
-    `
     signUpButton.addEventListener('mouseenter', () => {
-      signUpButton.style.background = 'var(--accent)'
-      signUpButton.style.color = '#000'
+      signUpButton.style.opacity = '0.8'
     })
     signUpButton.addEventListener('mouseleave', () => {
-      signUpButton.style.background = 'transparent'
-      signUpButton.style.color = 'var(--accent)'
+      signUpButton.style.opacity = '1'
     })
     signUpButton.addEventListener('click', () => {
       ;(leftNav as any).props.onSignUp?.()
     })
 
-    authButtons.appendChild(signInButton)
     authButtons.appendChild(signUpButton)
     leftNav.getElement().appendChild(authButtons)
   }

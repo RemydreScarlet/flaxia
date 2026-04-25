@@ -7,6 +7,7 @@ export interface ThreadViewProps {
   postId: string
   sandboxOrigin: string
   onClose: () => void
+  currentUser?: { username: string; id: string; display_name?: string; avatar_key?: string } | null
 }
 
 export class ThreadView {
@@ -115,7 +116,9 @@ export class ThreadView {
       // Create root post card
       this.rootPostCard = createPostCard({
         post: data.root,
-        sandboxOrigin: this.props.sandboxOrigin
+        sandboxOrigin: this.props.sandboxOrigin,
+        currentUser: this.props.currentUser || undefined,
+        onDelete: () => {} // Add empty onDelete handler to prevent errors
       })
       content.appendChild(this.rootPostCard.getElement())
 
@@ -127,6 +130,7 @@ export class ThreadView {
         const replyNode = createReplyNode({
           node,
           sandboxOrigin: this.props.sandboxOrigin,
+          currentUser: this.props.currentUser || undefined,
           onReplyCreated: (newReply) => this.handleReplyCreated(newReply)
         })
         this.replyNodes.push(replyNode)

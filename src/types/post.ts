@@ -47,6 +47,8 @@ export interface PostCardProps {
   initialMode?: PostCardMode
   currentUser?: { username: string; id: string; display_name?: string; avatar_key?: string } | null
   onDelete?: (postId: string) => void
+  disableReply?: boolean
+  disableReplyComposer?: boolean
 }
 
 export interface PostHeaderProps {
