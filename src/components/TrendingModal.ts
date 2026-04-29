@@ -105,7 +105,7 @@ async function loadTrendingTags(container: HTMLElement, onTagClick: (tag: string
       throw new Error('Failed to load trending tags')
     }
 
-    const data = await response.json() as { tags: Array<{ tag: string; post_count: number }> }
+    const data = await response.json() as { tags: Array<{ tag: string; count: number; percentage: number }> }
     const tags = data.tags || []
 
     container.innerHTML = ''
@@ -119,7 +119,7 @@ async function loadTrendingTags(container: HTMLElement, onTagClick: (tag: string
       return
     }
 
-    tags.forEach(({ tag, post_count }) => {
+    tags.forEach(({ tag, percentage }) => {
       const item = document.createElement('div')
       item.className = 'trending-modal-item'
       item.style.cssText = `
@@ -128,10 +128,10 @@ async function loadTrendingTags(container: HTMLElement, onTagClick: (tag: string
         cursor: pointer;
         transition: background-color 0.2s ease;
       `
-      
+
       item.innerHTML = `
         <div style="font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: var(--accent); font-size: 1rem; font-weight: 600; margin-bottom: 0.25rem;"># ${tag}</div>
-        <div style="font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: var(--text-muted); font-size: 0.875rem;">${post_count} posts</div>
+        <div style="font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: var(--text-muted); font-size: 0.875rem;">${percentage}% trending</div>
       `
 
       item.onmouseover = () => item.style.background = 'var(--bg-secondary)'

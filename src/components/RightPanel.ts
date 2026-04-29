@@ -16,7 +16,7 @@ export interface UserSuggestion {
 export class RightPanel {
   private element: HTMLElement
   private props: RightPanelProps
-  private trendingTags: Array<{ tag: string; post_count: number }> = []
+  private trendingTags: Array<{ tag: string; count: number; percentage: number }> = []
   private userSuggestions: UserSuggestion[] = []
 
   constructor(props: RightPanelProps = {}) {
@@ -216,7 +216,7 @@ export class RightPanel {
         throw new Error('Failed to load trending tags')
       }
 
-      const data = await response.json() as { tags: Array<{ tag: string; post_count: number }> }
+      const data = await response.json() as { tags: Array<{ tag: string; count: number; percentage: number }> }
       this.trendingTags = data.tags || []
       this.renderTrendingTags()
     } catch (error) {
@@ -238,7 +238,7 @@ export class RightPanel {
       return
     }
 
-    this.trendingTags.forEach(({ tag, post_count }) => {
+    this.trendingTags.forEach(({ tag, percentage }) => {
       const item = document.createElement('div')
       item.className = 'trending-item'
       item.style.cssText = `
@@ -246,11 +246,11 @@ export class RightPanel {
         cursor: pointer;
         transition: background 0.2s ease;
       `
-      
+
       item.innerHTML = `
         <div class="trending-content">
           <div class="trending-hashtag" style="font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: var(--accent); font-size: 15px; font-weight: 600;"># ${tag}</div>
-          <div class="trending-count" style="font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: var(--text-muted); font-size: 13px;">${post_count} posts</div>
+          <div class="trending-count" style="font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: var(--text-muted); font-size: 13px;">${percentage}% trending</div>
         </div>
       `
 

@@ -3175,29 +3175,43 @@ app.get('/api/posts/:id/replies', async (c) => {
   }
 })
 
-// GET /api/tags/trending - get top 5 trending hashtags
+// GET /api/tags/trending - get top 5 trending hashtags (based on recent N posts percentage)
 app.get('/api/tags/trending', async (c) => {
   try {
     if (!c.env.DB) {
       return c.json({ error: 'Database not available' }, 500)
     }
-    
-    // Query trending tags using json_each to extract array elements
+
+    // Get recent posts count from query param (default: 100)
+    const recentCountParam = c.req.query('recent_count')
+    const recentCount = recentCountParam ? parseInt(recentCountParam, 10) : 100
+    const validRecentCount = isNaN(recentCount) || recentCount < 10 || recentCount > 1000 ? 100 : recentCount
+
+    // Query trending tags based on percentage in recent N posts
     const result = await c.env.DB.prepare(`
-SELECT value AS tag, COUNT(*) AS post_count
-FROM posts, json_each(posts.hashtags)
-WHERE posts.hidden = 0 AND posts.status = 'published'
+WITH recent_posts AS (
+  SELECT id, hashtags
+  FROM posts
+  WHERE hidden = 0 AND status = 'published'
+  ORDER BY created_at DESC
+  LIMIT ?
+)
+SELECT
+  value AS tag,
+  COUNT(*) AS count,
+  ROUND(COUNT(*) * 100.0 / ?, 1) AS percentage
+FROM recent_posts, json_each(recent_posts.hashtags)
 GROUP BY value
-ORDER BY post_count DESC
+ORDER BY count DESC
 LIMIT 5
-    `).all()
-    
+    `).bind(validRecentCount, validRecentCount).all()
+
     if (!result.success) {
       return c.json({ error: 'Failed to fetch trending tags' }, 500)
     }
-    
+
     const tags = result.results || []
-    
+
     return c.json({ tags }, 200, {
       'Cache-Control': 'public, max-age=60'
     })

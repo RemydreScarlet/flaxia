@@ -264,7 +264,7 @@ export class ExplorePage {
         throw new Error('Failed to load trending tags')
       }
 
-      const data = await response.json() as { tags: Array<{ tag: string; post_count: number }> }
+      const data = await response.json() as { tags: Array<{ tag: string; count: number; percentage: number }> }
       const tags = data.tags || []
 
       this.renderTrendingTags(tags)
@@ -315,7 +315,7 @@ export class ExplorePage {
     postsContainer.appendChild(fragment)
   }
 
-  private renderTrendingTags(tags: Array<{ tag: string; post_count: number }>): void {
+  private renderTrendingTags(tags: Array<{ tag: string; count: number; percentage: number }>): void {
     const trendingContainer = this.element.querySelector('.explore-trending') as HTMLElement
     if (!trendingContainer) return
 
@@ -330,7 +330,7 @@ export class ExplorePage {
       return
     }
 
-    tags.forEach(({ tag, post_count }) => {
+    tags.forEach(({ tag, percentage }) => {
       const item = document.createElement('div')
       item.className = 'trending-item'
       item.style.cssText = `
@@ -339,10 +339,10 @@ export class ExplorePage {
         cursor: pointer;
         transition: background-color 0.2s ease;
       `
-      
+
       item.innerHTML = `
         <div style="font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: var(--accent); font-size: 1rem; font-weight: 600; margin-bottom: 0.25rem;"># ${tag}</div>
-        <div style="font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: var(--text-muted); font-size: 0.875rem;">${post_count} posts</div>
+        <div style="font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: var(--text-muted); font-size: 0.875rem;">${percentage}% trending</div>
       `
 
       item.onmouseover = () => item.style.background = 'var(--bg-secondary)'
