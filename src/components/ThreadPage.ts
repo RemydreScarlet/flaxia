@@ -4,7 +4,6 @@ import { createPostCard } from './PostCard.js'
 import { createReplyNode, ReplyNode } from './ReplyNode.js'
 import { createReplyComposer, ReplyComposer } from './ReplyComposer.js'
 import { createLeftNav } from './LeftNav.js'
-import { createRightPanel } from './RightPanel.js'
 
 export interface ThreadPageProps {
   postId: string
@@ -22,7 +21,6 @@ export class ThreadPage {
   private replyNodes: ReplyNode[] = []
   private isLoading: boolean = false
   private leftNav?: ReturnType<typeof createLeftNav>
-  private rightPanel?: ReturnType<typeof createRightPanel>
 
   constructor(props: ThreadPageProps) {
     this.props = props
@@ -82,7 +80,6 @@ export class ThreadPage {
       }
     })
     this.leftNav.getElement().style.cssText = `
-      width: 240px;
       flex-shrink: 0;
       padding: 1rem;
       border-right: 1px solid #e2e8f0;
@@ -115,20 +112,6 @@ export class ThreadPage {
       font-size: 1.125rem;
     `
 
-    // Create Right Panel
-    this.rightPanel = createRightPanel({
-      onSearch: (query) => {
-        console.log('Search:', query)
-      },
-      onFollowUser: (userId) => {
-        console.log('Follow user:', userId)
-      }
-    })
-    this.rightPanel.getElement().style.cssText = `
-      width: 350px;
-      flex-shrink: 0;
-      padding: 1rem;
-    `
 
     // Add thread header to main content
     const header = document.createElement('div')
@@ -176,7 +159,6 @@ export class ThreadPage {
     // Assemble layout
     mainContainer.appendChild(this.leftNav.getElement())
     mainContainer.appendChild(mainContent)
-    mainContainer.appendChild(this.rightPanel.getElement())
     container.appendChild(mainContainer)
 
     // Add responsive styles
@@ -194,9 +176,6 @@ export class ThreadPage {
         }
         .thread-page .thread-main-content {
           border-right: none;
-        }
-        .thread-page .right-panel {
-          display: none;
         }
       }
       
@@ -452,11 +431,6 @@ export class ThreadPage {
       this.leftNav = undefined
     }
 
-    // Cleanup right panel
-    if (this.rightPanel) {
-      this.rightPanel.destroy()
-      this.rightPanel = undefined
-    }
 
     this.element.remove()
   }

@@ -43,7 +43,9 @@ export class ExplorePage {
         <h1 class="explore-title"># ${this.props.tag}</h1>
       `
       container.appendChild(tagHeader)
-      container.appendChild(document.createElement('div')).className = 'explore-posts'
+      const postsContainer = document.createElement('div')
+      postsContainer.className = 'explore-posts'
+      container.appendChild(postsContainer)
     } else {
       // Trending view
       const exploreHeader = document.createElement('div')
@@ -52,7 +54,9 @@ export class ExplorePage {
         <h1 class="explore-title">Explore</h1>
       `
       container.appendChild(exploreHeader)
-      container.appendChild(document.createElement('div')).className = 'explore-trending'
+      const trendingContainer = document.createElement('div')
+      trendingContainer.className = 'explore-trending'
+      container.appendChild(trendingContainer)
     }
 
     // Add loading container
@@ -61,7 +65,7 @@ export class ExplorePage {
     loadingContainer.style.cssText = 'display: none;'
     container.appendChild(loadingContainer)
     
-    // Add sentinel for intersection observer
+    // Add sentinel for intersection observer (outside posts container like Timeline)
     this.loadMoreSentinel = document.createElement('div')
     this.loadMoreSentinel.className = 'explore-sentinel'
     this.loadMoreSentinel.style.cssText = `
@@ -190,7 +194,7 @@ export class ExplorePage {
 
         const data = await response.json() as { posts: Post[] }
         this.posts = data.posts || []
-        this.hasMore = this.posts.length === 20 && this.posts.length > 0
+        this.hasMore = this.posts.length === 10 && this.posts.length > 0
         this.cursor = this.posts.length > 0 ? this.posts[this.posts.length - 1].created_at : undefined
 
         this.renderPosts()
