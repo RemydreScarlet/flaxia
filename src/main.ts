@@ -119,6 +119,102 @@ document.addEventListener('DOMContentLoaded', async () => {
       return { notifications: [], unread_count: 0 }
     }
 
+    // Mobile left nav overlay and swipe hint management
+    let leftNavOverlay: HTMLElement | null = null
+    let swipeHint: HTMLElement | null = null
+
+    const createLeftNavOverlay = (): HTMLElement => {
+      const overlay = document.createElement('div')
+      overlay.className = 'left-nav-overlay'
+      overlay.addEventListener('click', () => {
+        closeLeftNav()
+      })
+      document.body.appendChild(overlay)
+      return overlay
+    }
+
+    const createSwipeHint = (): HTMLElement => {
+      const hint = document.createElement('div')
+      hint.className = 'left-nav-swipe-hint'
+      document.body.appendChild(hint)
+      return hint
+    }
+
+    const openLeftNav = (leftNavElement: HTMLElement): void => {
+      if (window.innerWidth > 768) return
+      
+      leftNavElement.classList.add('left-nav--open')
+      
+      if (!leftNavOverlay) {
+        leftNavOverlay = createLeftNavOverlay()
+      }
+      leftNavOverlay.classList.add('left-nav-overlay--visible')
+      
+      // Hide swipe hint
+      if (swipeHint) {
+        swipeHint.classList.add('left-nav-swipe-hint--hidden')
+      }
+      
+      // Prevent body scroll
+      document.body.style.overflow = 'hidden'
+    }
+
+    const closeLeftNav = (): void => {
+      const leftNavElement = document.querySelector('.left-nav') as HTMLElement
+      if (leftNavElement) {
+        leftNavElement.classList.remove('left-nav--open')
+      }
+      
+      if (leftNavOverlay) {
+        leftNavOverlay.classList.remove('left-nav-overlay--visible')
+      }
+      
+      // Show swipe hint again
+      if (swipeHint) {
+        swipeHint.classList.remove('left-nav-swipe-hint--hidden')
+      }
+      
+      // Restore body scroll
+      document.body.style.overflow = ''
+    }
+
+    const setupMobileLeftNav = (leftNavElement: HTMLElement): void => {
+      // Create swipe hint on mobile
+      if (window.innerWidth <= 768) {
+        if (!swipeHint) {
+          swipeHint = createSwipeHint()
+        }
+        swipeHint.style.display = 'block'
+      }
+
+      // Listen for openLeftNav events from timeline
+      document.addEventListener('openLeftNav', () => {
+        openLeftNav(leftNavElement)
+      })
+
+      // Handle escape key to close
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          closeLeftNav()
+        }
+      })
+
+      // Handle window resize
+      window.addEventListener('resize', () => {
+        if (window.innerWidth > 768) {
+          // Close mobile nav when resizing to desktop
+          closeLeftNav()
+          if (swipeHint) {
+            swipeHint.style.display = 'none'
+          }
+        } else {
+          if (swipeHint) {
+            swipeHint.style.display = 'block'
+          }
+        }
+      })
+    }
+
     // Auth guard - redirect to login if not authenticated (only for protected routes)
     const requireAuth = async () => {
       const isAuthenticated = await checkAuth()
@@ -580,6 +676,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         mainContainer.appendChild(rightPanel.getElement())
         
         app.appendChild(mainContainer)
+        
+        // Setup mobile left nav
+        setupMobileLeftNav(leftNav.getElement())
+        
         return
       }
       
@@ -671,6 +771,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         mainContainer.appendChild(rightPanel.getElement())
         
         app.appendChild(mainContainer)
+        
+        // Setup mobile left nav
+        setupMobileLeftNav(leftNav.getElement())
+        
         return
       }
       
@@ -771,6 +875,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         mainContainer.appendChild(rightPanel.getElement())
         
         app.appendChild(mainContainer)
+        
+        // Setup mobile left nav
+        setupMobileLeftNav(leftNav.getElement())
+        
         return
       }
       
@@ -888,6 +996,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         mainContainer.appendChild(rightPanel.getElement())
         
         app.appendChild(mainContainer)
+        
+        // Setup mobile left nav
+        setupMobileLeftNav(leftNav.getElement())
+        
         return
       }
       
@@ -916,6 +1028,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log('Thread page created, adding to container')
         mainContainer.appendChild(threadPage.getElement())
         console.log('Thread page added to DOM')
+        
+        // ThreadPage has its own LeftNav, find it and setup mobile functionality
+        const threadLeftNav = threadPage.getElement().querySelector('.left-nav') as HTMLElement
+        if (threadLeftNav) {
+          // Add thread page specific class for styling
+          threadLeftNav.classList.add('thread-page-left-nav')
+          setupMobileLeftNav(threadLeftNav)
+        }
       } else {
         // Timeline view
         currentView = 'timeline'
@@ -985,6 +1105,17 @@ document.addEventListener('DOMContentLoaded', async () => {
           window.history.pushState({ postId }, '', `/thread/${postId}`)
           navigateTo('thread', postId)
         })
+
+        // Listen for openLeftNav events from timeline (mobile swipe)
+        timeline.getElement().addEventListener('openLeftNav', () => {
+          const leftNavElement = document.querySelector('.left-nav') as HTMLElement
+          if (leftNavElement) {
+            openLeftNav(leftNavElement)
+          }
+        })
+        
+        // Setup mobile left nav functionality
+        setupMobileLeftNav(leftNav.getElement())
         
         // Create Right Panel
         const rightPanel = createRightPanel({

@@ -15,6 +15,9 @@ export class Timeline {
   private composer!: PostComposer
   private intersectionObserver: IntersectionObserver | null = null
   private loadMoreSentinel: HTMLElement | null = null
+  private touchStartX = 0
+  private touchStartY = 0
+  private touchStartTime = 0
 
   constructor(props: TimelineProps) {
     this.props = props
@@ -88,6 +91,13 @@ export class Timeline {
     const container = document.createElement('div')
     container.className = 'feed-toggle'
 
+    // Mobile menu button (only visible on mobile)
+    const menuBtn = document.createElement('button')
+    menuBtn.className = 'feed-toggle-btn feed-menu-btn'
+    menuBtn.innerHTML = '⋯'
+    menuBtn.title = 'Menu'
+    container.appendChild(menuBtn)
+
     // Only show Following tab for logged-in users
     if (this.props.currentUser) {
       const followingBtn = document.createElement('button')
@@ -107,13 +117,12 @@ export class Timeline {
     if (this.state.mode === 'foryou') {
       forYouBtn.classList.add('active')
     }
+    container.appendChild(forYouBtn)
 
     const reloadBtn = document.createElement('button')
     reloadBtn.className = 'feed-toggle-btn feed-reload-btn'
     reloadBtn.innerHTML = '↑ Reload'
     reloadBtn.title = 'Reload posts'
-
-    container.appendChild(forYouBtn)
     container.appendChild(reloadBtn)
 
     return container
@@ -212,6 +221,11 @@ export class Timeline {
       if (target.classList.contains('feed-toggle-btn')) {
         if (target.classList.contains('feed-reload-btn')) {
           this.reloadPosts()
+        } else if (target.classList.contains('feed-menu-btn')) {
+          // Emit event to open left nav on mobile
+          this.element.dispatchEvent(new CustomEvent('openLeftNav', {
+            bubbles: true
+          }))
         } else {
           const mode = (target as HTMLElement).dataset.mode as 'following' | 'foryou'
           this.switchMode(mode)
@@ -262,6 +276,62 @@ export class Timeline {
     window.addEventListener('profileUpdated', () => {
       this.handleProfileUpdate()
     })
+
+    // Setup swipe detection for mobile left nav
+    this.setupSwipeDetection()
+  }
+
+  private setupSwipeDetection(): void {
+    // Only enable on mobile (< 768px)
+    if (window.innerWidth > 768) return
+
+    const SWIPE_THRESHOLD = 80 // Minimum horizontal distance
+    const EDGE_THRESHOLD = 50  // Must start within this distance from left edge
+    const MAX_VERTICAL_DEVIATION = 100 // Maximum vertical movement allowed
+    const MAX_TIME = 500 // Maximum swipe duration in ms
+
+    this.element.addEventListener('touchstart', (e) => {
+      const touch = e.touches[0]
+      this.touchStartX = touch.clientX
+      this.touchStartY = touch.clientY
+      this.touchStartTime = Date.now()
+    }, { passive: true })
+
+    this.element.addEventListener('touchend', (e) => {
+      const touch = e.changedTouches[0]
+      const deltaX = touch.clientX - this.touchStartX
+      const deltaY = touch.clientY - this.touchStartY
+      const deltaTime = Date.now() - this.touchStartTime
+
+      // Check if it's a valid right swipe from left edge
+      if (
+        deltaX > SWIPE_THRESHOLD && // Moving right
+        Math.abs(deltaY) < MAX_VERTICAL_DEVIATION && // Not too much vertical movement
+        deltaTime < MAX_TIME && // Quick swipe
+        this.touchStartX < EDGE_THRESHOLD // Started near left edge
+      ) {
+        // Emit event to open left nav
+        this.element.dispatchEvent(new CustomEvent('openLeftNav', {
+          bubbles: true
+        }))
+      }
+    }, { passive: true })
+
+    // Update hint visibility on resize
+    window.addEventListener('resize', () => {
+      this.updateSwipeHint()
+    })
+  }
+
+  private updateSwipeHint(): void {
+    const hint = document.querySelector('.left-nav-swipe-hint') as HTMLElement
+    if (hint) {
+      if (window.innerWidth <= 768) {
+        hint.style.display = 'block'
+      } else {
+        hint.style.display = 'none'
+      }
+    }
   }
 
   private handleNewPost(post: any): void {

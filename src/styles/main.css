@@ -476,19 +476,67 @@ p {
 @media (max-width: 768px) {
   .left-nav {
     position: fixed;
-    bottom: 0;
+    top: 0;
+    left: 0;
+    width: 280px;
+    height: 100vh;
+    border-right: 1px solid var(--border);
+    border-top: none;
+    padding: 1rem;
+    z-index: 1100;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+    background: var(--bg-primary);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  .left-nav--open {
+    transform: translateX(0);
+    box-shadow: 4px 0 12px rgba(0, 0, 0, 0.15);
+  }
+  
+  /* Swipe hint indicator */
+  .left-nav-swipe-hint {
+    position: fixed;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 8px;
+    height: 60px;
+    background: rgba(34, 197, 94, 0.3);
+    border-radius: 0 4px 4px 0;
+    z-index: 1099;
+    transition: opacity 0.3s ease;
+  }
+  
+  .left-nav--open + .left-nav-swipe-hint,
+  .left-nav-swipe-hint--hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+  
+  /* Overlay when nav is open */
+  .left-nav-overlay {
+    position: fixed;
+    top: 0;
     left: 0;
     right: 0;
-    width: 100%;
-    height: 60px;
-    border-right: none;
-    border-top: 1px solid var(--border);
-    padding: 0;
-    z-index: 1000;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1099;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+  }
+  
+  .left-nav-overlay--visible {
+    opacity: 1;
+    visibility: visible;
   }
   
   .main-content {
-    padding-bottom: 80px;
+    padding-bottom: 1rem;
   }
   
   .main-container {
@@ -552,49 +600,42 @@ p {
   background: var(--accent-dark);
 }
 
-/* Mobile bottom navigation */
+/* Mobile slide-out navigation - show all nav content */
 @media (max-width: 768px) {
-  .left-nav {
-  display: flex;
-  justify-content: space-around;
-  align-items: center;
-  height: auto;
-  background: var(--bg-primary);
-  padding: 0.5rem 1rem;
+  .left-nav .nav-logo,
+  .left-nav .nav-user-area,
+  .left-nav .nav-legal-links {
+    display: block !important;
   }
   
-  .nav-logo,
-  .nav-post-button,
-  .nav-user-area,
-  .nav-legal-links {
-    display: none !important;
+  .left-nav .nav-post-button {
+    display: block !important;
   }
   
-  .nav-items {
-  display: flex;
-  flex-direction: row;
-  gap: 0.5rem;
-  width: 100%;
+  .left-nav .nav-items {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-bottom: 2rem;
   }
   
-  .nav-item {
-  flex: 1;
-  justify-content: center;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.875rem;
-  border-radius: 0;
+  .left-nav .nav-item {
+    justify-content: flex-start;
+    padding: 0.75rem 1rem;
+    font-size: 1rem;
+    border-radius: 9999px;
   }
   
-  .nav-item span:not(.nav-badge):first-child {
-    margin-right: 0;
+  .left-nav .nav-item span:not(.nav-badge):first-child {
+    margin-right: 0.75rem;
   }
   
-  .nav-item span:not(.nav-badge):not(:first-child) {
-    display: none;
+  .left-nav .nav-item span:not(.nav-badge):not(:first-child) {
+    display: inline;
   }
   
-  .nav-signup-button {
-    display: none !important;
+  .left-nav .nav-signup-button {
+    display: block !important;
   }
 }
 
@@ -1233,6 +1274,21 @@ p {
   flex: 0.8;
   font-size: 0.8rem;
   white-space: nowrap;
+}
+
+/* Mobile menu button - hidden on desktop */
+.feed-menu-btn {
+  flex: 0;
+  padding: 0.75rem 0.5rem;
+  font-size: 1.25rem;
+  font-weight: bold;
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .feed-menu-btn {
+    display: block;
+  }
 }
 
 .feed-reload-btn:hover {

@@ -21,10 +21,14 @@ export class ThreadPage {
   private replyNodes: ReplyNode[] = []
   private isLoading: boolean = false
   private leftNav?: ReturnType<typeof createLeftNav>
+  private touchStartX = 0
+  private touchStartY = 0
+  private touchStartTime = 0
 
   constructor(props: ThreadPageProps) {
     this.props = props
     this.element = this.createElement()
+    this.setupSwipeDetection()
     this.loadThread()
   }
 
@@ -167,6 +171,43 @@ export class ThreadPage {
     return container
   }
 
+  private setupSwipeDetection(): void {
+    // Only enable on mobile (< 768px)
+    if (window.innerWidth > 768) return
+
+    const SWIPE_THRESHOLD = 80 // Minimum horizontal distance
+    const EDGE_THRESHOLD = 50  // Must start within this distance from left edge
+    const MAX_VERTICAL_DEVIATION = 100 // Maximum vertical movement allowed
+    const MAX_TIME = 500 // Maximum swipe duration in ms
+
+    this.element.addEventListener('touchstart', (e) => {
+      const touch = e.touches[0]
+      this.touchStartX = touch.clientX
+      this.touchStartY = touch.clientY
+      this.touchStartTime = Date.now()
+    }, { passive: true })
+
+    this.element.addEventListener('touchend', (e) => {
+      const touch = e.changedTouches[0]
+      const deltaX = touch.clientX - this.touchStartX
+      const deltaY = touch.clientY - this.touchStartY
+      const deltaTime = Date.now() - this.touchStartTime
+
+      // Check if it's a valid right swipe from left edge
+      if (
+        deltaX > SWIPE_THRESHOLD && // Moving right
+        Math.abs(deltaY) < MAX_VERTICAL_DEVIATION && // Not too much vertical movement
+        deltaTime < MAX_TIME && // Quick swipe
+        this.touchStartX < EDGE_THRESHOLD // Started near left edge
+      ) {
+        // Emit event to open left nav
+        this.element.dispatchEvent(new CustomEvent('openLeftNav', {
+          bubbles: true
+        }))
+      }
+    }, { passive: true })
+  }
+
   private addResponsiveStyles(container: HTMLElement): void {
     const style = document.createElement('style')
     style.textContent = `
@@ -186,46 +227,52 @@ export class ThreadPage {
         }
         .thread-page .left-nav {
           position: fixed;
-          bottom: 0;
+          top: 0;
           left: 0;
-          right: 0;
-          width: 100%;
-          height: 60px;
-          border-right: none;
-          border-top: 1px solid #e2e8f0;
-          padding: 0;
-          z-index: 1000;
-          display: flex;
-          justify-content: space-around;
-          align-items: center;
+          width: 280px;
+          height: 100vh;
+          border-right: 1px solid #e2e8f0;
+          border-top: none;
+          padding: 1rem;
+          z-index: 1100;
+          transform: translateX(-100%);
+          transition: transform 0.3s ease;
+          background: #ffffff;
+          overflow-y: auto;
+          -webkit-overflow-scrolling: touch;
+        }
+        .thread-page .left-nav.left-nav--open {
+          transform: translateX(0);
+          box-shadow: 4px 0 12px rgba(0, 0, 0, 0.15);
         }
         .thread-page .thread-main-content {
-          padding-bottom: 80px;
+          padding-bottom: 1rem;
           border-right: none;
           max-width: 100%;
         }
-        .thread-page .nav-logo {
-          display: none;
+        /* Show all nav items in slide-out */
+        .thread-page .nav-logo,
+        .thread-page .nav-user-area,
+        .thread-page .nav-legal-links {
+          display: block !important;
         }
         .thread-page .nav-items {
           display: flex;
-          flex-direction: row;
-          gap: 0;
-          margin: 0;
-          width: 100%;
+          flex-direction: column;
+          gap: 0.25rem;
+          margin-bottom: 2rem;
         }
         .thread-page .nav-item {
-          flex: 1;
-          justify-content: center;
-          padding: 0.5rem;
-          font-size: 0.875rem;
-          border-radius: 0;
+          justify-content: flex-start;
+          padding: 0.75rem 1rem;
+          font-size: 1rem;
+          border-radius: 9999px;
         }
-        .thread-page .nav-item span:first-child {
-          margin-right: 0;
+        .thread-page .nav-item span:not(.nav-badge):first-child {
+          margin-right: 0.75rem;
         }
-        .thread-page .nav-item span:last-child {
-          display: none;
+        .thread-page .nav-item span:not(.nav-badge):not(:first-child) {
+          display: inline;
         }
       }
     `
