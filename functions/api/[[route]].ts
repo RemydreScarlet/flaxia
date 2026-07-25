@@ -139,9 +139,7 @@ app.use('/api/*', async (c, next) => {
     return;
   }
   const token = getSessionToken(c.req.raw);
-  const clientIp = c.req.raw.headers.get('CF-Connecting-IP') || undefined;
-  const clientUa = c.req.raw.headers.get('User-Agent') || undefined;
-  const sessionData = token ? await getSession(c.env, token, clientIp, clientUa) : null;
+  const sessionData = token ? await getSession(c.env, token) : null;
   c.set('user', sessionData?.user || null);
   await next();
 });
@@ -1977,9 +1975,7 @@ app.post('/api/auth/register', async (c) => {
     });
 
     // Create session and set cookie so user is logged in after registration
-    const clientIp = c.req.raw.headers.get('CF-Connecting-IP') || undefined;
-    const clientUa = c.req.raw.headers.get('User-Agent') || undefined;
-    const session = await createSession(c.env, user.id, clientIp, clientUa);
+    const session = await createSession(c.env, user.id);
     const response = c.json({ user }, 201);
     setSessionCookie(response, session.id);
 
@@ -2001,9 +1997,7 @@ app.post('/api/auth/login', async (c) => {
     }
 
     // Login with custom auth
-    const clientIp = c.req.raw.headers.get('CF-Connecting-IP') || undefined;
-    const clientUa = c.req.raw.headers.get('User-Agent') || undefined;
-    const result = await loginUser(c.env, email, password, clientIp, clientUa);
+    const result = await loginUser(c.env, email, password);
 
     // Set session cookie
     const response = c.json({ user: result.user });
