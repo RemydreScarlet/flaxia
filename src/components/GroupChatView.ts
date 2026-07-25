@@ -670,7 +670,7 @@ export class GroupChatView {
       const preview = createImagePreview({ gifKey, postId: msg.id });
       preview.style.maxWidth = '100%';
       container.appendChild(preview);
-    } else if (payloadKey && payloadKey.startsWith('group/zip/')) {
+    } else if (payloadKey && (payloadKey.startsWith('group/zip/') || payloadKey.startsWith('group/html/'))) {
       this.renderZipAttachment(container, msg);
     } else if (swfKey && swfKey.startsWith('group/swf/')) {
       this.renderSwfAttachment(container, msg);

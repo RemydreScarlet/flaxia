@@ -4,7 +4,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { nanoid } from 'nanoid';
 import { isAdmin } from '../../src/lib/admin';
-import { extractZipToR2 } from '../../src/lib/wvfs-zip-server';
+import { copyHtmlToWvfs, extractZipToR2 } from '../../src/lib/wvfs-zip-server';
 import type { ReportCategory } from '../../src/types/post';
 import { exportPrivateKey, exportPublicKey, generateKeyPair } from '../lib/activitypub/crypto';
 import { buildCreateActivity, buildDeleteActivity, buildNoteObject } from '../lib/activitypub/note';
@@ -292,6 +292,14 @@ function detectMimeType(data: ArrayBuffer): string | null {
   ) {
     return 'image/webp';
   }
+  // HTML: <!DOCTYPE or <html or <HTM
+  if (
+    (header[0] === 0x3c && header[1] === 0x21 && header[2] === 0x44 && header[3] === 0x4f) || // <!DO
+    (header[0] === 0x3c && header[1] === 0x68 && header[2] === 0x74 && header[3] === 0x6d) || // <htm
+    (header[0] === 0x3c && header[1] === 0x48 && header[2] === 0x54 && header[3] === 0x4d) // <HTM
+  ) {
+    return 'text/html';
+  }
   for (const t of MAGIC_TYPES) {
     if (t.bytes.every((b, i) => header[t.offset + i] === b)) {
       return t.mime;
@@ -376,7 +384,8 @@ app.put('/api/upload/*', requireAuth, async (c) => {
       !detectedMime.startsWith('audio/') &&
       !detectedMime.startsWith('video/') &&
       detectedMime !== 'application/zip' &&
-      detectedMime !== 'application/x-shockwave-flash'
+      detectedMime !== 'application/x-shockwave-flash' &&
+      detectedMime !== 'text/html'
     ) {
       return c.json({ error: 'File type not allowed' }, 400);
     }
@@ -5945,6 +5954,9 @@ app.post('/api/posts/:id/prepare-attachment', requireAuth, async (c) => {
       const isDos = payloadType === 'dos' || name.endsWith('.jsdos');
       storageKey = isDos ? `dos/${postId}.zip` : `zip/${postId}.zip`;
       keyType = 'payload';
+    } else if (name.endsWith('.html') || name.endsWith('.htm')) {
+      storageKey = `html/${postId}.html`;
+      keyType = 'payload';
     } else if (ext && ['mp3', 'wav', 'ogg', 'm4a', 'webm'].includes(ext)) {
       const extMap: Record<string, string> = { mp3: '.mp3', wav: '.wav', ogg: '.ogg', m4a: '.m4a', webm: '.webm' };
       storageKey = `audio/${postId}${extMap[ext]}`;
@@ -6010,6 +6022,12 @@ app.post('/api/posts/prepare', requireAuth, async (c) => {
     else if (name.endsWith('.zip') || name.endsWith('.jsdos') || name.endsWith('.dosz')) {
       const isDos = payloadType === 'dos' || name.endsWith('.jsdos');
       storageKey = isDos ? `dos/${postId}.zip` : `zip/${postId}.zip`;
+      keyColumn = 'payload_key';
+      responseType = 'zip';
+    }
+    // HTML files
+    else if (name.endsWith('.html') || name.endsWith('.htm')) {
+      storageKey = `html/${postId}.html`;
       keyColumn = 'payload_key';
       responseType = 'zip';
     }
@@ -6366,6 +6384,22 @@ app.post('/api/posts/commit', requireAuth, async (c) => {
               await extractZipToR2(c.env.BUCKET, payloadKey!, postId!);
             } catch (e) {
               console.error('Background ZIP extraction failed:', e);
+            }
+          })(),
+        );
+      }
+    }
+
+    // Pre-copy HTML to WVFS for persistent caching
+    if (payloadKey && payloadKey.endsWith('.html')) {
+      const execCtx = (c as any).executionCtx;
+      if (execCtx?.waitUntil) {
+        execCtx.waitUntil(
+          (async () => {
+            try {
+              await copyHtmlToWvfs(c.env.BUCKET, payloadKey!, postId!);
+            } catch (e) {
+              console.error('Background HTML copy failed:', e);
             }
           })(),
         );
@@ -9583,6 +9617,9 @@ app.post('/api/dm/conversations/:id/messages/prepare', requireAuth, async (c) =>
     } else if (name.endsWith('.zip') || name.endsWith('.jsdos') || name.endsWith('.dosz')) {
       storageKey = `dm/zip/${msgId}.zip`;
       responseType = 'zip';
+    } else if (name.endsWith('.html') || name.endsWith('.htm')) {
+      storageKey = `dm/html/${msgId}.html`;
+      responseType = 'zip';
     } else if (ext && ['mp3', 'wav', 'ogg', 'm4a', 'webm'].includes(ext)) {
       const extMap: Record<string, string> = { mp3: '.mp3', wav: '.wav', ogg: '.ogg', m4a: '.m4a', webm: '.webm' };
       storageKey = `dm/audio/${msgId}${extMap[ext]}`;
@@ -9664,7 +9701,8 @@ app.put('/api/dm/upload/*', requireAuth, async (c) => {
       !detectedMime.startsWith('audio/') &&
       !detectedMime.startsWith('video/') &&
       detectedMime !== 'application/zip' &&
-      detectedMime !== 'application/x-shockwave-flash'
+      detectedMime !== 'application/x-shockwave-flash' &&
+      detectedMime !== 'text/html'
     ) {
       return c.json({ error: 'File type not allowed' }, 400);
     }
@@ -10411,6 +10449,9 @@ app.post('/api/groups/:id/messages/prepare', requireAuth, async (c) => {
     } else if (name.endsWith('.zip') || name.endsWith('.jsdos') || name.endsWith('.dosz')) {
       storageKey = `group/zip/${msgId}.zip`;
       responseType = 'zip';
+    } else if (name.endsWith('.html') || name.endsWith('.htm')) {
+      storageKey = `group/html/${msgId}.html`;
+      responseType = 'zip';
     } else if (ext && ['mp3', 'wav', 'ogg', 'm4a', 'webm'].includes(ext)) {
       const extMap: Record<string, string> = { mp3: '.mp3', wav: '.wav', ogg: '.ogg', m4a: '.m4a', webm: '.webm' };
       storageKey = `group/audio/${msgId}${extMap[ext]}`;
@@ -10489,7 +10530,8 @@ app.put('/api/groups/upload/*', requireAuth, async (c) => {
       !detectedMime.startsWith('audio/') &&
       !detectedMime.startsWith('video/') &&
       detectedMime !== 'application/zip' &&
-      detectedMime !== 'application/x-shockwave-flash'
+      detectedMime !== 'application/x-shockwave-flash' &&
+      detectedMime !== 'text/html'
     ) {
       return c.json({ error: 'File type not allowed' }, 400);
     }

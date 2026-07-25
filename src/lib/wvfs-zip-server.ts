@@ -505,7 +505,7 @@ function rewriteLocalAbsolutePaths(htmlContent: string): string {
   return htmlContent;
 }
 
-function injectBaseTag(htmlContent: string, postId: string, subPath: string = ''): string {
+export function injectBaseTag(htmlContent: string, postId: string, subPath: string = ''): string {
   const baseUrl = `/api/wvfs-zip/${postId}/${subPath}`;
 
   htmlContent = rewriteLocalAbsolutePaths(htmlContent);
@@ -573,6 +573,29 @@ export async function extractZipToR2(bucket: R2Bucket, zipKey: string, postId: s
     console.log(`extractZipToR2: Extracted ${files.length} files for post ${postId}`);
   } catch (error) {
     console.error(`extractZipToR2: Failed for post ${postId}:`, error);
+  }
+}
+
+// Copy a raw HTML file from R2 to the WVFS cache as index.html.
+// Used for direct HTML uploads (non-ZIP).
+export async function copyHtmlToWvfs(bucket: R2Bucket, htmlKey: string, postId: string): Promise<void> {
+  try {
+    const obj = await bucket.get(htmlKey);
+    if (!obj) {
+      console.error(`copyHtmlToWvfs: HTML not found at ${htmlKey}`);
+      return;
+    }
+    const r2Key = `${WVFS_R2_PREFIX}${postId}/index.html`;
+    const htmlContent = await obj.text();
+    await bucket.put(r2Key, htmlContent, {
+      httpMetadata: { contentType: 'text/html' },
+    });
+    await bucket.put(`${WVFS_R2_PREFIX}${postId}/.wvfs-manifest`, JSON.stringify({ files: ['index.html'] }), {
+      httpMetadata: { contentType: 'application/json' },
+    });
+    console.log(`copyHtmlToWvfs: Copied HTML to ${r2Key} for post ${postId}`);
+  } catch (error) {
+    console.error(`copyHtmlToWvfs: Failed for post ${postId}:`, error);
   }
 }
 

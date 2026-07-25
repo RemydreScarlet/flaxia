@@ -341,7 +341,10 @@ async function updateStageContent(container: HTMLElement, props: PostStageProps)
         });
         container.classList.add('post-stage--dos');
       }
-    } else if (props.post.payload_key && props.post.payload_key.startsWith('zip/')) {
+    } else if (
+      props.post.payload_key &&
+      (props.post.payload_key.startsWith('zip/') || props.post.payload_key.startsWith('html/'))
+    ) {
       container.classList.add('post-stage--zip'); // Add zip class for 16:9
       if (props.post.thumbnail_key) {
         // Show thumbnail with overlay button
@@ -417,6 +420,7 @@ async function updateStageContent(container: HTMLElement, props: PostStageProps)
     // Add click hint only for executable content (not images or audio)
     if (
       !props.post.payload_key?.startsWith('zip/') &&
+      !props.post.payload_key?.startsWith('html/') &&
       !props.post.payload_key?.startsWith('dos/') &&
       !props.post.swf_key?.startsWith('swf/') &&
       !props.post.gif_key
@@ -434,7 +438,10 @@ async function updateStageContent(container: HTMLElement, props: PostStageProps)
         container.innerHTML =
           '<div style="padding: 20px; text-align: center; color: #666;">' + t('post_stage.dos_load_error') + '</div>';
       });
-    } else if (props.post.payload_key && props.post.payload_key.startsWith('zip/')) {
+    } else if (
+      props.post.payload_key &&
+      (props.post.payload_key.startsWith('zip/') || props.post.payload_key.startsWith('html/'))
+    ) {
       // The executeZipAuto function will handle creating the iframe and cleanup
       executeZipAuto(props.post.id, container).catch((error: Error) => {
         console.error('Failed to execute ZIP:', error);

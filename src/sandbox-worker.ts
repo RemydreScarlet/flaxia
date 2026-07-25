@@ -2,9 +2,11 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { MULTIPLAYER_SDK_IIFE } from './lib/multiplayer-sdk.generated';
 import {
+  copyHtmlToWvfs,
   ensureFileInWvfs,
   extractZipToR2,
   extractZipToWvfs,
+  injectBaseTag,
   serveFileFromR2,
   serveFileFromWvfs,
 } from './lib/wvfs-zip-server';
@@ -93,6 +95,7 @@ app.get('/api/wvfs-zip/:postId/*', async (c) => {
         `jsdos/${postId}.jsdos`,
         `dm/zip/${postId}.zip`,
         `dm/dos/${postId}.zip`,
+        `html/${postId}.html`,
       ];
       for (const key of keysToTry) {
         const obj = await c.env.BUCKET.head(key);
@@ -104,7 +107,27 @@ app.get('/api/wvfs-zip/:postId/*', async (c) => {
     }
 
     if (!zipKey) {
-      return c.text('ZIP not found', 404);
+      return c.text('Not found', 404);
+    }
+
+    // 3a. Direct HTML file — serve from R2 directly (not a ZIP)
+    if (zipKey.endsWith('.html')) {
+      const obj = await c.env.BUCKET.get(zipKey);
+      if (obj) {
+        const htmlContent = await obj.text();
+        const withoutCsp = htmlContent.replace(/<meta[^>]*http-equiv=["']Content-Security-Policy["'][^>]*\/?>/gi, '');
+        const modifiedHtml = injectBaseTag(withoutCsp, postId);
+        c.executionCtx.waitUntil(copyHtmlToWvfs(c.env.BUCKET, zipKey, postId));
+        return withCsp(
+          new Response(modifiedHtml, {
+            headers: {
+              'Content-Type': 'text/html',
+              'Cache-Control': 'public, max-age=3600',
+              'Access-Control-Allow-Origin': '*',
+            },
+          }),
+        );
+      }
     }
 
     // 4. Try progressive extraction: parse central dir + extract just this file

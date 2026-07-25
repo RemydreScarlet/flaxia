@@ -611,7 +611,7 @@ export class ConversationView {
       });
       preview.style.maxWidth = '100%';
       container.appendChild(preview);
-    } else if (payloadKey && payloadKey.startsWith('dm/zip/')) {
+    } else if (payloadKey && (payloadKey.startsWith('dm/zip/') || payloadKey.startsWith('dm/html/'))) {
       this.renderZipAttachment(container, msg);
     } else if (swfKey && swfKey.startsWith('dm/swf/')) {
       this.renderSwfAttachment(container, msg);
