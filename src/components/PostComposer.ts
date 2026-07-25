@@ -1497,8 +1497,21 @@ export class PostComposer {
       const errorMessage = err?.message || t('composer.error_create_failed');
       showToast(`${errorMessage}${err?.details ? ` (${err.details})` : ''}`, true);
     } finally {
+      console.log('[PostComposer] finally: resetting submit state', {
+        isSubmittingBefore: this.isSubmitting,
+        textareaExists: !!this.textarea,
+        textareaValue: this.textarea?.value,
+        textareaInDOM: this.textarea ? document.contains(this.textarea) : false,
+        submitButtonInDOM: this.submitButton ? document.contains(this.submitButton) : false,
+      });
       this.isSubmitting = false;
-      this.updateSubmitButton();
+      try {
+        this.updateSubmitButton();
+      } catch (e) {
+        console.error('[PostComposer] updateSubmitButton failed in finally:', e);
+        this.submitButton.disabled = false;
+        this.submitButton.textContent = t('composer.post_button');
+      }
     }
   }
 
