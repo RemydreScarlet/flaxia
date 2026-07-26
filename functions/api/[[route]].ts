@@ -69,6 +69,7 @@ type PostRow = {
   payload_key: string | null;
   swf_key: string | null;
   thumbnail_key: string | null;
+  game_description?: string | null;
   parent_id: string | null;
   root_id: string | null;
   depth: number;
@@ -6101,6 +6102,45 @@ app.post('/api/posts/prepare', requireAuth, async (c) => {
   }
 });
 
+// Helper: extract game description from a game ZIP in R2
+async function extractGameDescription(
+  bucket: R2Bucket,
+  db: D1Database,
+  payloadKey: string,
+  postId: string,
+): Promise<void> {
+  try {
+    const fflate = await import('fflate');
+    const zipObj = await bucket.get(payloadKey);
+    if (!zipObj) return;
+    const zipData = await zipObj.arrayBuffer();
+    const files = fflate.unzipSync(new Uint8Array(zipData));
+    const indexHtmlKey = Object.keys(files).find(
+      (k) =>
+        k.replace(/\\/g, '/').replace(/^\/+/, '').toLowerCase() === 'index.html' ||
+        k.replace(/\\/g, '/').replace(/^\/+/, '').toLowerCase().endsWith('/index.html'),
+    );
+    if (!indexHtmlKey) return;
+    const decoder = new TextDecoder('utf-8');
+    const html = decoder.decode(files[indexHtmlKey]);
+    const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const title = titleMatch ? titleMatch[1].trim() : '';
+    const descMatch =
+      html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i) ||
+      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["']/i);
+    const metaDesc = descMatch ? descMatch[1] : '';
+    const gameDescription = metaDesc || title || '';
+    if (gameDescription) {
+      await db
+        .prepare('UPDATE posts SET game_description = ? WHERE id = ?')
+        .bind(gameDescription.slice(0, 500), postId)
+        .run();
+    }
+  } catch (e) {
+    console.error(`Failed to extract game description for post ${postId}:`, e);
+  }
+}
+
 // Step 3 — POST /api/posts/commit (protected)
 app.post('/api/posts/commit', requireAuth, async (c) => {
   try {
@@ -6349,9 +6389,14 @@ app.post('/api/posts/commit', requireAuth, async (c) => {
       console.error('ActivityPub delivery skipped:', String(e));
     }
 
+    // Extract game description from ZIP
+    if (payloadKey && (payloadKey.endsWith('.zip') || payloadKey.endsWith('.jsdos'))) {
+      await extractGameDescription(c.env.BUCKET, c.env.DB, payloadKey, postId);
+    }
+
     // Fetch the created post for enrichment
     const fullPost = (await c.env.DB.prepare(
-      "SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, u.language as author_language, p.text, p.hashtags, p.mentions, p.gif_key, p.payload_key as payloadKey, p.swf_key as swfKey, p.thumbnail_key as thumbnailKey, p.fresh_count, COALESCE(p.bookmark_count, 0) as bookmark_count, COALESCE(p.reply_count, 0) as reply_count, COALESCE(p.impressions, 0) as impressions, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.id = ?",
+      "SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, u.language as author_language, p.text, p.hashtags, p.mentions, p.gif_key, p.payload_key as payloadKey, p.swf_key as swfKey, p.thumbnail_key as thumbnailKey, p.game_description, p.fresh_count, COALESCE(p.bookmark_count, 0) as bookmark_count, COALESCE(p.reply_count, 0) as reply_count, COALESCE(p.impressions, 0) as impressions, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.id = ?",
     )
       .bind(postId)
       .first()) as PostRow;
@@ -9067,6 +9112,41 @@ app.post('/api/admin/alerts/:id/resolve', requireAuth, requireAdmin, async (c) =
     return c.json({ error: 'Failed to resolve alert', details: err.message || 'Unknown error' }, 500);
   }
 });
+
+// POST /api/admin/backfill-game-descriptions - extract descriptions for existing game posts (admin only)
+app.post('/api/admin/backfill-game-descriptions', requireAuth, requireAdmin, async (c) => {
+  try {
+    if (!c.env.DB || !c.env.BUCKET) {
+      return c.json({ error: 'Database or bucket not available' }, 500);
+    }
+
+    const url = new URL(c.req.url);
+    const limit = Math.min(parseInt(url.searchParams.get('limit') || '200', 10), 1000);
+
+    const games = (await c.env.DB.prepare(`
+      SELECT id, payload_key
+      FROM posts
+      WHERE payload_key IS NOT NULL
+        AND (payload_key LIKE '%.zip' OR payload_key LIKE '%.jsdos')
+        AND (game_description IS NULL OR game_description = '')
+      ORDER BY created_at DESC
+      LIMIT ?
+    `)
+      .bind(limit)
+      .all()) as { results: Array<{ id: string; payload_key: string }> };
+
+    for (const game of games.results) {
+      await extractGameDescription(c.env.BUCKET, c.env.DB, game.payload_key, game.id);
+    }
+
+    return c.json({ success: true, processed: games.results.length });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Backfill game descriptions error:', error);
+    return c.json({ error: 'Failed to backfill game descriptions', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
 // GET /api/notifications - fetch notifications (protected)
 app.get('/api/notifications', requireAuth, async (c) => {
   try {

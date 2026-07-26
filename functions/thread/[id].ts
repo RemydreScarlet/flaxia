@@ -30,6 +30,7 @@ function toPost(row: RawPost): PostRow {
     payload_key: row.payload_key ? String(row.payload_key) : null,
     swf_key: row.swf_key ? String(row.swf_key) : null,
     thumbnail_key: row.thumbnail_key ? String(row.thumbnail_key) : null,
+    game_description: row.game_description ? String(row.game_description) : null,
     fresh_count: Number(row.fresh_count),
     bookmark_count: Number(row.bookmark_count),
     reply_count: Number(row.reply_count),
@@ -46,6 +47,7 @@ function toPost(row: RawPost): PostRow {
 const POST_SELECT = `
   SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key,
     p.text, p.hashtags, p.gif_key, p.payload_key, p.swf_key, p.thumbnail_key,
+    p.game_description,
     p.fresh_count, COALESCE(p.bookmark_count, 0) as bookmark_count,
     COALESCE(p.reply_count, 0) as reply_count,
     COALESCE(p.impressions, 0) as impressions,
@@ -153,7 +155,7 @@ export async function onRequest(context: {
     return new Response(
       renderHtmlShell(content, {
         title: `Flaxia - ${post.display_name || post.username}`,
-        description: post.text.slice(0, 200),
+        description: post.game_description || post.text.slice(0, 200),
         canonicalUrl,
         image: ogImage,
 

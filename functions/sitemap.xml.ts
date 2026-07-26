@@ -75,12 +75,15 @@ const generateSitemap = async (env: Bindings): Promise<string> => {
       console.error('Error fetching users for sitemap:', error);
     }
 
-    // Add public posts (limit to 10000 for performance)
+    // Add public posts with games or attachments only (limit to 10000 for performance)
     try {
       const posts = (await env.DB.prepare(`
         SELECT id, created_at 
         FROM posts 
-        WHERE text != '' 
+        WHERE (payload_key IS NOT NULL OR swf_key IS NOT NULL OR gif_key IS NOT NULL)
+          AND status = 'published'
+          AND hidden = 0
+          AND parent_id IS NULL
         ORDER BY created_at DESC 
         LIMIT 10000
       `).all()) as { results: Array<{ id: string; created_at: string }> };
@@ -104,7 +107,7 @@ const generateSitemap = async (env: Bindings): Promise<string> => {
       const games = (await env.DB.prepare(`
         SELECT id, created_at
         FROM posts
-        WHERE payload_key IS NOT NULL AND swf_key IS NULL
+        WHERE (payload_key IS NOT NULL OR swf_key IS NOT NULL)
           AND status = 'published'
           AND hidden = 0
           AND parent_id IS NULL

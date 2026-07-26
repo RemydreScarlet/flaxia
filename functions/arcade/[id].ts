@@ -21,6 +21,7 @@ interface PostRow {
   swf_key: string | null;
   thumbnail_key: string | null;
   gif_key: string | null;
+  game_description: string | null;
   fresh_count: number;
   reply_count: number;
   bookmark_count: number;
@@ -41,6 +42,7 @@ function toPost(row: RawPost): PostRow {
     swf_key: row.swf_key ? String(row.swf_key) : null,
     thumbnail_key: row.thumbnail_key ? String(row.thumbnail_key) : null,
     gif_key: row.gif_key ? String(row.gif_key) : null,
+    game_description: row.game_description ? String(row.game_description) : null,
     fresh_count: Number(row.fresh_count),
     reply_count: Number(row.reply_count),
     bookmark_count: Number(row.bookmark_count),
@@ -106,6 +108,7 @@ export async function onRequest(context: {
     const mainRow = (await env.DB.prepare(`
       SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key,
         p.text, p.payload_key, p.swf_key, p.thumbnail_key, p.gif_key,
+        p.game_description,
         p.fresh_count, COALESCE(p.reply_count, 0) as reply_count,
         COALESCE(p.bookmark_count, 0) as bookmark_count,
         p.created_at
@@ -191,7 +194,7 @@ export async function onRequest(context: {
       .ssr-game-play-btn:hover { background: #0056b3; }
     </style>`;
 
-    const description = post.text.slice(0, 200);
+    const description = post.game_description || post.text.slice(0, 200);
     const profileUrl = `${baseUrl}/users/${post.username}`;
     const avatarSrc = post.avatar_key ? assetUrl(baseUrl, post.avatar_key) : `${baseUrl}/default-avatar.png`;
 

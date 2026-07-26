@@ -19,6 +19,7 @@ export interface PostRow {
   payload_key: string | null;
   swf_key: string | null;
   thumbnail_key: string | null;
+  game_description?: string | null;
   fresh_count: number;
   bookmark_count: number;
   reply_count: number;
@@ -64,7 +65,7 @@ export function renderBlogPostingJsonLd(post: PostRow, authorName: string, autho
     '@context': 'https://schema.org',
     '@type': 'BlogPosting',
     headline: `${authorName} on Flaxia`,
-    description: post.text.slice(0, 200),
+    description: post.game_description || post.text.slice(0, 200),
     url: postUrl,
     datePublished: post.created_at,
     author: {
