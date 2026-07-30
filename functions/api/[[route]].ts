@@ -6391,7 +6391,7 @@ app.post('/api/posts/commit', requireAuth, async (c) => {
 
     // Extract game description from ZIP
     if (payloadKey && (payloadKey.endsWith('.zip') || payloadKey.endsWith('.jsdos'))) {
-      await extractGameDescription(c.env.BUCKET, c.env.DB, payloadKey, postId);
+      await extractGameDescription(c.env.BUCKET, c.env.DB, payloadKey!, postId!);
     }
 
     // Fetch the created post for enrichment
