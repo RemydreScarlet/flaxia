@@ -852,20 +852,20 @@ export class ArcadePage {
     const commentsBtn = this.createActionButton('💬', formatCount(game.replyCount || 0), () => this.handleComments());
     commentsBtn.dataset.tutorial = 'comments';
 
-    // Screenshot button
-    const screenshotBtn = this.createActionButton('📸', '', () => void this.handleCaptureScreenshot());
-    screenshotBtn.title = t('arcade.capture_screenshot');
+    // Screenshot button (hidden for now)
+    // const screenshotBtn = this.createActionButton('📸', '', () => void this.handleCaptureScreenshot());
+    // screenshotBtn.title = t('arcade.capture_screenshot');
 
-    // Clip button
-    const clipBtn = this.createActionButton('🎬', '', () => void this.handleCaptureClip());
-    clipBtn.title = t('arcade.capture_clip');
+    // Clip button (hidden for now)
+    // const clipBtn = this.createActionButton('🎬', '', () => void this.handleCaptureClip());
+    // clipBtn.title = t('arcade.capture_clip');
 
     container.appendChild(freshBtn);
     container.appendChild(fullscreenBtn);
     container.appendChild(shareBtn);
     container.appendChild(commentsBtn);
-    container.appendChild(screenshotBtn);
-    container.appendChild(clipBtn);
+    // container.appendChild(screenshotBtn);
+    // container.appendChild(clipBtn);
 
     return container;
   }
