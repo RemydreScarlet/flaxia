@@ -26,6 +26,8 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm run build
+        env:
+          SANDBOX_ORIGIN: https://sandbox.flaxia.app
       - name: Deploy to Cloudflare Pages
         run: npx wrangler pages deploy dist
         env:

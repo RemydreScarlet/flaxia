@@ -18,7 +18,7 @@
     "build:capture": "vite build --config packages/capture/vite.config.ts && node scripts/embed-capture-bridge.mjs",
     "watch:sdk": "node scripts/embed-multiplayer-sdk.mjs && node scripts/embed-capture-bridge.mjs",
     "preview": "vite preview",
-    "deploy": "CONTENT_ORIGIN=https://sandbox.flaxia.app wrangler pages deploy dist",
+    "deploy": "CONTENT_ORIGIN=https://sandbox.flaxia.app SANDBOX_ORIGIN=https://sandbox.flaxia.app wrangler pages deploy dist",
     "deploy:sandbox": "wrangler deploy src/sandbox-worker.ts --config wrangler.sandbox.toml",
     "deploy:do": "wrangler deploy --config do-worker/wrangler.toml",
     "deploy:multiplayer": "wrangler deploy --config multiplayer-worker/wrangler.toml",

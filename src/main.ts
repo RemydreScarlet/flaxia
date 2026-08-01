@@ -1524,7 +1524,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
           leftNavInstances.add(leftNav);
 
-          const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://flaxia.app';
+          const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://sandbox.flaxia.app';
 
           if (cachedContentComponent?.view === 'explore') {
             console.log('Restoring cached explore page');
@@ -1630,7 +1630,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
           leftNavInstances.add(leftNav);
 
-          const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://flaxia.app';
+          const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://sandbox.flaxia.app';
 
           if (cachedContentComponent?.view === 'search') {
             console.log('Restoring cached search page');
@@ -1733,7 +1733,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
           leftNavInstances.add(leftNav);
 
-          const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://flaxia.app';
+          const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://sandbox.flaxia.app';
 
           if (cachedContentComponent?.view === 'arcade') {
             console.log('Restoring cached arcade page');
@@ -1846,7 +1846,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
           leftNavInstances.add(leftNav);
 
-          const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://flaxia.app';
+          const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://sandbox.flaxia.app';
 
           if (cachedContentComponent?.view === 'profile') {
             console.log('Restoring cached profile');
@@ -1964,7 +1964,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               window.scrollTo(0, scrollY);
             });
           } else {
-            const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://flaxia.app';
+            const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://sandbox.flaxia.app';
             const { createBookmarksPage } = await import('./components/BookmarksPage.js');
             bookmarksPage = createBookmarksPage({
               sandboxOrigin,
@@ -2521,7 +2521,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
           const { createTimeline } = await import('./components/Timeline.js');
           timeline = createTimeline({
-            sandboxOrigin: import.meta.env.VITE_SANDBOX_ORIGIN || 'https://flaxia.app',
+            sandboxOrigin: import.meta.env.VITE_SANDBOX_ORIGIN || 'https://sandbox.flaxia.app',
             currentUser,
           });
 
@@ -2546,7 +2546,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           currentView = 'thread';
           currentPostId = postId;
 
-          const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://flaxia.app';
+          const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://sandbox.flaxia.app';
           const { createThreadPage } = await import('./components/ThreadPage.js');
           threadPage = createThreadPage({
             postId,
@@ -2643,7 +2643,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
           leftNavInstances.add(leftNav);
 
-          const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://flaxia.app';
+          const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://sandbox.flaxia.app';
 
           if (cachedContentComponent?.view === 'timeline') {
             console.log('Restoring cached timeline');

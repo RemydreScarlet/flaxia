@@ -213,6 +213,14 @@ export class ArcadeCaptureClient {
 
     const data = event.data;
     if (!data || typeof data !== 'object') return;
+
+    // Learn the sandbox's real origin from the first message we receive.
+    // The WVFS iframe 301-redirects to the sandbox worker, so the compile-time
+    // origin may not match the iframe's actual origin after navigation.
+    if (event.origin && event.origin !== 'null' && this.targetOrigin !== event.origin) {
+      this.targetOrigin = event.origin;
+    }
+
     switch (data.type) {
       case 'POST_SCORE': {
         if (typeof data.score === 'number' && !Number.isNaN(data.score) && typeof data.label === 'string') {
