@@ -4,7 +4,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { nanoid } from 'nanoid';
 import { isAdmin } from '../../src/lib/admin';
-import { copyHtmlToWvfs, extractZipToR2 } from '../../src/lib/wvfs-zip-server';
+import { copyHtmlToWvfs, extractFileFromZip, extractZipToR2 } from '../../src/lib/wvfs-zip-server';
 import type { ReportCategory } from '../../src/types/post';
 import { exportPrivateKey, exportPublicKey, generateKeyPair } from '../lib/activitypub/crypto';
 import { buildCreateActivity, buildDeleteActivity, buildNoteObject } from '../lib/activitypub/note';
@@ -6110,19 +6110,10 @@ async function extractGameDescription(
   postId: string,
 ): Promise<void> {
   try {
-    const fflate = await import('fflate');
-    const zipObj = await bucket.get(payloadKey);
-    if (!zipObj) return;
-    const zipData = await zipObj.arrayBuffer();
-    const files = fflate.unzipSync(new Uint8Array(zipData));
-    const indexHtmlKey = Object.keys(files).find(
-      (k) =>
-        k.replace(/\\/g, '/').replace(/^\/+/, '').toLowerCase() === 'index.html' ||
-        k.replace(/\\/g, '/').replace(/^\/+/, '').toLowerCase().endsWith('/index.html'),
-    );
-    if (!indexHtmlKey) return;
+    const result = await extractFileFromZip(bucket, payloadKey, 'index.html');
+    if (!result) return;
     const decoder = new TextDecoder('utf-8');
-    const html = decoder.decode(files[indexHtmlKey]);
+    const html = decoder.decode(result.data);
     const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
     const title = titleMatch ? titleMatch[1].trim() : '';
     const descMatch =

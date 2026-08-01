@@ -4,9 +4,8 @@ import { MULTIPLAYER_SDK_IIFE } from './lib/multiplayer-sdk.generated';
 import {
   copyHtmlToWvfs,
   ensureFileInWvfs,
-  extractZipToR2,
-  extractZipToWvfs,
   injectBaseTag,
+  persistFileToWvfsR2,
   serveFileFromR2,
   serveFileFromWvfs,
 } from './lib/wvfs-zip-server';
@@ -36,14 +35,6 @@ function withCsp(response: Response): Response {
     statusText: response.statusText,
     headers,
   });
-}
-
-async function persistExtractionToR2(bucket: R2Bucket, zipKey: string, postId: string): Promise<void> {
-  try {
-    await extractZipToR2(bucket, zipKey, postId);
-  } catch (e) {
-    console.error('Background R2 extraction failed:', e);
-  }
 }
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -135,27 +126,17 @@ app.get('/api/wvfs-zip/:postId/*', async (c) => {
     if (loaded) {
       response = await serveFileFromWvfs(postId, filePath);
       if (response) {
-        // Persist to R2 so subsequent requests skip extraction entirely
-        c.executionCtx.waitUntil(persistExtractionToR2(c.env.BUCKET, zipKey, postId));
+        // Persist just this file to R2 so subsequent requests skip extraction.
+        // Deliberately not a full-archive extraction: that would exceed the
+        // CPU/subrequest limits on the free plan.
+        c.executionCtx.waitUntil(persistFileToWvfsR2(c.env.BUCKET, postId, filePath));
         return withCsp(response);
       }
     }
 
-    // 5. Fallback: full extraction
-    const obj = await c.env.BUCKET.get(zipKey);
-    if (!obj) {
-      return c.text('ZIP not found', 404);
-    }
-
-    const zipData = await obj.arrayBuffer();
-    await extractZipToWvfs(zipData, postId);
-
-    response = await serveFileFromWvfs(postId, filePath);
-    if (response) {
-      c.executionCtx.waitUntil(persistExtractionToR2(c.env.BUCKET, zipKey, postId));
-      return withCsp(response);
-    }
-
+    // 5. Lazy extraction failed — the requested file is not present in this ZIP.
+    // Avoid full-archive decompression in the request path (CPU time limit).
+    console.warn(`WVFS: File not found after lazy extraction: ${filePath} (zipKey: ${zipKey})`);
     return c.text('Not found', 404);
   } catch (error: unknown) {
     console.error('WVFS error:', error);
