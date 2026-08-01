@@ -17,10 +17,21 @@ export type RoomInfo = {
   createdAt: number;
 };
 
+export type CaptureFrame = {
+  width: number;
+  height: number;
+  ts: number;
+  data: ArrayBuffer;
+};
+
 export type ParentMessage =
   | { type: 'REQUEST_FULLSCREEN' }
   | { type: 'REQUEST_FRESH' }
   | { type: 'POST_SCORE'; score: number; label: string }
+  | { type: 'CAPTURE_READY'; ok: boolean }
+  | { type: 'CAPTURE_FRAME_RESULT'; requestId: string; mime: string; data: ArrayBuffer }
+  | { type: 'CAPTURE_GIF_RESULT'; requestId: string; frames: CaptureFrame[] }
+  | { type: 'CAPTURE_ERROR'; requestId: string; message: string }
   | { type: 'MULTIPLAYER_STATE'; gameId: string; state: unknown; timestamp: number }
   | { type: 'MULTIPLAYER_ROOM_STATE'; room: RoomInfo; players: PlayerInfo[] }
   | { type: 'MULTIPLAYER_PLAYER_JOINED'; player: PlayerInfo }
@@ -41,6 +52,9 @@ export type SandboxMessage =
   | { type: 'FRESH_GRANTED' }
   | { type: 'FRESH_DENIED' }
   | { type: 'SCORE_SUBMITTED'; score: number; label: string }
+  | { type: 'CAPTURE_INIT' }
+  | { type: 'CAPTURE_FRAME'; requestId: string }
+  | { type: 'CAPTURE_GIF'; requestId: string }
   | { type: 'MULTIPLAYER_CONNECT'; gameId: string; roomId?: string }
   | { type: 'MULTIPLAYER_DISCONNECT' }
   | { type: 'MULTIPLAYER_INPUT'; input: unknown; timestamp: number }
@@ -63,6 +77,14 @@ export function isParentMessage(msg: unknown): msg is ParentMessage {
       return true;
     case 'POST_SCORE':
       return typeof msg.score === 'number' && !Number.isNaN(msg.score) && typeof msg.label === 'string';
+    case 'CAPTURE_READY':
+      return typeof msg.ok === 'boolean';
+    case 'CAPTURE_FRAME_RESULT':
+      return typeof msg.requestId === 'string' && typeof msg.mime === 'string' && msg.data instanceof ArrayBuffer;
+    case 'CAPTURE_GIF_RESULT':
+      return typeof msg.requestId === 'string' && Array.isArray(msg.frames);
+    case 'CAPTURE_ERROR':
+      return typeof msg.requestId === 'string' && typeof msg.message === 'string';
     case 'MULTIPLAYER_STATE':
       return typeof msg.gameId === 'string';
     case 'MULTIPLAYER_ROOM_STATE':
@@ -96,6 +118,11 @@ export function isSandboxMessage(msg: unknown): msg is SandboxMessage {
       return true;
     case 'SCORE_SUBMITTED':
       return typeof msg.score === 'number' && !Number.isNaN(msg.score) && typeof msg.label === 'string';
+    case 'CAPTURE_INIT':
+      return true;
+    case 'CAPTURE_FRAME':
+    case 'CAPTURE_GIF':
+      return typeof msg.requestId === 'string';
     case 'MULTIPLAYER_CONNECT':
       return typeof msg.gameId === 'string';
     case 'MULTIPLAYER_DISCONNECT':

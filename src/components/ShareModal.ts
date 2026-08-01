@@ -1,6 +1,19 @@
 import { t } from '../lib/i18n.js';
 import { registerModal } from '../lib/modal-state.js';
-import { canUseWebShare, copyToClipboard, createShareData, sharePlatforms, shareViaWebShare } from '../lib/share';
+import {
+  canUseWebShare,
+  copyToClipboard,
+  createShareData,
+  downloadFile,
+  sharePlatforms,
+  shareViaWebShare,
+  shareViaWebShareWithFile,
+} from '../lib/share';
+
+export interface ShareMedia {
+  blob: Blob;
+  filename: string;
+}
 
 export interface ShareModalProps {
   post: {
@@ -10,10 +23,11 @@ export interface ShareModalProps {
     display_name?: string;
   };
   url?: string;
+  media?: ShareMedia;
   onClose: () => void;
 }
 
-export function createShareModal({ post, url: customUrl, onClose }: ShareModalProps): HTMLElement {
+export function createShareModal({ post, url: customUrl, media, onClose }: ShareModalProps): HTMLElement {
   const unregister = registerModal();
   const overlay = document.createElement('div');
   overlay.className = 'share-modal-overlay';
@@ -89,6 +103,48 @@ export function createShareModal({ post, url: customUrl, onClose }: ShareModalPr
     <div class="share-modal-content" style="
       padding: 1.25rem;
     ">
+      ${
+        media
+          ? `
+        <div class="share-media-preview" style="
+          margin-bottom: 1rem;
+          border-radius: 0.5rem;
+          overflow: hidden;
+          background: #000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          max-height: 40vh;
+        ">
+          <img src="${URL.createObjectURL(media.blob)}" alt="${t('share.media_preview')}" style="
+            max-width: 100%;
+            max-height: 40vh;
+            display: block;
+          ">
+        </div>
+        <button class="share-button share-button--download" style="
+          width: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.75rem;
+          padding: 0.875rem 1rem;
+          background: var(--accent);
+          border: none;
+          border-radius: 0.5rem;
+          color: #000;
+          font-size: 0.9375rem;
+          font-weight: 500;
+          cursor: pointer;
+          margin-bottom: 1rem;
+          transition: opacity 0.2s;
+        ">
+          <span style="font-size: 1.25rem;">⬇️</span>
+          <span>${t('share.download')}</span>
+        </button>
+      `
+          : ''
+      }
       ${
         canUseWebShare()
           ? `
@@ -237,12 +293,30 @@ export function createShareModal({ post, url: customUrl, onClose }: ShareModalPr
 
   if (nativeShareButton) {
     nativeShareButton.addEventListener('click', async () => {
+      if (media && canUseWebShare()) {
+        const file = new File([media.blob], media.filename, { type: media.blob.type });
+        const success = await shareViaWebShareWithFile(shareData, file);
+        if (success) {
+          close();
+        } else {
+          showToast(t('share.native_failed'));
+        }
+        return;
+      }
       const success = await shareViaWebShare(shareData);
       if (success) {
         close();
       } else {
         showToast(t('share.native_failed'));
       }
+    });
+  }
+
+  const downloadButton = modal.querySelector('.share-button--download') as HTMLButtonElement;
+  if (downloadButton && media) {
+    downloadButton.addEventListener('click', () => {
+      downloadFile(media.blob, media.filename);
+      showToast(t('share.download_started'));
     });
   }
 

@@ -280,6 +280,9 @@
   "share.platform_reddit": "Reddit",
   "share.platform_bluesky": "Bluesky",
   "share.platform_threads": "Threads",
+  "share.media_preview": "キャプチャプレビュー",
+  "share.download": "ダウンロード",
+  "share.download_started": "ダウンロードを開始しました",
 
   "topic.title": "今のお題",
   "topic.loading": "お題を読み込み中...",
@@ -370,6 +373,11 @@
   "arcade.loading_zip": "⏳ ZIPを読み込み中...",
   "arcade.loading_dos": "⏳ DOSを起動中...",
   "arcade.loading_html5": "⏳ 読み込み中...",
+  "arcade.capture_screenshot": "📸 スクリーンショット",
+  "arcade.capture_clip": "🎬 クリップ",
+  "arcade.capture_screenshot_failed": "スクリーンショットを取得できませんでした",
+  "arcade.capture_clip_failed": "クリップを取得できませんでした",
+  "arcade.capture_processing": "キャプチャを処理中...",
 
   "arcade.tutorial_btn": "❓",
   "arcade.tutorial_welcome_title": "🌿 Flaxiaへようこそ！",

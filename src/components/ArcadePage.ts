@@ -1,3 +1,4 @@
+import { ArcadeCaptureClient } from '../lib/capture-client.js';
 import { formatCount } from '../lib/format.js';
 import { t } from '../lib/i18n.js';
 import { impressionTracker } from '../lib/impression-tracker.js';
@@ -5,6 +6,7 @@ import { registerModal } from '../lib/modal-state.js';
 import { updateMetaTags } from '../lib/seo-meta.js';
 import { getReplyStyle } from '../lib/settings.js';
 import { buildTree } from '../lib/thread.js';
+import { showToast } from '../lib/toast.js';
 import { executeWvfsZip } from '../lib/wvfs-zip-client.js';
 import type { ArcadePageProps, Game, GameType } from '../types/game.js';
 import type { Post } from '../types/post.js';
@@ -36,6 +38,8 @@ export class ArcadePage {
   private gameContainer: HTMLElement;
   private floatingActions: HTMLElement | null = null;
   private currentGameHandle: { destroy: () => void } | null = null;
+  private captureClient: ArcadeCaptureClient | null = null;
+  private captureBusy: boolean = false;
   private touchStartY: number = 0;
   private touchEndY: number = 0;
   private touchStartX: number = 0;
@@ -848,12 +852,106 @@ export class ArcadePage {
     const commentsBtn = this.createActionButton('💬', formatCount(game.replyCount || 0), () => this.handleComments());
     commentsBtn.dataset.tutorial = 'comments';
 
+    // Screenshot button
+    const screenshotBtn = this.createActionButton('📸', '', () => void this.handleCaptureScreenshot());
+    screenshotBtn.title = t('arcade.capture_screenshot');
+
+    // Clip button
+    const clipBtn = this.createActionButton('🎬', '', () => void this.handleCaptureClip());
+    clipBtn.title = t('arcade.capture_clip');
+
     container.appendChild(freshBtn);
     container.appendChild(fullscreenBtn);
     container.appendChild(shareBtn);
     container.appendChild(commentsBtn);
+    container.appendChild(screenshotBtn);
+    container.appendChild(clipBtn);
 
     return container;
+  }
+
+  private async handleCaptureScreenshot(): Promise<void> {
+    const game = this.games[this.currentIndex];
+    const client = this.captureClient;
+    if (!game || !client || this.captureBusy) return;
+
+    this.captureBusy = true;
+    try {
+      showToast(t('arcade.capture_processing'));
+      const blob = await client.requestFrame();
+      const card = await client.composeScoreCard(blob, {
+        title: game.title,
+        username: game.username,
+        footer: t('arcade.capture_screenshot'),
+      });
+      this.openCaptureShareModal(card, `flaxia-${game.id}-capture.png`, 'image/png');
+    } catch (error) {
+      console.warn('Screenshot capture failed:', error);
+      showToast(t('arcade.capture_screenshot_failed'), true);
+    } finally {
+      this.captureBusy = false;
+    }
+  }
+
+  private async handleCaptureClip(): Promise<void> {
+    const game = this.games[this.currentIndex];
+    const client = this.captureClient;
+    if (!game || !client || this.captureBusy) return;
+
+    this.captureBusy = true;
+    try {
+      showToast(t('arcade.capture_processing'));
+      const frames = await client.requestGif();
+      const gif = client.encodeGif(frames);
+      this.openCaptureShareModal(gif, `flaxia-${game.id}-clip.gif`, 'image/gif');
+    } catch (error) {
+      console.warn('Clip capture failed:', error);
+      showToast(t('arcade.capture_clip_failed'), true);
+    } finally {
+      this.captureBusy = false;
+    }
+  }
+
+  private handlePostScore(score: number, label: string): void {
+    const game = this.games[this.currentIndex];
+    const client = this.captureClient;
+    if (!game || !client || this.captureBusy) return;
+
+    this.captureBusy = true;
+    void (async () => {
+      try {
+        const blob = await client.requestFrame();
+        const card = await client.composeScoreCard(blob, {
+          title: game.title,
+          username: game.username,
+          score,
+          footer: label,
+        });
+        this.openCaptureShareModal(card, `flaxia-${game.id}-score.png`, 'image/png');
+      } catch (error) {
+        console.warn('Score card capture failed:', error);
+      } finally {
+        this.captureBusy = false;
+      }
+    })();
+  }
+
+  private openCaptureShareModal(blob: Blob, filename: string, type: string): void {
+    const game = this.games[this.currentIndex];
+    if (!game) return;
+
+    const arcadeUrl = `${window.location.origin}/arcade/${game.id}`;
+    createShareModal({
+      post: {
+        id: game.postId,
+        text: game.title,
+        username: game.username,
+        display_name: game.displayName,
+      },
+      url: arcadeUrl,
+      media: { blob: new Blob([blob], { type }), filename },
+      onClose: () => {},
+    });
   }
 
   private handleShare(): void {
@@ -1375,6 +1473,7 @@ export class ArcadePage {
           },
         };
       }
+      this.setupCapture(game, container);
       this.hideLoading();
     } catch (error) {
       console.error('Failed to execute game:', error);
@@ -1393,6 +1492,47 @@ export class ArcadePage {
       wrapper.appendChild(icon);
       wrapper.appendChild(message);
       container.appendChild(wrapper);
+    }
+  }
+
+  private setupCapture(game: Game, container: HTMLElement): void {
+    this.captureClient?.destroy();
+    this.captureClient = null;
+
+    const iframe = container.querySelector<HTMLIFrameElement>('iframe');
+    if (!iframe) return;
+
+    // DOS iframes run with a sandbox without allow-same-origin, so their
+    // origin is opaque ('null'); only '*' can be used as the target origin.
+    const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://sandbox.flaxia.app';
+    const targetOrigin = game.type === 'dos' ? '*' : sandboxOrigin;
+
+    const client = new ArcadeCaptureClient({
+      iframe,
+      targetOrigin,
+      onError: (message) => {
+        if (this.captureClient === client) {
+          console.warn('Game capture unavailable:', message);
+        }
+      },
+      onPostScore: (score, label) => {
+        if (this.captureClient === client) {
+          this.handlePostScore(score, label);
+        }
+      },
+    });
+    this.captureClient = client;
+
+    if (iframe.contentDocument?.readyState === 'complete') {
+      client.init();
+    } else {
+      iframe.addEventListener(
+        'load',
+        () => {
+          if (this.captureClient === client) client.init();
+        },
+        { once: true },
+      );
     }
   }
 
@@ -1416,6 +1556,9 @@ export class ArcadePage {
       this.currentGameHandle.destroy();
       this.currentGameHandle = null;
     }
+
+    this.captureClient?.destroy();
+    this.captureClient = null;
 
     this.floatingActions = null;
     this.commentPanel = null;

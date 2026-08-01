@@ -1,3 +1,4 @@
+import { CAPTURE_BRIDGE_IIFE } from './capture-bridge.generated.ts';
 import { getMimeType, validateFileType } from './file-extensions.ts';
 
 const WVFS_TTL = 5 * 60 * 1000;
@@ -679,15 +680,16 @@ function rewriteLocalAbsolutePaths(htmlContent: string): string {
 
 export function injectBaseTag(htmlContent: string, postId: string, subPath: string = ''): string {
   const baseUrl = `/api/wvfs-zip/${postId}/${subPath}`;
+  const captureScript = `<script>${CAPTURE_BRIDGE_IIFE}</script>`;
 
   htmlContent = rewriteLocalAbsolutePaths(htmlContent);
 
   if (htmlContent.includes('<head>')) {
-    return htmlContent.replace(/<head>/i, `<head>\n  <base href="${baseUrl}">`);
+    return htmlContent.replace(/<head>/i, `<head>\n  <base href="${baseUrl}">\n  ${captureScript}`);
   } else if (htmlContent.includes('<meta charset')) {
-    return htmlContent.replace(/(<meta charset[^>]*>)/i, `$1\n  <base href="${baseUrl}">`);
+    return htmlContent.replace(/(<meta charset[^>]*>)/i, `$1\n  <base href="${baseUrl}">\n  ${captureScript}`);
   } else {
-    return `<base href="${baseUrl}">\n${htmlContent}`;
+    return `<base href="${baseUrl}">\n${captureScript}\n${htmlContent}`;
   }
 }
 

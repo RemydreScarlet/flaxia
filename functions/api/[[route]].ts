@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { nanoid } from 'nanoid';
 import { isAdmin } from '../../src/lib/admin';
+import { CAPTURE_BRIDGE_IIFE } from '../../src/lib/capture-bridge.generated';
 import { copyHtmlToWvfs, extractFileFromZip, extractZipToR2 } from '../../src/lib/wvfs-zip-server';
 import type { ReportCategory } from '../../src/types/post';
 import { exportPrivateKey, exportPublicKey, generateKeyPair } from '../lib/activitypub/crypto';
@@ -685,6 +686,7 @@ app.get('/api/dos-player/:postId', async (c) => {
 <body>
   <div id="dos-container"></div>
   <div id="error-overlay" class="error-overlay" style="display:none;"></div>
+  <script>${CAPTURE_BRIDGE_IIFE}</script>
   <script>
     var zipUrl = '${zipUrl}';
     var loadFailedMsg = '${escapedLoadFailed}';
