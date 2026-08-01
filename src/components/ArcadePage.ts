@@ -1523,17 +1523,19 @@ export class ArcadePage {
     });
     this.captureClient = client;
 
-    if (iframe.contentDocument?.readyState === 'complete') {
-      client.init();
-    } else {
-      iframe.addEventListener(
-        'load',
-        () => {
-          if (this.captureClient === client) client.init();
-        },
-        { once: true },
-      );
-    }
+    // executeWvfsZip/executeDos wait for the iframe's load event, so by the
+    // time we get here the frame is usually already loaded. contentDocument is
+    // always null for the cross-origin sandbox, so a `load`-only init would
+    // never fire. Send immediately, and keep a load listener as a fallback
+    // for the slow-load (30s timeout) path.
+    client.init();
+    iframe.addEventListener(
+      'load',
+      () => {
+        if (this.captureClient === client) client.init();
+      },
+      { once: true },
+    );
   }
 
   private clearCurrentGame(): void {
