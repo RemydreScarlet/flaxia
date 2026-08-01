@@ -1,8 +1,8 @@
-import { executeSwZip, SwZipExecutorHandle } from './sw-zip-executor.js';
+import { executeSwfsZip, SwZipExecutorHandle } from './sw-zip-executor.js';
 import { executeWvfsZip, WvfsZipExecutorHandle } from './wvfs-zip-client.js';
 import { executeZip, ZipExecutorHandle } from './zip-executor.js';
 
-export type ZipExecutionMode = 'sw' | 'wvfs' | 'legacy';
+export type ZipExecutionMode = 'swfs' | 'wvfs' | 'legacy';
 
 export interface UniversalZipExecutorHandle {
   destroy: () => void;
@@ -16,7 +16,7 @@ let activeHandle: UniversalZipExecutorHandle | null = null;
 export async function executeUniversalZip(
   postId: string,
   containerEl: HTMLElement,
-  mode: ZipExecutionMode = 'wvfs',
+  mode: ZipExecutionMode = 'swfs',
   url?: string,
 ): Promise<UniversalZipExecutorHandle> {
   // Clean up any existing execution
@@ -28,8 +28,8 @@ export async function executeUniversalZip(
   try {
     let handle: ZipExecutorHandle | WvfsZipExecutorHandle | SwZipExecutorHandle;
 
-    if (mode === 'sw') {
-      handle = await executeSwZip(postId, containerEl, url);
+    if (mode === 'swfs') {
+      handle = await executeSwfsZip(postId, containerEl, url);
     } else if (mode === 'wvfs') {
       handle = await executeWvfsZip(postId, containerEl, url);
     } else {
@@ -62,7 +62,12 @@ export async function executeUniversalZip(
 
 // Helper function to detect best mode based on environment
 export function getOptimalZipMode(): ZipExecutionMode {
-  // WVFS mode: preferred (no Service Worker dependency)
+  // SWFS mode: preferred when Service Worker is available in a browser.
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+    return 'swfs';
+  }
+
+  // Fallback for Worker / server contexts.
   if (
     typeof globalThis !== 'undefined' &&
     (globalThis as { WebSocketPair?: unknown }).WebSocketPair &&

@@ -250,7 +250,7 @@ function mountAdStage(ad: Ad, placeholder: HTMLElement): void {
             activeZipHandle = null;
           }
 
-          activeZipHandle = await executeUniversalZip(ad.id, placeholder, 'wvfs');
+          activeZipHandle = await executeUniversalZip(ad.id, placeholder, 'swfs', `/api/ads/${ad.id}/payload`);
 
           // Set pointer events for iframe interaction
           const adBanner = placeholder.closest('.ad-banner') as HTMLElement;

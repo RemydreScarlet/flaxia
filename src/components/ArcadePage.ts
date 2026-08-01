@@ -4,8 +4,8 @@ import { impressionTracker } from '../lib/impression-tracker.js';
 import { registerModal } from '../lib/modal-state.js';
 import { updateMetaTags } from '../lib/seo-meta.js';
 import { getReplyStyle } from '../lib/settings.js';
+import { executeSwfsZip, prewarmSwfs } from '../lib/sw-zip-executor.js';
 import { buildTree } from '../lib/thread.js';
-import { executeWvfsZip } from '../lib/wvfs-zip-client.js';
 import type { ArcadePageProps, Game, GameType } from '../types/game.js';
 import type { Post } from '../types/post.js';
 import { executeDos } from './DosPlayer.js';
@@ -1353,8 +1353,8 @@ export class ArcadePage {
     this.showLoading(container, game.type);
     try {
       if (game.type === 'zip' && game.payloadKey) {
-        // Use WVFS for ZIP execution
-        const handle = await executeWvfsZip(game.postId, container, undefined, true, false);
+        // Use SWFS for ZIP execution
+        const handle = await executeSwfsZip(game.postId, container, undefined, true, false);
         this.currentGameHandle = handle;
       } else if (game.type === 'dos' && game.payloadKey) {
         const handle = await executeDos(game.postId, container, `/api/zip/${game.postId}`, true);
@@ -1492,8 +1492,8 @@ export class ArcadePage {
           await resp.blob();
         }
       } else if (game.type === 'zip') {
-        const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://sandbox.flaxia.app';
-        this.prefetchLink(`${sandboxOrigin}/api/wvfs-zip/${game.postId}`);
+        // Pre-warm the SWFS cache so the game loads near-instantly on play.
+        await prewarmSwfs(game.postId);
       }
     } catch {
       // Prefetch failed — game will load normally on demand
