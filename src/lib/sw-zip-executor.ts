@@ -1,6 +1,5 @@
 import { t } from './i18n.js';
 import { executeWvfsZip } from './wvfs-zip-client.js';
-import { executeZip } from './zip-executor.js';
 
 export interface SwZipExecutorHandle {
   destroy: () => void;
@@ -9,8 +8,8 @@ export interface SwZipExecutorHandle {
 
 const SW_SCOPE = '/sw-zip/';
 const SW_URL = '/sw-zip/sw.js';
-const SW_REGISTER_TIMEOUT = 15000;
-const ZIP_READY_TIMEOUT = 90000;
+const FS_READY_TIMEOUT = 10000;
+const ZIP_FETCH_TIMEOUT = 15000;
 const LOADING_TIMEOUT = 30000;
 
 let activeHandle: SwZipExecutorHandle | null = null;
@@ -24,80 +23,82 @@ function getOrCreateSwReg(): Promise<ServiceWorkerRegistration> {
   return swRegistrationPromise;
 }
 
-function getActiveWorker(): ServiceWorker | null {
-  return navigator.serviceWorker.controller?.scriptURL.endsWith(SW_URL) ? navigator.serviceWorker.controller : null;
-}
-
-function waitForActiveWorker(reg: ServiceWorkerRegistration): Promise<ServiceWorker> {
+function waitForController(): Promise<void> {
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      cleanup();
-      reject(new Error('SWFS: Service Worker activation timeout'));
-    }, SW_REGISTER_TIMEOUT);
-
-    const worker = reg.active;
-    if (worker) {
-      clearTimeout(timeout);
-      resolve(worker);
+    if (navigator.serviceWorker.controller) {
+      resolve();
       return;
     }
 
-    const cleanup = () => {
+    const timeout = setTimeout(() => {
+      reject(new Error('Service Worker controller timeout'));
+    }, 10000);
+
+    const handler = () => {
       clearTimeout(timeout);
-      reg.removeEventListener('updatefound', onUpdateFound);
-      navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
+      navigator.serviceWorker.removeEventListener('controllerchange', handler);
+      resolve();
     };
 
-    const onUpdateFound = () => {
-      const w = reg.installing || reg.waiting || reg.active;
-      if (w) {
-        w.addEventListener('statechange', () => {
-          if (w.state === 'activated') {
-            cleanup();
-            resolve(w);
-          }
-        });
+    navigator.serviceWorker.addEventListener('controllerchange', handler);
+
+    const interval = setInterval(() => {
+      if (navigator.serviceWorker.controller) {
+        clearTimeout(timeout);
+        clearInterval(interval);
+        navigator.serviceWorker.removeEventListener('controllerchange', handler);
+        resolve();
       }
-    };
-
-    const onControllerChange = () => {
-      const w = reg.active;
-      if (w) {
-        cleanup();
-        resolve(w);
-      }
-    };
-
-    reg.addEventListener('updatefound', onUpdateFound);
-    navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
+    }, 100);
   });
 }
 
-function waitForZipReady(postId: string): Promise<{ fileCount: number }> {
+function waitForZipReady(postId: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
-      cleanup();
-      reject(new Error('SWFS: ZIP readiness timeout'));
-    }, ZIP_READY_TIMEOUT);
+      reject(new Error('ZIP readiness timeout'));
+    }, FS_READY_TIMEOUT);
+
+    const watchdog = setTimeout(() => {
+      reject(new Error('ZIP extraction watchdog timeout'));
+    }, 5000);
 
     const handler = (event: MessageEvent) => {
-      if (event.data?.type === 'SWFS_READY' && event.data.postId === postId) {
-        cleanup();
-        resolve({ fileCount: event.data.fileCount ?? 0 });
+      if (event.data?.type === 'ZIP_READY' && event.data.postId === postId) {
+        clearTimeout(timeout);
+        clearTimeout(watchdog);
+        navigator.serviceWorker.removeEventListener('message', handler);
+        resolve();
       }
-      if (event.data?.type === 'SWFS_ERROR' && event.data.postId === postId) {
-        cleanup();
-        reject(new Error(event.data.error || 'SWFS: ZIP loading failed'));
+      if (event.data?.type === 'ZIP_ERROR' && event.data.postId === postId) {
+        clearTimeout(timeout);
+        clearTimeout(watchdog);
+        navigator.serviceWorker.removeEventListener('message', handler);
+        reject(new Error(event.data.error || 'ZIP extraction failed'));
       }
-    };
-
-    const cleanup = () => {
-      clearTimeout(timeout);
-      navigator.serviceWorker.removeEventListener('message', handler);
     };
 
     navigator.serviceWorker.addEventListener('message', handler);
   });
+}
+
+async function fetchZip(postId: string, fallbackUrl?: string): Promise<ArrayBuffer> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), ZIP_FETCH_TIMEOUT);
+
+  try {
+    const zipUrl = fallbackUrl || `/api/zip/${postId}`;
+    const res = await fetch(zipUrl, { signal: controller.signal });
+
+    if (!res.ok) {
+      throw new Error(`ZIP fetch failed: ${res.status}`);
+    }
+
+    const zipData = await res.arrayBuffer();
+    return zipData;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function createLoadingIndicator(): HTMLElement {
@@ -171,7 +172,7 @@ function createSandboxIframe(
   `;
 
   const iframe = document.createElement('iframe');
-  iframe.src = `/sw-zip/${encodeURIComponent(postId)}/index.html`;
+  iframe.src = `/sw-zip/${postId}/index.html`;
   iframe.sandbox = 'allow-scripts allow-pointer-lock allow-fullscreen';
   iframe.setAttribute('allow', 'fullscreen');
   iframe.setAttribute('referrerpolicy', 'no-referrer');
@@ -233,7 +234,7 @@ function createSandboxIframe(
   return { iframe, cleanup };
 }
 
-function waitForIframeLoad(iframe: HTMLIFrameElement): Promise<boolean> {
+function waitForIframeLoad(iframe: HTMLIFrameElement, loadingEl: HTMLElement | null): Promise<boolean> {
   return new Promise((resolve) => {
     if (iframe.contentWindow?.location?.href && iframe.contentWindow.location.href !== 'about:blank') {
       resolve(true);
@@ -256,71 +257,7 @@ function waitForIframeLoad(iframe: HTMLIFrameElement): Promise<boolean> {
   });
 }
 
-async function runSwfs(
-  postId: string,
-  containerEl: HTMLElement,
-  fallbackUrl?: string,
-  hideFullscreen: boolean = false,
-  showLoading: boolean = true,
-): Promise<SwZipExecutorHandle> {
-  containerEl.innerHTML = '';
-  containerEl.style.position = 'relative';
-
-  let loadingEl: HTMLElement | null = null;
-  if (showLoading) {
-    loadingEl = createLoadingIndicator();
-    containerEl.appendChild(loadingEl);
-  }
-
-  const reg = await getOrCreateSwReg();
-  await navigator.serviceWorker.ready;
-  const worker = getActiveWorker() ?? (await waitForActiveWorker(reg));
-
-  const zipUrl = fallbackUrl || `/api/zip/${encodeURIComponent(postId)}`;
-  worker.postMessage({ type: 'SWFS_INIT', postId, zipUrl });
-
-  await waitForZipReady(postId);
-
-  const { iframe, cleanup } = createSandboxIframe(postId, containerEl, hideFullscreen);
-
-  const loaded = await waitForIframeLoad(iframe);
-
-  if (loaded) {
-    iframe.style.opacity = '1';
-    if (loadingEl?.parentNode) {
-      loadingEl.style.opacity = '0';
-      setTimeout(() => {
-        if (loadingEl?.parentNode) loadingEl.remove();
-      }, 300);
-    }
-  } else {
-    if (loadingEl?.parentNode) {
-      loadingEl.innerHTML = `<div style="color: var(--text-muted, #64748b); text-align: center; padding: 20px; font-size: 0.875rem;">読み込みに時間がかかっています…</div>`;
-    }
-    iframe.style.opacity = '1';
-  }
-
-  const handle: SwZipExecutorHandle = {
-    postId,
-    destroy: () => {
-      clearTimeout((iframe as HTMLIFrameElement & { _swZipTimeout?: number })._swZipTimeout);
-      cleanup();
-      try {
-        worker.postMessage({ type: 'SWFS_CLEANUP', postId });
-      } catch {
-        // SW might be gone
-      }
-      if (activeHandle?.postId === postId) {
-        activeHandle = null;
-      }
-    },
-  };
-
-  activeHandle = handle;
-  return handle;
-}
-
-export async function executeSwfsZip(
+export async function executeSwZip(
   postId: string,
   containerEl: HTMLElement,
   fallbackUrl?: string,
@@ -333,44 +270,81 @@ export async function executeSwfsZip(
   }
 
   try {
-    return await runSwfs(postId, containerEl, fallbackUrl, hideFullscreen, showLoading);
-  } catch (error) {
-    console.warn('SWFS execution failed, falling back to WVFS:', error);
-    try {
-      const wvfsHandle = await executeWvfsZip(postId, containerEl, undefined, hideFullscreen, showLoading);
-      const handle: SwZipExecutorHandle = {
-        postId,
-        destroy: () => wvfsHandle.destroy(),
-      };
-      activeHandle = handle;
-      return handle;
-    } catch (wvfsError) {
-      console.warn('WVFS execution failed, falling back to legacy:', wvfsError);
-      const legacyHandle = await executeZip(postId, containerEl, fallbackUrl);
-      const handle: SwZipExecutorHandle = {
-        postId,
-        destroy: () => legacyHandle.destroy(),
-      };
-      activeHandle = handle;
-      return handle;
+    containerEl.innerHTML = '';
+    containerEl.style.position = 'relative';
+
+    let loadingEl: HTMLElement | null = null;
+    if (showLoading) {
+      loadingEl = createLoadingIndicator();
+      containerEl.appendChild(loadingEl);
     }
-  }
-}
 
-// Backwards-compatible alias.
-export const executeSwZip = executeSwfsZip;
-
-// Pre-warm: register the SW and load the ZIP into the SWFS cache without
-// creating an iframe. Subsequent executeSwfsZip calls are near-instant.
-export async function prewarmSwfs(postId: string, fallbackUrl?: string): Promise<void> {
-  if (!('serviceWorker' in navigator)) return;
-  try {
-    const reg = await getOrCreateSwReg();
+    await getOrCreateSwReg();
     await navigator.serviceWorker.ready;
-    const worker = getActiveWorker() ?? (await waitForActiveWorker(reg));
-    const zipUrl = fallbackUrl || `/api/zip/${encodeURIComponent(postId)}`;
-    worker.postMessage({ type: 'SWFS_INIT', postId, zipUrl });
-  } catch {
-    // Best-effort; game will load on demand.
+    await waitForController();
+
+    const zipData = await fetchZip(postId, fallbackUrl);
+
+    const controller = navigator.serviceWorker.controller;
+    if (!controller) {
+      throw new Error('No Service Worker controller available');
+    }
+
+    controller.postMessage({ type: 'SETUP_ZIP', postId, zipData });
+
+    await waitForZipReady(postId);
+
+    const { iframe, cleanup } = createSandboxIframe(postId, containerEl, hideFullscreen);
+
+    const loaded = await waitForIframeLoad(iframe, loadingEl);
+
+    if (loaded) {
+      iframe.style.opacity = '1';
+      if (loadingEl?.parentNode) {
+        loadingEl.style.opacity = '0';
+        setTimeout(() => {
+          if (loadingEl?.parentNode) loadingEl.remove();
+        }, 300);
+      }
+    } else {
+      if (loadingEl?.parentNode) {
+        loadingEl.innerHTML = `<div style="color: var(--text-muted, #64748b); text-align: center; padding: 20px; font-size: 0.875rem;">読み込みに時間がかかっています…</div>`;
+      }
+      iframe.style.opacity = '1';
+    }
+
+    const handle: SwZipExecutorHandle = {
+      postId,
+      destroy: () => {
+        clearTimeout((iframe as HTMLIFrameElement & { _swZipTimeout?: number })._swZipTimeout);
+        cleanup();
+        try {
+          navigator.serviceWorker.controller?.postMessage({ type: 'CLEANUP_ZIP', postId });
+        } catch {
+          // SW might be gone
+        }
+        if (activeHandle?.postId === postId) {
+          activeHandle = null;
+        }
+      },
+    };
+
+    activeHandle = handle;
+    return handle;
+  } catch (error) {
+    if (activeHandle) {
+      activeHandle.destroy();
+      activeHandle = null;
+    }
+
+    console.warn('SW ZIP execution failed, falling back to WVFS:', error);
+
+    const wvfsHandle = await executeWvfsZip(postId, containerEl, fallbackUrl, hideFullscreen, showLoading);
+    const handle: SwZipExecutorHandle = {
+      postId,
+      destroy: () => wvfsHandle.destroy(),
+    };
+    activeHandle = handle;
+    return handle;
   }
 }

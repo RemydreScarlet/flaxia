@@ -721,7 +721,7 @@ export class ConversationView {
       if (e.target === overlay) destroy();
     });
 
-    // Execute ZIP in the modal content (SWFS supports DM-prefixed keys via /api/zip/:postId)
+    // Execute ZIP in the modal content (force legacy mode — sandbox WVFS doesn't support DM-prefixed keys)
     executeZipAuto(msg.id, content).catch((err) => {
       console.error('ZIP execution failed:', err);
       content.innerHTML =
