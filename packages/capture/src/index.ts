@@ -25,6 +25,25 @@ const BUFFER_MS = 4000;
 const SAMPLE_MS = 150; // ~6.7 fps
 const MAX_WIDTH = 360;
 
+// WebGL canvases default to preserveDrawingBuffer:false, which clears the
+// drawing buffer once it is composited. Reading pixels (toBlob/drawImage)
+// outside the render loop then yields an all-black frame. The bridge runs
+// before game scripts (injected at <head>), so we can force the flag on at
+// context creation to make captures show the actual game image.
+{
+  const originalGetContext = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function (
+    this: HTMLCanvasElement,
+    contextId: string,
+    options?: any,
+  ): RenderingContext | null {
+    if (contextId === 'webgl' || contextId === 'webgl2' || contextId === 'experimental-webgl') {
+      options = { ...(options as Record<string, unknown> | undefined), preserveDrawingBuffer: true };
+    }
+    return originalGetContext.call(this, contextId, options);
+  } as typeof HTMLCanvasElement.prototype.getContext;
+}
+
 interface BufferedFrame {
   ts: number;
   width: number;
