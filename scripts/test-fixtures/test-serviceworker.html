@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ServiceWorker ZIP Test</title>
+    <style>
+        body { font-family: system-ui, sans-serif; margin: 20px; }
+        .test-container { border: 1px solid #ccc; padding: 20px; margin: 10px 0; }
+        .result { margin: 10px 0; padding: 10px; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        #output { white-space: pre-wrap; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <h1>ServiceWorker ZIP System Test</h1>
+    
+    <div class="test-container">
+        <h2>Test 1: ServiceWorker Registration</h2>
+        <button onclick="testServiceWorkerRegistration()">Test SW Registration</button>
+        <div id="sw-result"></div>
+    </div>
+
+    <div class="test-container">
+        <h2>Test 2: Sandbox Endpoint Access</h2>
+        <input type="text" id="postId" placeholder="Enter post ID" value="test">
+        <button onclick="testSandboxEndpoint()">Test Sandbox</button>
+        <div id="sandbox-result"></div>
+    </div>
+
+    <div class="test-container">
+        <h2>Test 3: ZIP Processing (if available)</h2>
+        <button onclick="testZipProcessing()">Test ZIP Processing</button>
+        <div id="zip-result"></div>
+    </div>
+
+    <div class="test-container">
+        <h2>Console Output</h2>
+        <div id="output"></div>
+        <button onclick="clearOutput()">Clear</button>
+    </div>
+
+    <script>
+        // Override console.log to capture output
+        const originalLog = console.log;
+        const originalError = console.error;
+        const originalWarn = console.warn;
+        
+        function logToOutput(type, ...args) {
+            const output = document.getElementById('output');
+            const timestamp = new Date().toLocaleTimeString();
+            const message = args.map(arg => 
+                typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+            ).join(' ');
+            
+            output.textContent += `[${timestamp}] ${type}: ${message}\n`;
+            output.scrollTop = output.scrollHeight;
+        }
+
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            logToOutput('LOG', ...args);
+        };
+
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            logToOutput('ERROR', ...args);
+        };
+
+        console.warn = function(...args) {
+            originalWarn.apply(console, args);
+            logToOutput('WARN', ...args);
+        };
+
+        function clearOutput() {
+            document.getElementById('output').textContent = '';
+        }
+
+        function showResult(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<div class="result ${type}">${message}</div>`;
+        }
+
+        async function testServiceWorkerRegistration() {
+            try {
+                if (!('serviceWorker' in navigator)) {
+                    showResult('sw-result', 'Service Worker not supported in this browser', 'error');
+                    return;
+                }
+
+                console.log('Checking existing Service Worker registration...');
+                const registration = await navigator.serviceWorker.getRegistration('/sandbox/');
+                
+                if (registration) {
+                    console.log('Found existing registration:', registration.scope);
+                    showResult('sw-result', `Service Worker already registered: ${registration.scope}`, 'success');
+                    
+                    // Update the registration
+                    await registration.update();
+                    console.log('Service Worker updated');
+                } else {
+                    console.log('Registering new Service Worker...');
+                    const newRegistration = await navigator.serviceWorker.register('/sandbox/sw.js', { scope: '/sandbox/' });
+                    console.log('Service Worker registered:', newRegistration.scope);
+                    showResult('sw-result', `Service Worker registered successfully: ${newRegistration.scope}`, 'success');
+                }
+
+                // Check if we have a controller
+                if (navigator.serviceWorker.controller) {
+                    console.log('Service Worker is controlling the page');
+                    showResult('sw-result', 'Service Worker is actively controlling this page', 'success');
+                } else {
+                    console.log('Service Worker is not yet controlling the page');
+                    showResult('sw-result', 'Service Worker registered but not yet controlling page (try refreshing)', 'info');
+                }
+
+            } catch (error) {
+                console.error('Service Worker registration failed:', error);
+                showResult('sw-result', `Registration failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function testSandboxEndpoint() {
+            const postId = document.getElementById('postId').value;
+            if (!postId) {
+                showResult('sandbox-result', 'Please enter a post ID', 'error');
+                return;
+            }
+
+            try {
+                console.log(`Testing sandbox endpoint for post: ${postId}`);
+                
+                // Test the main sandbox endpoint
+                const response = await fetch(`/sandbox/post/${postId}`);
+                console.log('Sandbox response status:', response.status);
+                console.log('Sandbox response headers:', Object.fromEntries(response.headers.entries()));
+
+                if (response.ok) {
+                    const html = await response.text();
+                    console.log('Sandbox HTML length:', html.length);
+                    
+                    // Check if it contains expected elements
+                    const hasServiceWorker = html.includes('serviceWorker');
+                    const hasIframe = html.includes('iframe');
+                    const hasZipLogic = html.includes('SETUP_ZIP');
+                    
+                    console.log('HTML contains Service Worker logic:', hasServiceWorker);
+                    console.log('HTML contains iframe:', hasIframe);
+                    console.log('HTML contains ZIP processing logic:', hasZipLogic);
+                    
+                    showResult('sandbox-result', 
+                        `Sandbox endpoint working! HTML length: ${html.length}. SW: ${hasServiceWorker}, ZIP: ${hasZipLogic}`, 
+                        'success'
+                    );
+                } else {
+                    const errorText = await response.text();
+                    console.error('Sandbox endpoint error:', response.status, errorText);
+                    showResult('sandbox-result', `Sandbox error: ${response.status} - ${errorText}`, 'error');
+                }
+
+            } catch (error) {
+                console.error('Sandbox test failed:', error);
+                showResult('sandbox-result', `Sandbox test failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function testZipProcessing() {
+            const postId = document.getElementById('postId').value;
+            if (!postId) {
+                showResult('zip-result', 'Please enter a post ID', 'error');
+                return;
+            }
+
+            try {
+                console.log(`Testing ZIP processing for post: ${postId}`);
+                
+                // First check if ZIP exists
+                const zipResponse = await fetch(`/api/zip/${postId}`);
+                console.log('ZIP API response status:', zipResponse.status);
+
+                if (!zipResponse.ok) {
+                    showResult('zip-result', `ZIP not found: ${zipResponse.status} - ${await zipResponse.text()}`, 'error');
+                    return;
+                }
+
+                const zipData = await zipResponse.arrayBuffer();
+                console.log('ZIP data size:', zipData.byteLength);
+
+                // Test Service Worker message handling
+                if (navigator.serviceWorker.controller) {
+                    console.log('Sending ZIP to Service Worker...');
+                    
+                    return new Promise((resolve, reject) => {
+                        const timeout = setTimeout(() => {
+                            reject(new Error('ZIP processing timeout'));
+                        }, 10000);
+
+                        const messageHandler = (event) => {
+                            if (event.data?.type === 'ZIP_READY') {
+                                clearTimeout(timeout);
+                                navigator.serviceWorker.removeEventListener('message', messageHandler);
+                                console.log('ZIP processing successful:', event.data);
+                                showResult('zip-result', 
+                                    `ZIP processed successfully! Files: ${event.data.fileCount || 'unknown'}`, 
+                                    'success'
+                                );
+                                resolve(event.data);
+                            } else if (event.data?.type === 'ZIP_ERROR') {
+                                clearTimeout(timeout);
+                                navigator.serviceWorker.removeEventListener('message', messageHandler);
+                                console.error('ZIP processing error:', event.data.error);
+                                showResult('zip-result', `ZIP processing error: ${event.data.error}`, 'error');
+                                reject(new Error(event.data.error));
+                            }
+                        };
+
+                        navigator.serviceWorker.addEventListener('message', messageHandler);
+                        navigator.serviceWorker.controller.postMessage({
+                            type: 'SETUP_ZIP',
+                            zipData: zipData
+                        });
+                    });
+                } else {
+                    showResult('zip-result', 'Service Worker not controlling page - cannot test ZIP processing', 'error');
+                }
+
+            } catch (error) {
+                console.error('ZIP processing test failed:', error);
+                showResult('zip-result', `ZIP test failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Auto-run Service Worker test on page load
+        window.addEventListener('load', () => {
+            console.log('Page loaded, running initial Service Worker test...');
+            setTimeout(testServiceWorkerRegistration, 1000);
+        });
+    </script>
+</body>
+</html>
