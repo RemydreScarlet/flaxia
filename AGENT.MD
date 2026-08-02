@@ -64,8 +64,4 @@ SNS where posts are living, interactive applications. "Twitter with Flash inside
 - 3-column layout (240px / 600px / 350px)
 
 ## Detailed Specifications
-See `.windsurf/rules/` for:
-- `rule.md` — Project rules (identity, auth, DB, sandbox, API, design)
-- `flaxia-ad-spec.md` — Ad slot specification
-- `zipexecution.md` — ZIP execution flow
-- `zipupload.md` — ZIP upload flow & validation
+See `docs/` for architecture, setup, deployment, API, and database documentation.

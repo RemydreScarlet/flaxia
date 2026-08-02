@@ -19,8 +19,7 @@
       "!!**/*.zip",
       "!!worker-configuration.d.ts",
       "!!public/locales",
-      "!!tests/test-serviceworker.html",
-      "!!reproduce_delete_bug.test.ts"
+      "!!scripts/test-fixtures/test-serviceworker.html"
     ]
   },
   "formatter": {

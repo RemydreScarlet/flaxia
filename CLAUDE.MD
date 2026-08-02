@@ -32,7 +32,6 @@ src/components/             # UI components
 src/lib/                    # Utilities (db, r2, bridge, sandbox, zip, etc.)
 migrations/                 # D1 SQL migrations
 tests/                      # Test files (*.test.ts)
-.windsurf/rules/            # Detailed spec docs
 docs/                       # Developer documentation
 ```
 
@@ -74,8 +73,4 @@ pnpm migrate:prod            # Run D1 migrations in production
 ```
 
 ## Reference Docs
-- `.windsurf/rules/rule.md` — Full project rules with DB schema, bridge types, design tokens
-- `.windsurf/rules/flaxia-ad-spec.md` — Ad system specification
-- `.windsurf/rules/zipexecution.md` — ZIP execution flow
-- `.windsurf/rules/zipupload.md` — ZIP upload validation
 - `docs/*.md` — Architecture, setup, deployment, API, database docs
