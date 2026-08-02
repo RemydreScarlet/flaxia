@@ -50,9 +50,11 @@ export class LeftNav {
     const logoInner = document.createElement('div');
     logoInner.style.cssText = 'display: flex; align-items: center; gap: 0.5rem; margin-bottom: 2rem; cursor: pointer;';
 
-    const logoIcon = document.createElement('span');
-    logoIcon.style.fontSize = '1.5rem';
-    logoIcon.textContent = '🌿';
+    const logoIcon = document.createElement('img');
+    logoIcon.src = '/favicon.ico';
+    logoIcon.alt = '';
+    logoIcon.style.width = '1.5rem';
+    logoIcon.style.height = '1.5rem';
 
     const logoText = document.createElement('span');
     logoText.style.cssText = 'font-size: 1.25rem; font-weight: 600; color: var(--accent);';
