@@ -3,7 +3,6 @@ import { formatCount } from '../lib/format.js';
 import { t } from '../lib/i18n.js';
 import { impressionTracker } from '../lib/impression-tracker.js';
 import { registerModal } from '../lib/modal-state.js';
-import { updateMetaTags } from '../lib/seo-meta.js';
 import { getReplyStyle } from '../lib/settings.js';
 import { buildTree } from '../lib/thread.js';
 import { showToast } from '../lib/toast.js';
@@ -113,14 +112,6 @@ export class ArcadePage {
     this.setupLeftNavSwipeDetection();
     this.setupPostUpdatedListener();
     window.addEventListener('spaNavigate', this.boundHandleSpaNavigate);
-
-    if (this.initialGameId) {
-      updateMetaTags({
-        title: 'Flaxia Arcade - ゲームを遊べるSNS',
-        description: 'コミュニティが投稿したDOS、ZIP、HTML5ゲームをブラウザで直接遊ぼう。',
-        url: `${window.location.origin}/arcade/${this.initialGameId}`,
-      });
-    }
 
     this.loadGames();
 
@@ -795,25 +786,10 @@ export class ArcadePage {
       viewport.style.opacity = '1';
     });
 
-    // Update page metadata for accurate OGP regardless of client-side navigation
-    this.updateMetaTagsForGame(game);
-
     // Preload next game if available
     if (this.currentIndex < this.games.length - 1) {
       this.preloadNextGame();
     }
-  }
-
-  private updateMetaTagsForGame(game: Game): void {
-    const title = game.title || `Game by ${game.username}`;
-    const ogImage = game.thumbnailKey ? `${window.location.origin}/api/images/${game.thumbnailKey}` : undefined;
-
-    updateMetaTags({
-      title: `Flaxia Arcade - ${title}`,
-      description: `Play ${title} by ${game.username} on Flaxia Arcade`,
-      url: `${window.location.origin}/arcade/${game.id}`,
-      image: ogImage,
-    });
   }
 
   private createFloatingActions(game: Game): HTMLElement {

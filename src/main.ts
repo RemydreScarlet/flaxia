@@ -2590,7 +2590,6 @@ document.addEventListener('DOMContentLoaded', async () => {
           // Timeline view
           currentView = 'timeline';
           currentPostId = null;
-          document.title = 'Flaxia - SNS';
 
           // Create Left Nav
           const leftNav = createLeftNav({
