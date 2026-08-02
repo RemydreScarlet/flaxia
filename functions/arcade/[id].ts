@@ -1,6 +1,14 @@
+import { buildGameDescription, buildGameTitle } from '../../src/lib/game-seo';
 import { isCrawler } from '../../src/lib/is-crawler';
 import { escapeHtml, renderHtmlShell, renderJsonLd } from '../../src/lib/render-html';
 import { SPA_HEAD_TAGS } from '../lib/ssr-head.generated';
+import {
+  renderBreadcrumbJsonLd,
+  renderSsrFooter,
+  renderSsrHeader,
+  renderSsrLayoutCss,
+  type SsrFooterSection,
+} from '../lib/ssr-layout';
 
 type Env = {
   DB: D1Database;
@@ -28,6 +36,13 @@ interface PostRow {
   created_at: string;
 }
 
+interface RelatedGame {
+  id: string;
+  username: string;
+  display_name: string | null;
+  text: string;
+}
+
 const assetUrl = (baseUrl: string, key: string) => `${baseUrl}/api/images/${key}`;
 
 function toPost(row: RawPost): PostRow {
@@ -50,16 +65,20 @@ function toPost(row: RawPost): PostRow {
   };
 }
 
+function toRelatedGame(row: RawPost): RelatedGame {
+  return {
+    id: String(row.id),
+    username: String(row.username),
+    display_name: row.display_name ? String(row.display_name) : null,
+    text: String(row.text),
+  };
+}
+
 function detectGameType(post: PostRow): string {
   if (post.swf_key) return 'flash';
   if (post.payload_key?.startsWith('dos/')) return 'dos';
   if (post.payload_key) return 'zip';
   return 'html5';
-}
-
-function getGameTitle(post: PostRow): string {
-  const firstLine = post.text.split('\n')[0].trim();
-  return firstLine || 'Untitled Game';
 }
 
 function formatDate(iso: string): string {
@@ -137,9 +156,11 @@ export async function onRequest(context: {
     }
 
     const post = toPost(mainRow);
-    const title = getGameTitle(post);
+    const title = buildGameTitle(post.text);
     const gameType = detectGameType(post);
     const typeLabels: Record<string, string> = { flash: 'Flash', dos: 'DOS', zip: 'ZIP', html5: 'HTML5' };
+    const typeLabel = typeLabels[gameType] || 'Game';
+    const authorName = post.display_name || post.username;
 
     // Build OG image
     const ogImage = post.thumbnail_key
@@ -148,7 +169,135 @@ export async function onRequest(context: {
         ? assetUrl(baseUrl, post.gif_key)
         : defaultImage;
 
-    const additionalHead = `
+    const description = buildGameDescription({
+      gameDescription: post.game_description,
+      title,
+      typeLabel,
+      authorName,
+      text: post.text,
+    });
+
+    // Fetch related games: same author + same type
+    let sameAuthorGames: RelatedGame[] = [];
+    let sameTypeGames: RelatedGame[] = [];
+    if (env.DB) {
+      const authorRows = await env.DB.prepare(`
+        SELECT p.id, p.username, u.display_name, p.text
+        FROM posts p
+        LEFT JOIN users u ON p.user_id = u.id
+        WHERE p.user_id = ? AND p.id != ? AND p.status = 'published' AND p.hidden = 0
+          AND p.payload_key IS NOT NULL AND p.swf_key IS NULL
+          AND p.parent_id IS NULL
+        ORDER BY p.created_at DESC
+        LIMIT 4
+      `)
+        .bind(post.user_id, gameId)
+        .all<RawPost>();
+      sameAuthorGames = (authorRows.results || []).map(toRelatedGame);
+
+      const typeCondition =
+        gameType === 'dos'
+          ? "p.payload_key LIKE 'dos/%'"
+          : gameType === 'flash'
+            ? 'p.swf_key IS NOT NULL'
+            : "p.payload_key IS NOT NULL AND p.payload_key NOT LIKE 'dos/%'";
+
+      const typeRows = await env.DB.prepare(`
+        SELECT p.id, p.username, u.display_name, p.text
+        FROM posts p
+        LEFT JOIN users u ON p.user_id = u.id
+        WHERE p.id != ? AND p.status = 'published' AND p.hidden = 0
+          AND p.payload_key IS NOT NULL
+          AND ${typeCondition}
+          AND p.parent_id IS NULL
+        ORDER BY p.created_at DESC
+        LIMIT 4
+      `)
+        .bind(gameId)
+        .all<RawPost>();
+      sameTypeGames = (typeRows.results || []).map(toRelatedGame);
+    }
+
+    const relatedGameSection = (sectionTitle: string, games: RelatedGame[]): SsrFooterSection | null =>
+      games.length > 0
+        ? {
+            title: sectionTitle,
+            links: games.map((game) => ({
+              label: buildGameTitle(game.text),
+              url: `${baseUrl}/arcade/${game.id}`,
+            })),
+          }
+        : null;
+
+    const breadcrumbItems = [
+      { label: 'Home', url: `${baseUrl}/home` },
+      { label: 'Arcade', url: `${baseUrl}/arcade` },
+      { label: title, url: canonicalUrl },
+    ];
+
+    const jsonLd = [
+      renderJsonLd({
+        '@context': 'https://schema.org',
+        '@type': 'BlogPosting',
+        headline: `${title} - ${authorName} on Flaxia`,
+        description,
+        url: canonicalUrl,
+        image: ogImage,
+        datePublished: post.created_at,
+        author: {
+          '@type': 'Person',
+          name: authorName,
+          url: `${baseUrl}/users/${post.username}`,
+        },
+      }),
+      renderBreadcrumbJsonLd(breadcrumbItems, baseUrl),
+    ].join('\n');
+
+    const profileUrl = `${baseUrl}/users/${post.username}`;
+    const avatarSrc = post.avatar_key ? assetUrl(baseUrl, post.avatar_key) : `${baseUrl}/default-avatar.png`;
+
+    const header = renderSsrHeader({ baseUrl, current: 'arcade', breadcrumb: breadcrumbItems });
+    const footerSections: SsrFooterSection[] = [
+      relatedGameSection(`More games by ${authorName}`, sameAuthorGames),
+      relatedGameSection(`More ${typeLabel} games`, sameTypeGames),
+    ].filter((s): s is SsrFooterSection => s !== null);
+    const footer = renderSsrFooter({ baseUrl, sections: footerSections });
+
+    const content = `
+      <div class="ssr-game-detail">
+        ${header}
+        <main>
+          <div class="ssr-game-embed">
+            <iframe src="${escapeHtml(baseUrl)}/api/ogp-player/${gameId}"
+              sandbox="allow-scripts allow-pointer-lock allow-fullscreen allow-same-origin"
+              allow="fullscreen"
+              referrerpolicy="no-referrer"
+              title="${escapeHtml(title)}"></iframe>
+          </div>
+          <h1 style="font-size:20px;font-weight:700;margin:0 0 12px 0;color:#1a1a1a">${escapeHtml(title)}</h1>
+          <div class="ssr-game-meta">
+            <a href="${escapeHtml(profileUrl)}">
+              <img src="${escapeHtml(avatarSrc)}" alt="${escapeHtml(authorName)}" class="ssr-game-author-img">
+            </a>
+            <div>
+              <a href="${escapeHtml(profileUrl)}" class="ssr-game-author-name">${escapeHtml(authorName)}</a>
+              <div class="ssr-game-username">@${escapeHtml(post.username)}</div>
+            </div>
+          </div>
+          <div class="ssr-game-stats">
+            <span>❤️ ${post.fresh_count}</span>
+            <span>💬 ${post.reply_count}</span>
+            <span>🔖 ${post.bookmark_count}</span>
+            <span>🏷️ ${typeLabel}</span>
+            <span>📅 ${formatDate(post.created_at)}</span>
+          </div>
+          <div class="ssr-game-text">${escapeHtml(post.text)}</div>
+          <a href="${escapeHtml(canonicalUrl)}" class="ssr-game-play-btn">Play this game</a>
+        </main>
+        ${footer}
+      </div>`;
+
+    const additionalHead = `${renderSsrLayoutCss()}
     <style>
       .ssr-game-detail { max-width: 600px; margin: 0 auto; }
       .ssr-game-embed {
@@ -193,64 +342,6 @@ export async function onRequest(context: {
       }
       .ssr-game-play-btn:hover { background: #0056b3; }
     </style>`;
-
-    const description = post.game_description || post.text.slice(0, 200);
-    const profileUrl = `${baseUrl}/users/${post.username}`;
-    const avatarSrc = post.avatar_key ? assetUrl(baseUrl, post.avatar_key) : `${baseUrl}/default-avatar.png`;
-
-    const jsonLd = renderJsonLd({
-      '@context': 'https://schema.org',
-      '@type': 'BlogPosting',
-      headline: `${title} - ${post.display_name || post.username} on Flaxia`,
-      description,
-      url: canonicalUrl,
-      image: ogImage,
-      datePublished: post.created_at,
-      author: {
-        '@type': 'Person',
-        name: post.display_name || post.username,
-        url: profileUrl,
-      },
-    });
-
-    const content = `
-      <div class="ssr-game-detail">
-        <header class="ssr-header">
-          <a href="${escapeHtml(baseUrl)}" class="ssr-logo">Flaxia</a>
-          <a href="${escapeHtml(baseUrl)}/arcade" style="color:#007bff;text-decoration:none;font-size:14px">← Arcade</a>
-        </header>
-        <main>
-          <div class="ssr-game-embed">
-            <iframe src="${escapeHtml(baseUrl)}/api/ogp-player/${gameId}"
-              sandbox="allow-scripts allow-pointer-lock allow-fullscreen allow-same-origin"
-              allow="fullscreen"
-              referrerpolicy="no-referrer"
-              title="${escapeHtml(title)}"></iframe>
-          </div>
-          <h1 style="font-size:20px;font-weight:700;margin:0 0 12px 0;color:#1a1a1a">${escapeHtml(title)}</h1>
-          <div class="ssr-game-meta">
-            <a href="${escapeHtml(profileUrl)}">
-              <img src="${escapeHtml(avatarSrc)}" alt="${escapeHtml(post.display_name || post.username)}" class="ssr-game-author-img">
-            </a>
-            <div>
-              <a href="${escapeHtml(profileUrl)}" class="ssr-game-author-name">${escapeHtml(post.display_name || post.username)}</a>
-              <div class="ssr-game-username">@${escapeHtml(post.username)}</div>
-            </div>
-          </div>
-          <div class="ssr-game-stats">
-            <span>❤️ ${post.fresh_count}</span>
-            <span>💬 ${post.reply_count}</span>
-            <span>🔖 ${post.bookmark_count}</span>
-            <span>🏷️ ${typeLabels[gameType] || 'Game'}</span>
-            <span>📅 ${formatDate(post.created_at)}</span>
-          </div>
-          <div class="ssr-game-text">${escapeHtml(post.text)}</div>
-          <a href="${escapeHtml(canonicalUrl)}" class="ssr-game-play-btn">Play this game</a>
-        </main>
-        <footer class="ssr-footer">
-          <a href="${escapeHtml(baseUrl)}/arcade">← Back to Arcade</a>
-        </footer>
-      </div>`;
 
     return new Response(
       renderHtmlShell(content, {

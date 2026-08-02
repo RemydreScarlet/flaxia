@@ -6118,16 +6118,36 @@ async function extractGameDescription(
     const html = decoder.decode(result.data);
     const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
     const title = titleMatch ? titleMatch[1].trim() : '';
-    const descMatch =
-      html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i) ||
-      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["']/i);
-    const metaDesc = descMatch ? descMatch[1] : '';
+
+    const contentMatch = (attrValue: string): string => {
+      const escaped = attrValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const patterns = [
+        new RegExp(`<meta[^>]+name=["']${escaped}["'][^>]+content=["']([^"']*)["']`, 'i'),
+        new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+name=["']${escaped}["']`, 'i'),
+        new RegExp(`<meta[^>]+property=["']${escaped}["'][^>]+content=["']([^"']*)["']`, 'i'),
+        new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+property=["']${escaped}["']`, 'i'),
+      ];
+      for (const pattern of patterns) {
+        const m = html.match(pattern);
+        if (m && m[1].trim()) return m[1].trim();
+      }
+      return '';
+    };
+
+    const metaDesc =
+      contentMatch('description') || contentMatch('og:description') || contentMatch('twitter:description');
     const gameDescription = metaDesc || title || '';
     if (gameDescription) {
-      await db
-        .prepare('UPDATE posts SET game_description = ? WHERE id = ?')
-        .bind(gameDescription.slice(0, 500), postId)
-        .run();
+      const cleaned = gameDescription
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (cleaned) {
+        await db
+          .prepare('UPDATE posts SET game_description = ? WHERE id = ?')
+          .bind(cleaned.slice(0, 500), postId)
+          .run();
+      }
     }
   } catch (e) {
     console.error(`Failed to extract game description for post ${postId}:`, e);

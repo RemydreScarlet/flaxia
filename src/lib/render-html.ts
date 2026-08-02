@@ -60,12 +60,18 @@ export function renderJsonLd(data: Record<string, unknown>): string {
   return `<script type="application/ld+json">${JSON.stringify(data)}</script>`;
 }
 
-export function renderBlogPostingJsonLd(post: PostRow, authorName: string, authorUrl: string, postUrl: string): string {
+export function renderBlogPostingJsonLd(
+  post: PostRow,
+  authorName: string,
+  authorUrl: string,
+  postUrl: string,
+  description?: string,
+): string {
   return renderJsonLd({
     '@context': 'https://schema.org',
     '@type': 'BlogPosting',
     headline: `${authorName} on Flaxia`,
-    description: post.game_description || post.text.slice(0, 200),
+    description: description || post.game_description || post.text.slice(0, 200),
     url: postUrl,
     datePublished: post.created_at,
     author: {
@@ -305,6 +311,63 @@ export function renderHtmlShell(content: string, options: HtmlShellOptions): str
     }
     .ssr-footer a { color: #007bff; text-decoration: none; }
     .ssr-footer a:hover { text-decoration: underline; }
+    .ssr-nav {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .ssr-nav-link {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 13px;
+      color: var(--text-muted);
+      text-decoration: none;
+    }
+    .ssr-nav-link:hover { color: var(--text-primary); background: var(--bg-input); }
+    .ssr-nav-link.active {
+      color: #fff;
+      background: #007bff;
+      font-weight: 600;
+    }
+    .ssr-breadcrumb ol {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .ssr-breadcrumb li { display: inline-flex; align-items: center; }
+    .ssr-breadcrumb li:not(:last-child)::after { content: '›'; margin-left: 6px; color: #bbb; }
+    .ssr-breadcrumb a { color: #007bff; text-decoration: none; }
+    .ssr-breadcrumb a:hover { text-decoration: underline; }
+    .ssr-breadcrumb li[aria-current="page"] { color: var(--text-primary); font-weight: 600; }
+    .ssr-footer-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 24px;
+      max-width: 720px;
+      margin: 0 auto 16px;
+      text-align: left;
+    }
+    .ssr-footer-col h3 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin: 0 0 8px 0;
+    }
+    .ssr-footer-col ul {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .ssr-footer-col li { margin-bottom: 4px; }
+    .ssr-footer-col a { color: #007bff; text-decoration: none; font-size: 13px; }
+    .ssr-footer-col a:hover { text-decoration: underline; }
+    .ssr-footer-bottom { margin-top: 8px; }
     .ssr-hashtag { color: #007bff; }
     .ssr-section-title {
       font-size: 16px;

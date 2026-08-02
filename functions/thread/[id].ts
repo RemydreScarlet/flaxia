@@ -1,12 +1,8 @@
+import { buildGameDescription, buildGameTitle } from '../../src/lib/game-seo';
 import { isCrawler } from '../../src/lib/is-crawler';
-import {
-  escapeHtml,
-  type PostRow,
-  renderBlogPostingJsonLd,
-  renderHtmlShell,
-  renderPostArticle,
-} from '../../src/lib/render-html';
+import { type PostRow, renderBlogPostingJsonLd, renderHtmlShell, renderPostArticle } from '../../src/lib/render-html';
 import { SPA_HEAD_TAGS } from '../lib/ssr-head.generated';
+import { renderBreadcrumbJsonLd, renderSsrFooter, renderSsrHeader, renderSsrLayoutCss } from '../lib/ssr-layout';
 
 const assetUrl = (baseUrl: string, key: string) => `${baseUrl}/api/images/${key}`;
 
@@ -57,6 +53,13 @@ const POST_SELECT = `
   FROM posts p
   LEFT JOIN users u ON p.user_id = u.id
 `;
+
+function detectGameType(post: PostRow): string {
+  if (post.swf_key) return 'flash';
+  if (post.payload_key?.startsWith('dos/')) return 'dos';
+  if (post.payload_key) return 'zip';
+  return 'html5';
+}
 
 export async function onRequest(context: {
   request: Request;
@@ -112,6 +115,8 @@ export async function onRequest(context: {
     }
 
     const post = toPost(mainRow);
+    const isGame = !!(post.payload_key || post.swf_key);
+    const authorName = post.display_name || post.username;
 
     // Fetch replies
     const { results: replyRows } = await env.DB.prepare(
@@ -131,11 +136,48 @@ export async function onRequest(context: {
         ? assetUrl(baseUrl, post.thumbnail_key)
         : defaultImage;
 
-    const additionalHead = '';
+    // Build description: prefer game SEO description for game posts
+    let description = post.game_description || post.text.slice(0, 200);
+    let jsonLdExtra = '';
+    let breadcrumb: Array<{ label: string; url: string }> = [];
+    let footerSections: Array<{ title: string; links: Array<{ label: string; url: string }> }> = [];
+
+    if (isGame) {
+      const title = buildGameTitle(post.text);
+      const typeLabel = detectGameType(post);
+      description = buildGameDescription({
+        gameDescription: post.game_description,
+        title,
+        typeLabel,
+        authorName,
+        text: post.text,
+      });
+      const gameUrl = `${baseUrl}/arcade/${post.id}`;
+      breadcrumb = [
+        { label: 'Home', url: `${baseUrl}/home` },
+        { label: 'Arcade', url: `${baseUrl}/arcade` },
+        { label: title, url: gameUrl },
+      ];
+      jsonLdExtra = renderBreadcrumbJsonLd(breadcrumb, baseUrl);
+      footerSections = [
+        {
+          title: 'Play this game',
+          links: [{ label: title, url: gameUrl }],
+        },
+      ];
+    } else {
+      breadcrumb = [
+        { label: 'Home', url: `${baseUrl}/home` },
+        { label: post.id, url: canonicalUrl },
+      ];
+      jsonLdExtra = renderBreadcrumbJsonLd(breadcrumb, baseUrl);
+    }
 
     // Build JSON-LD
     const profileUrl = `${baseUrl}/users/${post.username}`;
-    const jsonLd = renderBlogPostingJsonLd(post, post.display_name || post.username, profileUrl, canonicalUrl);
+    const jsonLd = [renderBlogPostingJsonLd(post, authorName, profileUrl, canonicalUrl, description), jsonLdExtra].join(
+      '\n',
+    );
 
     // Build main content
     const mainPostHtml = renderPostArticle(post, baseUrl);
@@ -144,23 +186,25 @@ export async function onRequest(context: {
         ? `<section class="ssr-replies"><h2>${replies.length} Replies</h2>${replies.map((r) => renderPostArticle(r, baseUrl)).join('\n')}</section>`
         : '';
 
+    const header = renderSsrHeader({ baseUrl, breadcrumb });
+    const footer = renderSsrFooter({ baseUrl, sections: footerSections });
+
     const content = `
+      ${header}
       ${mainPostHtml}
       ${repliesHtml}
-      <footer class="ssr-footer">
-        <a href="${escapeHtml(baseUrl)}">← Back to Flaxia</a>
-      </footer>
+      ${footer}
     `;
 
     return new Response(
       renderHtmlShell(content, {
-        title: `Flaxia - ${post.display_name || post.username}`,
-        description: post.game_description || post.text.slice(0, 200),
+        title: `Flaxia - ${authorName}`,
+        description,
         canonicalUrl,
         image: ogImage,
 
         jsonLd,
-        additionalHead,
+        additionalHead: renderSsrLayoutCss(),
         spaHeadTags: SPA_HEAD_TAGS,
       }),
       { headers: { 'Content-Type': 'text/html' } },

@@ -1,6 +1,8 @@
+import { buildGameTitle } from '../../src/lib/game-seo';
 import { isCrawler } from '../../src/lib/is-crawler';
 import { escapeHtml, renderHtmlShell, renderJsonLd } from '../../src/lib/render-html';
 import { SPA_HEAD_TAGS } from '../lib/ssr-head.generated';
+import { renderBreadcrumbJsonLd, renderSsrFooter, renderSsrHeader, renderSsrLayoutCss } from '../lib/ssr-layout';
 
 type Env = {
   DB: D1Database;
@@ -48,11 +50,6 @@ function detectGameType(game: GameRow): string {
   return 'html5';
 }
 
-function getGameTitle(game: GameRow): string {
-  const firstLine = game.text.split('\n')[0].trim();
-  return firstLine || 'Untitled Game';
-}
-
 function assetUrl(baseUrl: string, key: string): string {
   return `${baseUrl}/api/images/${key}`;
 }
@@ -67,7 +64,7 @@ function renderGameCard(game: GameRow, baseUrl: string): string {
       : `${baseUrl}/og-default-v2.png`;
   const avatarSrc = game.avatar_key ? assetUrl(baseUrl, game.avatar_key) : `${baseUrl}/default-avatar.png`;
   const gameType = detectGameType(game);
-  const title = getGameTitle(game);
+  const title = buildGameTitle(game.text);
 
   const typeLabels: Record<string, string> = {
     flash: 'Flash',
@@ -131,43 +128,62 @@ export async function onRequest(context: {
       games = (results || []).map(toGame);
     }
 
-    const jsonLd = renderJsonLd({
-      '@context': 'https://schema.org',
-      '@type': 'CollectionPage',
-      name: 'Flaxia Arcade',
-      description:
-        'ゲームやアプリをそのまま投稿できるSNS、Flaxiaのアーケード。DOS、ZIP、HTML5ゲームをブラウザで遊べます。',
-      url: canonicalUrl,
-      mainEntity: {
-        '@type': 'ItemList',
-        itemListElement: games.map((g, i) => ({
-          '@type': 'ListItem',
-          position: i + 1,
-          url: `${baseUrl}/arcade/${g.id}`,
-        })),
-      },
-    });
+    const breadcrumbItems = [
+      { label: 'Home', url: `${baseUrl}/home` },
+      { label: 'Arcade', url: canonicalUrl },
+    ];
+
+    const jsonLd = [
+      renderJsonLd({
+        '@context': 'https://schema.org',
+        '@type': 'CollectionPage',
+        name: 'Flaxia Arcade',
+        description:
+          'ゲームやアプリをそのまま投稿できるSNS、Flaxiaのアーケード。DOS、ZIP、HTML5ゲームをブラウザで遊べます。',
+        url: canonicalUrl,
+        mainEntity: {
+          '@type': 'ItemList',
+          itemListElement: games.map((g, i) => ({
+            '@type': 'ListItem',
+            position: i + 1,
+            url: `${baseUrl}/arcade/${g.id}`,
+          })),
+        },
+      }),
+      renderBreadcrumbJsonLd(breadcrumbItems, baseUrl),
+    ].join('\n');
 
     const gameCards = games.length
       ? `<div class="ssr-game-grid">${games.map((g) => renderGameCard(g, baseUrl)).join('\n')}</div>`
       : '<div class="ssr-empty">No games yet. Be the first to post a game!</div>';
 
+    const recentGames = games.slice(0, 6);
+    const footerSections = recentGames.length
+      ? [
+          {
+            title: 'New games',
+            links: recentGames.map((g) => ({
+              label: buildGameTitle(g.text),
+              url: `${baseUrl}/arcade/${g.id}`,
+            })),
+          },
+        ]
+      : [];
+
+    const header = renderSsrHeader({ baseUrl, current: 'arcade', breadcrumb: breadcrumbItems });
+    const footer = renderSsrFooter({ baseUrl, sections: footerSections });
+
     const content = `
-      <header class="ssr-header">
-        <a href="${baseUrl}" class="ssr-logo">Flaxia</a>
-        <a href="${baseUrl}/explore" style="color:#007bff;text-decoration:none;font-size:14px">Explore</a>
-      </header>
+      ${header}
       <main>
         <h1 style="font-size:22px;font-weight:700;margin:0 0 4px 0;color:#1a1a1a">Flaxia Arcade</h1>
         <p style="font-size:14px;color:#666;margin:0 0 20px 0">投稿されたゲームで遊ぼう — スワイプして次のゲームへ</p>
         ${gameCards}
       </main>
-      <footer class="ssr-footer">
-        <a href="${baseUrl}">Home</a> · <a href="${baseUrl}/explore">Explore</a> · <a href="${baseUrl}/about">About</a>
-      </footer>
+      ${footer}
     `;
 
-    const additionalHead = `
+    const additionalHead = `${renderSsrLayoutCss()}
     <style>
       .ssr-game-grid {
         display: grid;

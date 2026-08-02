@@ -12,6 +12,7 @@ import {
 } from '../../src/lib/render-html';
 import { fetchActorPublicKey, verifyDigest, verifyHttpSignature } from '../lib/activitypub/signature';
 import { SPA_HEAD_TAGS } from '../lib/ssr-head.generated';
+import { renderBreadcrumbJsonLd, renderSsrFooter, renderSsrHeader, renderSsrLayoutCss } from '../lib/ssr-layout';
 
 type Bindings = {
   DB: D1Database;
@@ -145,15 +146,35 @@ app.get('/', async (c) => {
 
     const jsonLd = renderPersonJsonLd(user as UserRow, canonicalUrl);
 
+    const breadcrumbItems = [
+      { label: 'Home', url: `${baseUrl}/home` },
+      { label: user.display_name || `@${user.username}`, url: canonicalUrl },
+    ];
+
+    const header = renderSsrHeader({ baseUrl, breadcrumb: breadcrumbItems });
+    const footer = renderSsrFooter({
+      baseUrl,
+      sections: posts.length
+        ? [
+            {
+              title: `Latest posts by ${user.display_name || user.username}`,
+              links: posts.slice(0, 5).map((p) => ({
+                label: p.text.split('\n')[0].slice(0, 40) || `Post ${p.id}`,
+                url: `${baseUrl}/thread/${p.id}`,
+              })),
+            },
+          ]
+        : [],
+    });
+
     const content = `
+      ${header}
       ${renderProfileHeader(user as UserRow, baseUrl, postCount?.count || 0, followerCount?.count || 0)}
       <section>
         <h2 class="ssr-section-title">Posts</h2>
         ${renderPostList(posts, baseUrl)}
       </section>
-      <footer class="ssr-footer">
-        <a href="${baseUrl}">← Back to Flaxia</a>
-      </footer>
+      ${footer}
     `;
 
     return c.html(
@@ -162,7 +183,8 @@ app.get('/', async (c) => {
         description: user.bio ? user.bio.slice(0, 200) : `@${user.username}'s profile on Flaxia`,
         canonicalUrl,
         image: defaultImage,
-        jsonLd,
+        jsonLd: `${jsonLd}\n${renderBreadcrumbJsonLd(breadcrumbItems, baseUrl)}`,
+        additionalHead: renderSsrLayoutCss(),
         spaHeadTags: SPA_HEAD_TAGS,
       }),
     );

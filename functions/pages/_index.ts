@@ -1,6 +1,7 @@
 import { isCrawler } from '../../src/lib/is-crawler';
 import { type PostRow, renderHtmlShell, renderPostList, renderWebSiteJsonLd } from '../../src/lib/render-html';
 import { SPA_HEAD_TAGS } from '../lib/ssr-head.generated';
+import { renderSsrFooter, renderSsrHeader, renderSsrLayoutCss } from '../lib/ssr-layout';
 
 type Env = {
   DB: D1Database;
@@ -78,18 +79,16 @@ export async function onRequest(context: {
 
     const jsonLd = renderWebSiteJsonLd('Flaxia', baseUrl);
 
+    const header = renderSsrHeader({ baseUrl, current: 'home' });
+    const footer = renderSsrFooter({ baseUrl });
+
     const content = `
-      <header class="ssr-header">
-        <a href="${baseUrl}" class="ssr-logo">Flaxia</a>
-        <a href="${baseUrl}/explore" style="color:#007bff;text-decoration:none;font-size:14px">Explore</a>
-      </header>
+      ${header}
       <main>
         <h1 style="font-size:18px;font-weight:600;margin:0 0 16px 0;color:var(--text-primary)">Latest Posts</h1>
         ${renderPostList(posts, baseUrl)}
       </main>
-      <footer class="ssr-footer">
-        <a href="${baseUrl}/explore">Explore</a> · <a href="${baseUrl}/arcade">Arcade</a> · <a href="${baseUrl}/about">About</a>
-      </footer>
+      ${footer}
     `;
 
     return new Response(
@@ -100,6 +99,7 @@ export async function onRequest(context: {
         canonicalUrl: baseUrl,
         image: defaultImage,
         jsonLd,
+        additionalHead: renderSsrLayoutCss(),
         spaHeadTags: SPA_HEAD_TAGS,
       }),
       { headers: { 'Content-Type': 'text/html' } },
