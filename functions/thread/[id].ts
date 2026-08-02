@@ -127,14 +127,18 @@ export async function onRequest(context: {
 
     const replies = (replyRows || []).map(toPost);
 
-    // Build OG image
+    // Build OG image: use the actual image for image posts, thumbnail for
+    // video/audio/game posts, fall back to the default image.
     const gifKey = post.gif_key;
-    const isImage = gifKey && !gifKey.startsWith('audio/');
-    const ogImage = isImage
-      ? assetUrl(baseUrl, gifKey)
-      : post.thumbnail_key
-        ? assetUrl(baseUrl, post.thumbnail_key)
-        : defaultImage;
+    const isImage = !!gifKey && !gifKey.startsWith('audio/') && !gifKey.startsWith('video/');
+    let ogImage: string;
+    if (isImage && gifKey) {
+      ogImage = assetUrl(baseUrl, gifKey);
+    } else if (post.thumbnail_key) {
+      ogImage = assetUrl(baseUrl, post.thumbnail_key);
+    } else {
+      ogImage = defaultImage;
+    }
 
     // Build description: prefer game SEO description for game posts
     let description = post.game_description || post.text.slice(0, 200);
@@ -175,9 +179,10 @@ export async function onRequest(context: {
 
     // Build JSON-LD
     const profileUrl = `${baseUrl}/users/${post.username}`;
-    const jsonLd = [renderBlogPostingJsonLd(post, authorName, profileUrl, canonicalUrl, description), jsonLdExtra].join(
-      '\n',
-    );
+    const jsonLd = [
+      renderBlogPostingJsonLd(post, authorName, profileUrl, canonicalUrl, description, ogImage),
+      jsonLdExtra,
+    ].join('\n');
 
     // Build main content
     const mainPostHtml = renderPostArticle(post, baseUrl);

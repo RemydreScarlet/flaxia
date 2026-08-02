@@ -165,7 +165,7 @@ export async function onRequest(context: {
     // Build OG image
     const ogImage = post.thumbnail_key
       ? assetUrl(baseUrl, post.thumbnail_key)
-      : post.gif_key && !post.gif_key.startsWith('audio/')
+      : post.gif_key && !post.gif_key.startsWith('audio/') && !post.gif_key.startsWith('video/')
         ? assetUrl(baseUrl, post.gif_key)
         : defaultImage;
 

@@ -59,7 +59,7 @@ function renderGameCard(game: GameRow, baseUrl: string): string {
   const _profileUrl = `${baseUrl}/users/${game.username}`;
   const thumbnailSrc = game.thumbnail_key
     ? assetUrl(baseUrl, game.thumbnail_key)
-    : game.gif_key && !game.gif_key.startsWith('audio/')
+    : game.gif_key && !game.gif_key.startsWith('audio/') && !game.gif_key.startsWith('video/')
       ? assetUrl(baseUrl, game.gif_key)
       : `${baseUrl}/og-default-v2.png`;
   const avatarSrc = game.avatar_key ? assetUrl(baseUrl, game.avatar_key) : `${baseUrl}/default-avatar.png`;

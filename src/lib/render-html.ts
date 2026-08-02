@@ -66,12 +66,14 @@ export function renderBlogPostingJsonLd(
   authorUrl: string,
   postUrl: string,
   description?: string,
+  image?: string,
 ): string {
   return renderJsonLd({
     '@context': 'https://schema.org',
     '@type': 'BlogPosting',
     headline: `${authorName} on Flaxia`,
     description: description || post.game_description || post.text.slice(0, 200),
+    image: image || undefined,
     url: postUrl,
     datePublished: post.created_at,
     author: {
@@ -262,11 +264,15 @@ export function renderHtmlShell(content: string, options: HtmlShellOptions): str
       word-break: break-word;
     }
     .ssr-post-body p { margin: 0 0 8px 0; }
-    .ssr-post-body img {
-      max-width: 100%;
+    .ssr-post-body img,
+    .ssr-post-body video {
+      width: 100%;
+      height: auto;
       border-radius: 8px;
       margin-top: 8px;
+      display: block;
     }
+    .ssr-post-body video { background: #000; }
     .ssr-post-meta {
       display: flex;
       gap: 16px;
@@ -437,12 +443,27 @@ function renderPostMedia(
   payloadKey: string | null,
   swfKey: string | null,
   baseUrl: string,
+  text?: string,
 ): string {
   const parts: string[] = [];
-  if (gifKey && !gifKey.startsWith('audio/')) {
-    parts.push(`<img src="${escapeHtml(assetUrl(baseUrl, gifKey))}" alt="Post image" loading="lazy">`);
+  const alt = text ? text.replace(/\s+/g, ' ').trim().slice(0, 120) : '';
+
+  if (gifKey?.startsWith('video/')) {
+    const videoUrl = `${baseUrl}/api/video/${escapeHtml(gifKey)}`;
+    const poster = thumbnailKey ? ` poster="${escapeHtml(assetUrl(baseUrl, thumbnailKey))}"` : '';
+    const mime = gifKey.endsWith('.webm') ? 'video/webm' : gifKey.endsWith('.mov') ? 'video/quicktime' : 'video/mp4';
+    const label = escapeHtml(alt || 'Post video');
+    parts.push(
+      `<video controls preload="metadata" playsinline width="640" height="360"${poster}>\n    <source src="${videoUrl}" type="${mime}">\n    ${label}\n  </video>`,
+    );
+  } else if (gifKey && !gifKey.startsWith('audio/')) {
+    parts.push(
+      `<img src="${escapeHtml(assetUrl(baseUrl, gifKey))}" alt="${escapeHtml(alt || 'Post image')}" width="1200" height="675" loading="lazy">`,
+    );
   } else if (thumbnailKey) {
-    parts.push(`<img src="${escapeHtml(assetUrl(baseUrl, thumbnailKey))}" alt="Post thumbnail" loading="lazy">`);
+    parts.push(
+      `<img src="${escapeHtml(assetUrl(baseUrl, thumbnailKey))}" alt="${escapeHtml(alt || 'Post thumbnail')}" width="800" height="600" loading="lazy">`,
+    );
   }
   if (payloadKey || swfKey) {
     parts.push(`<p>🎮 Interactive content available</p>`);
@@ -469,7 +490,7 @@ export function renderPostArticle(post: PostRow, baseUrl: string, isReply = fals
     </div>
     <div class="ssr-post-body">
       ${renderPostContent(post.text, post.hashtags)}
-      ${renderPostMedia(post.gif_key, post.thumbnail_key, post.payload_key, post.swf_key, baseUrl)}
+      ${renderPostMedia(post.gif_key, post.thumbnail_key, post.payload_key, post.swf_key, baseUrl, post.text)}
     </div>
     <div class="ssr-post-meta">
       <time datetime="${escapeHtml(post.created_at)}">${formatDate(post.created_at)}</time>
