@@ -53,8 +53,8 @@ export class LeftNav {
     const logoIcon = document.createElement('img');
     logoIcon.src = '/favicon.ico';
     logoIcon.alt = '';
-    logoIcon.style.width = '1.5rem';
-    logoIcon.style.height = '1.5rem';
+    logoIcon.style.width = '1.99rem';
+    logoIcon.style.height = '1.99rem';
 
     const logoText = document.createElement('span');
     logoText.style.cssText = 'font-size: 1.25rem; font-weight: 600; color: var(--accent);';
