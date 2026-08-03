@@ -16,6 +16,11 @@
  *  - CAPTURE_GIF_RESULT  (game -> parent) raw RGBA frames for GIF encoding
  *  - CAPTURE_ERROR       (game -> parent) capture failure
  *
+ * When the game uses several canvases (background + foreground layers, or a
+ * game + HUD overlay), they are composited into one frame by layout position
+ * and DOM order. Tainted canvases are skipped rather than blanking the whole
+ * capture.
+ *
  * All frames are downscaled to a max width and stored in a rolling ring buffer
  * of roughly `BUFFER_MS` seconds so the parent can request "the last N seconds"
  * with a single tap.
@@ -51,24 +56,168 @@ interface BufferedFrame {
   data: Uint8ClampedArray;
 }
 
-function findGameCanvas(): HTMLCanvasElement | null {
-  const selectors = ['#dos-container canvas', '#flash-player canvas', 'canvas'];
-  for (const selector of selectors) {
-    const els = document.querySelectorAll<HTMLCanvasElement>(selector);
-    if (els.length > 0) {
-      let best: HTMLCanvasElement | null = null;
-      let bestArea = 0;
-      for (const el of els) {
-        const area = el.width * el.height;
-        if (area > bestArea) {
-          bestArea = area;
-          best = el;
-        }
-      }
-      if (best) return best;
+interface CanvasPlacement {
+  canvas: HTMLCanvasElement;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+const GAME_CANVAS_SELECTORS = ['#dos-container canvas', '#flash-player canvas', 'canvas'];
+
+// Canvases are cached between taint probes: a canvas rarely flips between
+// tainted/clean mid-session, and re-reading every sample would be expensive.
+const taintedCanvases = new WeakSet<HTMLCanvasElement>();
+const cleanCanvases = new WeakSet<HTMLCanvasElement>();
+
+function findAllGameCanvases(): HTMLCanvasElement[] {
+  const seen = new Set<HTMLCanvasElement>();
+  for (const selector of GAME_CANVAS_SELECTORS) {
+    for (const el of document.querySelectorAll<HTMLCanvasElement>(selector)) {
+      if (el.width > 0 && el.height > 0 && !seen.has(el)) seen.add(el);
     }
   }
+  return Array.from(seen);
+}
+
+function findGameCanvas(): HTMLCanvasElement | null {
+  let best: HTMLCanvasElement | null = null;
+  let bestArea = 0;
+  for (const el of findAllGameCanvases()) {
+    const area = el.width * el.height;
+    if (area > bestArea) {
+      bestArea = area;
+      best = el;
+    }
+  }
+  return best;
+}
+
+function getCanvasPlacement(canvas: HTMLCanvasElement): CanvasPlacement {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    canvas,
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
+function documentOrder(a: Element, b: Element): number {
+  if (a === b) return 0;
+  const position = a.compareDocumentPosition(b);
+  if (position & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+  if (position & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+  return 0;
+}
+
+function isCanvasTainted(source: HTMLCanvasElement): boolean {
+  if (taintedCanvases.has(source)) return true;
+  if (cleanCanvases.has(source)) return false;
+  try {
+    const probe = document.createElement('canvas');
+    probe.width = 1;
+    probe.height = 1;
+    const pctx = probe.getContext('2d');
+    if (!pctx) return false;
+    pctx.drawImage(source, 0, 0, 1, 1);
+    pctx.getImageData(0, 0, 1, 1);
+    cleanCanvases.add(source);
+    return false;
+  } catch {
+    taintedCanvases.add(source);
+    return true;
+  }
+}
+
+// Composite every game canvas into a single frame. Canvases are placed by
+// their layout rect (union-bounded) and drawn in DOM order so stacked layers
+// (background + foreground, game + HUD) blend correctly. The composite keeps
+// the largest canvas at its native resolution; siblings are scaled relative
+// to it. Tainted canvases (cross-origin images without CORS) are skipped so
+// one bad layer can't blank the whole capture.
+function composeCanvases(placements: CanvasPlacement[]): HTMLCanvasElement | null {
+  const composed = renderComposite(placements);
+  if (composed) return composed;
+  // Fallback for canvases with a zero-size layout box (e.g. display:none):
+  // position them by intrinsic size at the origin.
+  if (placements.length > 0) {
+    return renderComposite(
+      placements.map((p) => ({
+        canvas: p.canvas,
+        left: 0,
+        top: 0,
+        width: p.canvas.width,
+        height: p.canvas.height,
+      })),
+    );
+  }
   return null;
+}
+
+function renderComposite(placements: CanvasPlacement[]): HTMLCanvasElement | null {
+  let minLeft = Infinity;
+  let minTop = Infinity;
+  let maxRight = -Infinity;
+  let maxBottom = -Infinity;
+  for (const p of placements) {
+    if (p.width <= 0 || p.height <= 0) continue;
+    minLeft = Math.min(minLeft, p.left);
+    minTop = Math.min(minTop, p.top);
+    maxRight = Math.max(maxRight, p.left + p.width);
+    maxBottom = Math.max(maxBottom, p.top + p.height);
+  }
+  if (!Number.isFinite(minLeft) || maxRight <= minLeft || maxBottom <= minTop) return null;
+
+  const unionWidth = maxRight - minLeft;
+  const unionHeight = maxBottom - minTop;
+
+  let scale = 1;
+  let largestArea = 0;
+  for (const p of placements) {
+    if (p.width <= 0 || p.height <= 0) continue;
+    const area = p.canvas.width * p.canvas.height;
+    if (area > largestArea) {
+      largestArea = area;
+      scale = p.canvas.width / p.width;
+    }
+  }
+  if (scale <= 0 || !Number.isFinite(scale)) return null;
+  scale = Math.min(scale, 4);
+
+  const width = Math.max(1, Math.round(unionWidth * scale));
+  const height = Math.max(1, Math.round(unionHeight * scale));
+
+  const composite = document.createElement('canvas');
+  composite.width = width;
+  composite.height = height;
+  const ctx = composite.getContext('2d');
+  if (!ctx) return null;
+
+  const sorted = placements
+    .filter((p) => p.width > 0 && p.height > 0)
+    .sort((a, b) => documentOrder(a.canvas, b.canvas));
+
+  let drawn = 0;
+  for (const p of sorted) {
+    if (isCanvasTainted(p.canvas)) continue;
+    const dx = (p.left - minLeft) * scale;
+    const dy = (p.top - minTop) * scale;
+    try {
+      ctx.drawImage(p.canvas, dx, dy, p.canvas.width, p.canvas.height);
+      drawn++;
+    } catch {
+      // Unreadable layer — skip.
+    }
+  }
+  if (drawn === 0) return null;
+  return composite;
+}
+
+function getCanvasPlacements(): CanvasPlacement[] {
+  return findAllGameCanvases().map((c) => getCanvasPlacement(c));
 }
 
 function drawScaled(source: HTMLCanvasElement, w: number, h: number): HTMLCanvasElement | null {
@@ -113,17 +262,17 @@ function run(): void {
   }
 
   function sampleNow(): void {
-    if (!canvas) canvas = findGameCanvas();
-    if (!canvas) return;
-    const w = canvas.width;
-    const h = canvas.height;
+    const composite = composeCanvases(getCanvasPlacements());
+    if (!composite) return;
+    const w = composite.width;
+    const h = composite.height;
     if (!w || !h) return;
 
     const scale = Math.min(1, MAX_WIDTH / w);
     const sw = Math.max(1, Math.round(w * scale));
     const sh = Math.max(1, Math.round(h * scale));
 
-    const off = drawScaled(canvas, sw, sh);
+    const off = drawScaled(composite, sw, sh);
     if (!off) return;
     const octx = off.getContext('2d');
     if (!octx) return;
@@ -184,13 +333,18 @@ function run(): void {
   }
 
   function requestFrame(requestId: string): void {
-    const c = canvas || findGameCanvas();
-    if (!c) {
+    const placements = getCanvasPlacements();
+    if (placements.length === 0) {
       send({ type: 'CAPTURE_ERROR', requestId, message: 'no-canvas' });
       return;
     }
+    const composite = composeCanvases(placements);
+    if (!composite) {
+      send({ type: 'CAPTURE_ERROR', requestId, message: 'no-valid-canvas' });
+      return;
+    }
     try {
-      c.toBlob((blob) => {
+      composite.toBlob((blob) => {
         if (!blob) {
           send({ type: 'CAPTURE_ERROR', requestId, message: 'toBlob-failed' });
           return;

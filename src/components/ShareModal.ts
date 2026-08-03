@@ -4,7 +4,6 @@ import {
   canUseWebShare,
   copyToClipboard,
   createShareData,
-  downloadFile,
   sharePlatforms,
   shareViaWebShare,
   shareViaWebShareWithFile,
@@ -107,41 +106,27 @@ export function createShareModal({ post, url: customUrl, media, onClose }: Share
         media
           ? `
         <div class="share-media-preview" style="
-          margin-bottom: 1rem;
+          margin-bottom: 0.5rem;
           border-radius: 0.5rem;
           overflow: hidden;
           background: #000;
           display: flex;
           align-items: center;
           justify-content: center;
-          max-height: 40vh;
+          max-height: 45vh;
         ">
           <img src="${URL.createObjectURL(media.blob)}" alt="${t('share.media_preview')}" style="
             max-width: 100%;
-            max-height: 40vh;
+            max-height: 45vh;
             display: block;
           ">
         </div>
-        <button class="share-button share-button--download" style="
-          width: 100%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 0.75rem;
-          padding: 0.875rem 1rem;
-          background: var(--accent);
-          border: none;
-          border-radius: 0.5rem;
-          color: #000;
-          font-size: 0.9375rem;
-          font-weight: 500;
-          cursor: pointer;
-          margin-bottom: 1rem;
-          transition: opacity 0.2s;
-        ">
-          <span style="font-size: 1.25rem;">⬇️</span>
-          <span>${t('share.download')}</span>
-        </button>
+        <p class="share-save-hint" style="
+          text-align: center;
+          color: var(--text-muted);
+          font-size: 0.8125rem;
+          margin: 0 0 1rem 0;
+        ">${t('share.save_hint')}</p>
       `
           : ''
       }
@@ -309,14 +294,6 @@ export function createShareModal({ post, url: customUrl, media, onClose }: Share
       } else {
         showToast(t('share.native_failed'));
       }
-    });
-  }
-
-  const downloadButton = modal.querySelector('.share-button--download') as HTMLButtonElement;
-  if (downloadButton && media) {
-    downloadButton.addEventListener('click', () => {
-      downloadFile(media.blob, media.filename);
-      showToast(t('share.download_started'));
     });
   }
 

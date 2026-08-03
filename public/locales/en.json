@@ -281,8 +281,7 @@
   "share.platform_bluesky": "Bluesky",
   "share.platform_threads": "Threads",
   "share.media_preview": "Capture preview",
-  "share.download": "Download",
-  "share.download_started": "Download started",
+  "share.save_hint": "Long-press the image to save",
 
   "topic.title": "今のお題",
   "topic.loading": "お題を読み込み中...",

@@ -59,12 +59,14 @@ export class ArcadeCaptureClient {
     this.send({ type: 'CAPTURE_INIT' });
   }
 
-  requestFrame(): Promise<Blob> {
-    return this.request<ArrayBuffer>('CAPTURE_FRAME').then((data) => new Blob([data], { type: 'image/png' }));
+  requestFrame(timeoutMs: number = CAPTURE_TIMEOUT): Promise<Blob> {
+    return this.request<ArrayBuffer>('CAPTURE_FRAME', timeoutMs).then(
+      (data) => new Blob([data], { type: 'image/png' }),
+    );
   }
 
-  requestGif(): Promise<CapturedFrame[]> {
-    return this.request<CapturedFrame[]>('CAPTURE_GIF').then((frames) =>
+  requestGif(timeoutMs: number = CAPTURE_TIMEOUT): Promise<CapturedFrame[]> {
+    return this.request<CapturedFrame[]>('CAPTURE_GIF', timeoutMs).then((frames) =>
       frames.map((frame) => ({
         width: frame.width,
         height: frame.height,
@@ -187,7 +189,7 @@ export class ArcadeCaptureClient {
     this.pending.clear();
   }
 
-  private request<T>(type: 'CAPTURE_FRAME' | 'CAPTURE_GIF'): Promise<T> {
+  private request<T>(type: 'CAPTURE_FRAME' | 'CAPTURE_GIF', timeoutMs: number = CAPTURE_TIMEOUT): Promise<T> {
     if (this.destroyed) return Promise.reject(new Error('capture-destroyed'));
     const requestId = `cap_${++this.requestCounter}_${Date.now()}`;
 
@@ -195,7 +197,7 @@ export class ArcadeCaptureClient {
       const timer = window.setTimeout(() => {
         this.pending.delete(requestId);
         reject(new Error('capture-timeout'));
-      }, CAPTURE_TIMEOUT);
+      }, timeoutMs);
 
       this.pending.set(requestId, { resolve: resolve as (value: unknown) => void, reject, timer });
 

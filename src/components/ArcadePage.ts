@@ -977,7 +977,9 @@ export class ArcadePage {
     this.captureBusy = true;
     showToast(t('arcade.share_capturing'));
     try {
-      const blob = await client.requestFrame();
+      // Give the capture up to 1s — if the frame isn't ready by then, fall back
+      // to a plain text/URL share so the modal never feels slow.
+      const blob = await client.requestFrame(1000);
       const card = await client.composeScoreCard(blob, {
         title: game.title,
         username: game.username,
