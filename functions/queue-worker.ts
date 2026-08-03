@@ -19,9 +19,25 @@ type QueueMessage = DeliveryMessage | InboxMessage;
 interface Env {
   DB: D1Database;
   BASE_URL: string;
+  EXPORT_KV?: KVNamespace;
+  EXPORT_BUCKET?: R2Bucket;
+  HF_TOKEN?: string;
+  HF_REPO?: string;
 }
 
 export default {
+  // Triggered by `triggers.crons` in wrangler.toml.worker — exports the
+  // anonymized Arcade dwell dataset and uploads it to HuggingFace (optional).
+  async scheduled(_event: ScheduledEvent, env: Env): Promise<void> {
+    try {
+      const { runDatasetExport } = await import('./lib/dataset-export');
+      const count = await runDatasetExport(env);
+      console.log(`Dataset export finished: ${count} records exported`);
+    } catch (error) {
+      console.error('Dataset export failed:', (error as Error).message);
+    }
+  },
+
   async queue(batch: MessageBatch<QueueMessage>, env: Env): Promise<void> {
     console.log(`Processing batch of ${batch.messages.length} messages`);
 

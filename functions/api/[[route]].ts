@@ -25,6 +25,18 @@ import {
   User,
   verifyPassword,
 } from '../lib/auth';
+import {
+  applyReward as banditApplyReward,
+  computeScore as banditComputeScore,
+  project as banditProject,
+  createProjection,
+  createState,
+  eventReward,
+  type LinUCBConfig,
+  type LinUCBState,
+  parseBanditConfig,
+  serializeState,
+} from '../lib/linucb';
 import { sendPushToAll } from '../lib/notify';
 import { getVapidPublicKey } from '../lib/push';
 import { computeAuthorQuality, computeQualityScore, freshnessBoost, getTypeWeights } from '../lib/scoring';
@@ -1570,58 +1582,9 @@ app.get('/api/games', async (c) => {
     if (recommended && currentUserId) {
       const initialId = c.req.query('initialId');
 
-      // Build interest vector from Fresh history + significant dwell plays
-      let interestVector: number[] | null = null;
-      const dim = 1024;
-
-      const freshRows = await c.env.DB.prepare(
-        `SELECT f.post_id FROM freshs f JOIN posts p ON p.id = f.post_id
-         WHERE f.user_id = ? ORDER BY p.created_at DESC LIMIT 50`,
-      )
-        .bind(currentUserId)
-        .all<{ post_id: string }>();
-      const freshIds = (freshRows.results || []).map((r) => r.post_id);
-
-      const gamePlayRows = await c.env.DB.prepare(
-        `SELECT post_id, dwell_ms FROM user_game_plays
-         WHERE user_id = ? AND dwell_ms > 5000
-         ORDER BY created_at DESC LIMIT 50`,
-      )
-        .bind(currentUserId)
-        .all<{ post_id: string; dwell_ms: number }>();
-      const gamePlays = gamePlayRows.results || [];
-
-      const allSourceIds = [...freshIds, ...gamePlays.map((r) => r.post_id)];
-      const dwellMap = new Map(gamePlays.map((r) => [r.post_id, r.dwell_ms]));
-
-      if (allSourceIds.length > 0) {
-        const embedRows = await c.env.DB.prepare(
-          `SELECT post_id, embedding FROM post_embeddings WHERE post_id IN (${allSourceIds.map(() => '?').join(',')})`,
-        )
-          .bind(...allSourceIds)
-          .all<{ post_id: string; embedding: string }>();
-        const weightedEmbeds: Array<{ vec: number[]; weight: number }> = [];
-        for (const row of embedRows.results || []) {
-          try {
-            const v = JSON.parse(row.embedding);
-            if (!Array.isArray(v)) continue;
-            const dwellW = dwellMap.get(row.post_id);
-            // Fresh = weight 1.0, game play with dwell = weight min(dwell_ms / 30000, 1.0)
-            const w = dwellW ? Math.min(dwellW / 30000, 1.0) : 1.0;
-            weightedEmbeds.push({ vec: v, weight: w });
-          } catch {
-            /* skip malformed */
-          }
-        }
-        if (weightedEmbeds.length > 0) {
-          const totalWeight = weightedEmbeds.reduce((s, e) => s + e.weight, 0);
-          interestVector = new Array(dim).fill(0);
-          for (const { vec, weight } of weightedEmbeds) {
-            for (let i = 0; i < dim; i++) interestVector[i] += (vec[i] || 0) * weight;
-          }
-          for (let i = 0; i < dim; i++) interestVector[i] /= totalWeight;
-        }
-      }
+      // Load materialized interest vector (Fresh history + significant dwell plays)
+      const profile = await loadOrComputeInterestVector(c.env.DB, currentUserId);
+      const interestVector = profile?.vector ?? null;
 
       // Get dwell stats for all games from other users
       const dwellStats = new Map<string, { avgDwell: number; playCount: number }>();
@@ -1699,6 +1662,12 @@ app.get('/api/games', async (c) => {
       // Score candidates
       const now = Date.now();
       const dayMs = 86400000;
+
+      // Contextual bandit (LinUCB) layer, gated by KV config (default off).
+      const banditConfig = await loadBanditConfig(c.env.CACHE);
+      const banditProj = banditConfig.enabled ? getProjection(banditConfig) : null;
+      const banditState = banditConfig.enabled ? await loadBanditState(c.env.DB, currentUserId, banditConfig) : null;
+
       const scored = candidateRows.map((row) => {
         const emb = candEmbeds.get(row.postId);
         let vecSim = 0;
@@ -1717,8 +1686,27 @@ app.get('/api/games', async (c) => {
 
         const score = 0.35 * vecSim + 0.35 * expectedDwellNorm + 0.2 * explorationBonus + 0.1 * freshnessBonus;
 
-        return { row, score };
+        let banditScore = Number.NaN;
+        if (banditState && banditProj && emb) {
+          banditScore = banditComputeScore(banditState, banditProject(emb, banditProj), banditConfig.alpha);
+        }
+
+        return { row, score, banditScore };
       });
+
+      // Normalize bandit scores across candidates and blend with the heuristic.
+      if (banditConfig.enabled) {
+        const finiteBandit = scored.map((s) => s.banditScore).filter((v) => Number.isFinite(v));
+        if (finiteBandit.length > 0) {
+          const bMin = Math.min(...finiteBandit);
+          const bMax = Math.max(...finiteBandit);
+          for (const item of scored) {
+            if (!Number.isFinite(item.banditScore)) continue;
+            const norm = bMax > bMin ? (item.banditScore - bMin) / (bMax - bMin) : 0.5;
+            item.score = banditConfig.lambda * item.score + (1 - banditConfig.lambda) * norm;
+          }
+        }
+      }
 
       // Sort by score descending
       scored.sort((a, b) => b.score - a.score);
@@ -1902,6 +1890,97 @@ app.get('/api/games', async (c) => {
   } catch (error: unknown) {
     console.error('Games fetch error:', error);
     return c.json({ error: 'Failed to fetch games', details: (error as { message?: string })?.message }, 500);
+  }
+});
+
+// POST /api/games/events - record raw Arcade interaction events (views incl. skips,
+// fresh, reply, fullscreen, share). Superset of /api/games/dwell: positive-dwell
+// views are also mirrored into user_game_plays so the existing dwell-based
+// recommendation keeps working.
+const ARCADE_EVENT_TYPES = new Set(['view', 'fresh', 'reply', 'fullscreen', 'share']);
+app.post('/api/games/events', async (c) => {
+  try {
+    const currentUserId = c.get('user')?.id;
+    if (!currentUserId) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const { sessionId, events } = await c.req.json<{
+      sessionId: string;
+      events: Array<{
+        postId: string;
+        eventType: string;
+        dwellMs: number;
+        swipeVelocity: number;
+        didSkip: number;
+        isFullscreen: number;
+        position: number;
+        gameType: string;
+      }>;
+    }>();
+
+    if (!events || events.length === 0) {
+      return c.json({ error: 'No events' }, 400);
+    }
+    if (!sessionId || typeof sessionId !== 'string' || sessionId.length > 128) {
+      return c.json({ error: 'Invalid sessionId' }, 400);
+    }
+
+    const eventStmt = c.env.DB.prepare(
+      `INSERT INTO arcade_events
+         (id, user_id, post_id, session_id, position, event_type, dwell_ms,
+          swipe_velocity, did_skip, is_fullscreen, game_type)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const dwellStmt = c.env.DB.prepare(
+      `INSERT INTO user_game_plays (id, user_id, post_id, dwell_ms, is_fullscreen, game_type, source)
+       VALUES (?, ?, ?, ?, ?, ?, 'arcade')`,
+    );
+
+    const banditEvents: Array<{ postId: string; eventType: string; dwellMs: number }> = [];
+
+    for (const event of events) {
+      if (typeof event?.postId !== 'string' || event.postId.length === 0) continue;
+      if (typeof event?.eventType !== 'string' || !ARCADE_EVENT_TYPES.has(event.eventType)) continue;
+
+      const dwellMs = Math.max(0, Math.min(Math.round(Number(event.dwellMs) || 0), 86400000));
+      const position = Math.max(0, Math.min(Math.round(Number(event.position) || 0), 100000));
+      const swipeVelocity = Math.max(0, Math.min(Number(event.swipeVelocity) || 0, 1000));
+      const didSkip = event.didSkip ? 1 : 0;
+      const isFullscreen = event.isFullscreen ? 1 : 0;
+      const gameType = typeof event.gameType === 'string' ? event.gameType.slice(0, 32) : '';
+
+      await eventStmt
+        .bind(
+          crypto.randomUUID(),
+          currentUserId,
+          event.postId,
+          sessionId,
+          position,
+          event.eventType,
+          dwellMs,
+          swipeVelocity,
+          didSkip,
+          isFullscreen,
+          gameType,
+        )
+        .run();
+
+      // Mirror positive-dwell views into the existing dwell aggregate table.
+      if (event.eventType === 'view' && dwellMs > 2000) {
+        await dwellStmt.bind(crypto.randomUUID(), currentUserId, event.postId, dwellMs, isFullscreen, gameType).run();
+      }
+
+      banditEvents.push({ postId: event.postId, eventType: event.eventType, dwellMs });
+    }
+
+    // Feed the dwell-maximizing bandit with rewards (no-op while disabled).
+    await applyBanditRewards(c.env.DB, c.env.CACHE, currentUserId, banditEvents);
+
+    return c.json({ ok: true });
+  } catch (error: unknown) {
+    console.error('Arcade events record error:', error);
+    return c.json({ error: 'Failed to record events' }, 500);
   }
 });
 
@@ -4730,6 +4809,212 @@ function cosineSimilarity(a: number[], b: number[]): number {
   }
   const denom = Math.sqrt(na) * Math.sqrt(nb);
   return denom === 0 ? 0 : dot / denom;
+}
+
+const PROFILE_TTL_MS = 5 * 60 * 1000;
+
+// Materialized weighted interest vector persisted in user_profiles so the
+// recommender avoids re-deriving it on every request. Returns null when the
+// user has no positive signal history yet.
+async function loadOrComputeInterestVector(
+  db: D1Database,
+  userId: string,
+): Promise<{ vector: number[]; sourceCount: number } | null> {
+  const cached = await db
+    .prepare(
+      `SELECT interest_vec, source_count, updated_at FROM user_profiles
+       WHERE user_id = ?`,
+    )
+    .bind(userId)
+    .first<{ interest_vec: string; source_count: number; updated_at: string }>();
+
+  if (cached) {
+    const age = Date.now() - new Date(cached.updated_at).getTime();
+    if (age < PROFILE_TTL_MS) {
+      try {
+        const v = JSON.parse(cached.interest_vec);
+        if (Array.isArray(v) && v.length > 0) {
+          return { vector: v, sourceCount: cached.source_count };
+        }
+      } catch {
+        /* fall through to recompute */
+      }
+    }
+  }
+
+  const dim = 1024;
+  const freshRows = await db
+    .prepare(
+      `SELECT f.post_id FROM freshs f JOIN posts p ON p.id = f.post_id
+       WHERE f.user_id = ? ORDER BY p.created_at DESC LIMIT 50`,
+    )
+    .bind(userId)
+    .all<{ post_id: string }>();
+  const freshIds = (freshRows.results || []).map((r) => r.post_id);
+
+  const gamePlayRows = await db
+    .prepare(
+      `SELECT post_id, dwell_ms FROM user_game_plays
+       WHERE user_id = ? AND dwell_ms > 5000
+       ORDER BY created_at DESC LIMIT 50`,
+    )
+    .bind(userId)
+    .all<{ post_id: string; dwell_ms: number }>();
+  const gamePlays = gamePlayRows.results || [];
+
+  const allSourceIds = [...freshIds, ...gamePlays.map((r) => r.post_id)];
+  const dwellMap = new Map(gamePlays.map((r) => [r.post_id, r.dwell_ms]));
+
+  let vector: number[] | null = null;
+  let sourceCount = 0;
+
+  if (allSourceIds.length > 0) {
+    const embedRows = await db
+      .prepare(
+        `SELECT post_id, embedding FROM post_embeddings WHERE post_id IN (${allSourceIds.map(() => '?').join(',')})`,
+      )
+      .bind(...allSourceIds)
+      .all<{ post_id: string; embedding: string }>();
+    const weightedEmbeds: Array<{ vec: number[]; weight: number }> = [];
+    for (const row of embedRows.results || []) {
+      try {
+        const v = JSON.parse(row.embedding);
+        if (!Array.isArray(v)) continue;
+        const dwellW = dwellMap.get(row.post_id);
+        // Fresh = weight 1.0, game play with dwell = weight min(dwell_ms / 30000, 1.0)
+        const w = dwellW ? Math.min(dwellW / 30000, 1.0) : 1.0;
+        weightedEmbeds.push({ vec: v, weight: w });
+      } catch {
+        /* skip malformed */
+      }
+    }
+    if (weightedEmbeds.length > 0) {
+      const totalWeight = weightedEmbeds.reduce((s, e) => s + e.weight, 0);
+      vector = new Array(dim).fill(0);
+      for (const { vec, weight } of weightedEmbeds) {
+        for (let i = 0; i < dim; i++) vector[i] += (vec[i] || 0) * weight;
+      }
+      for (let i = 0; i < dim; i++) vector[i] /= totalWeight;
+      sourceCount = weightedEmbeds.length;
+    }
+  }
+
+  if (vector) {
+    await db
+      .prepare(
+        `INSERT INTO user_profiles (user_id, interest_vec, source_count, updated_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(user_id) DO UPDATE SET interest_vec = excluded.interest_vec,
+           source_count = excluded.source_count, updated_at = excluded.updated_at`,
+      )
+      .bind(userId, JSON.stringify(vector), sourceCount, new Date().toISOString())
+      .run();
+  }
+
+  return vector ? { vector, sourceCount } : null;
+}
+
+const BANDIT_CONFIG_KEY = 'arcade:bandit:config';
+const projectionCache = new Map<string, number[][]>();
+
+function getProjection(config: LinUCBConfig): number[][] {
+  const key = `${config.seed}:${config.srcDim}:${config.dim}`;
+  let proj = projectionCache.get(key);
+  if (!proj) {
+    proj = createProjection(config.srcDim, config.dim, config.seed);
+    projectionCache.set(key, proj);
+  }
+  return proj;
+}
+
+async function loadBanditConfig(cache: KVNamespace | undefined): Promise<LinUCBConfig> {
+  if (!cache) return { ...parseBanditConfig(null) };
+  try {
+    return parseBanditConfig(await cache.get(BANDIT_CONFIG_KEY));
+  } catch {
+    return { ...parseBanditConfig(null) };
+  }
+}
+
+async function loadBanditState(db: D1Database, userId: string, config: LinUCBConfig): Promise<LinUCBState> {
+  const row = await db
+    .prepare(`SELECT a_inv, b, t FROM bandit_state WHERE user_id = ?`)
+    .bind(userId)
+    .first<{ a_inv: string; b: string; t: number }>();
+  if (row) {
+    try {
+      const parsed = JSON.parse(row.a_inv) as number[];
+      const b = JSON.parse(row.b) as number[];
+      if (
+        Array.isArray(parsed) &&
+        parsed.length === config.dim * config.dim &&
+        Array.isArray(b) &&
+        b.length === config.dim
+      ) {
+        return { aInv: parsed.map(Number), b: b.map(Number), t: row.t || 0 };
+      }
+    } catch {
+      /* fall through to fresh state */
+    }
+  }
+  return createState(config.dim);
+}
+
+async function saveBanditState(db: D1Database, userId: string, state: LinUCBState): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO bandit_state (user_id, a_inv, b, t, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET a_inv = excluded.a_inv, b = excluded.b,
+         t = excluded.t, updated_at = excluded.updated_at`,
+    )
+    .bind(userId, serializeState(state), JSON.stringify(state.b), state.t, new Date().toISOString())
+    .run();
+}
+
+// Apply bandit reward updates for a batch of Arcade events. Loads the game
+// embeddings once per batch and performs a single state read + write per user.
+async function applyBanditRewards(
+  db: D1Database,
+  cache: KVNamespace | undefined,
+  userId: string,
+  events: Array<{ postId: string; eventType: string; dwellMs: number }>,
+): Promise<void> {
+  const config = await loadBanditConfig(cache);
+  if (!config.enabled || events.length === 0) return;
+
+  const proj = getProjection(config);
+  const distinctPostIds = Array.from(new Set(events.map((e) => e.postId)));
+  if (distinctPostIds.length === 0) return;
+
+  const embedRows = await db
+    .prepare(
+      `SELECT post_id, embedding FROM post_embeddings WHERE post_id IN (${distinctPostIds.map(() => '?').join(',')})`,
+    )
+    .bind(...distinctPostIds)
+    .all<{ post_id: string; embedding: string }>();
+  const embeds = new Map<string, number[]>();
+  for (const row of embedRows.results || []) {
+    try {
+      const v = JSON.parse(row.embedding);
+      if (Array.isArray(v)) embeds.set(row.post_id, v);
+    } catch {
+      /* skip */
+    }
+  }
+
+  const state = await loadBanditState(db, userId, config);
+  let dirty = false;
+  for (const event of events) {
+    const emb = embeds.get(event.postId);
+    if (!emb) continue;
+    const x = banditProject(emb, proj);
+    banditApplyReward(state, x, eventReward(event.eventType, event.dwellMs));
+    dirty = true;
+  }
+  if (dirty) {
+    await saveBanditState(db, userId, state);
+  }
 }
 
 function diversifyPosts(

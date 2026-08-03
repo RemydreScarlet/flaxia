@@ -23,6 +23,17 @@ export interface ArcadePageHandle {
   resume: () => void;
 }
 
+interface ArcadeEvent {
+  postId: string;
+  position: number;
+  eventType: 'view' | 'fresh' | 'reply' | 'fullscreen' | 'share';
+  dwellMs: number;
+  swipeVelocity: number;
+  didSkip: number;
+  isFullscreen: number;
+  gameType: string;
+}
+
 export class ArcadePage {
   private element: HTMLElement;
   private props: ArcadePageProps;
@@ -60,12 +71,13 @@ export class ArcadePage {
 
   private static TUTORIAL_SEEN_KEY = 'flaxia_tutorial_seen';
 
-  // Dwell time tracking
+  // Session + interaction event tracking (view incl. skips, fresh, reply, etc.)
+  private sessionId: string;
   private gameEntryTime: number = 0;
   private gameEntryFullscreen: boolean = false;
-  private pendingDwell: Array<{ postId: string; dwellMs: number; isFullscreen: number; gameType: string }> = [];
-  private dwellFlushTimer: number | null = null;
-  private boundFlushDwell: () => void;
+  private pendingEvents: Array<ArcadeEvent> = [];
+  private eventFlushTimer: number | null = null;
+  private boundFlushEvents: () => void;
 
   // Store bound event handlers for proper cleanup
   private boundHandleTouchStart: (e: TouchEvent) => void;
@@ -82,6 +94,7 @@ export class ArcadePage {
   constructor(props: ArcadePageProps) {
     this.props = props;
     this.initialGameId = props.initialGameId;
+    this.sessionId = crypto.randomUUID();
     this.element = this.createElement();
     this.gameContainer = this.element.querySelector('.arcade-game-container') as HTMLElement;
 
@@ -95,7 +108,7 @@ export class ArcadePage {
     this.boundHandleMouseLeave = this.handleMouseUp.bind(this);
     this.boundHandleFullscreenChange = this.handleFullscreenChange.bind(this);
     this.boundHandleSpaNavigate = this.handleSpaNavigate.bind(this);
-    this.boundFlushDwell = () => this.flushDwell();
+    this.boundFlushEvents = () => this.flushEvents();
     this.boundHandleKeyDown = (e: KeyboardEvent) => {
       if (this.tutorialEl) return;
       if (this.isFullscreen) return;
@@ -115,8 +128,8 @@ export class ArcadePage {
 
     this.loadGames();
 
-    // Flush dwell data on page unload
-    window.addEventListener('beforeunload', this.boundFlushDwell);
+    // Flush event data on page unload
+    window.addEventListener('beforeunload', this.boundFlushEvents);
 
     if (!localStorage.getItem(ArcadePage.TUTORIAL_SEEN_KEY)) {
       try {
@@ -934,6 +947,15 @@ export class ArcadePage {
     const game = this.games[this.currentIndex];
     if (!game) return;
 
+    this.pushEvent({
+      postId: game.postId,
+      eventType: 'share',
+      dwellMs: 0,
+      didSkip: 0,
+      isFullscreen: this.isFullscreen ? 1 : 0,
+      gameType: game.type,
+    });
+
     const arcadeUrl = `${window.location.origin}/arcade/${game.id}`;
 
     createShareModal({
@@ -1215,6 +1237,15 @@ export class ArcadePage {
     const game = this.games[this.currentIndex];
     if (!game) return;
 
+    this.pushEvent({
+      postId: game.postId,
+      eventType: 'reply',
+      dwellMs: Math.round(performance.now() - this.gameEntryTime),
+      didSkip: 0,
+      isFullscreen: this.isFullscreen ? 1 : 0,
+      gameType: game.type,
+    });
+
     game.replyCount = (game.replyCount || 0) + 1;
     headerTitle.textContent = `${t('thread_view.title')} (${formatCount(game.replyCount)})`;
     this.updateFloatingActions(game);
@@ -1265,6 +1296,15 @@ export class ArcadePage {
     }
 
     const wasFreshed = game.isFreshed || false;
+
+    this.pushEvent({
+      postId: game.postId,
+      eventType: 'fresh',
+      dwellMs: Math.round(performance.now() - this.gameEntryTime),
+      didSkip: 0,
+      isFullscreen: this.isFullscreen ? 1 : 0,
+      gameType: game.type,
+    });
 
     // Optimistic update
     game.isFreshed = !wasFreshed;
@@ -1515,7 +1555,7 @@ export class ArcadePage {
   }
 
   private clearCurrentGame(): void {
-    this.recordDwell();
+    this.recordView();
     this.hideLoading();
     // Remove current game viewport
     const viewport = this.gameContainer.querySelector('.arcade-viewport') as HTMLElement;
@@ -1543,41 +1583,49 @@ export class ArcadePage {
     this.currentViewport = null;
   }
 
-  private recordDwell(): void {
+  private recordView(): void {
     if (this.gameEntryTime === 0 || !this.games[this.currentIndex]) return;
     const dwellMs = Math.round(performance.now() - this.gameEntryTime);
     const game = this.games[this.currentIndex];
-    if (dwellMs > 2000) {
-      this.pendingDwell.push({
-        postId: game.postId,
-        dwellMs,
-        isFullscreen: this.gameEntryFullscreen ? 1 : 0,
-        gameType: game.type,
-      });
-      this.scheduleDwellFlush();
-    }
+    this.pushEvent({
+      postId: game.postId,
+      eventType: 'view',
+      dwellMs,
+      didSkip: dwellMs < 2000 ? 1 : 0,
+      isFullscreen: this.gameEntryFullscreen ? 1 : 0,
+      gameType: game.type,
+    });
     this.gameEntryTime = 0;
   }
 
-  private scheduleDwellFlush(): void {
-    if (this.dwellFlushTimer) return;
-    this.dwellFlushTimer = window.setTimeout(() => this.flushDwell(), 5000);
+  private pushEvent(event: Omit<ArcadeEvent, 'position' | 'swipeVelocity'>): void {
+    this.pendingEvents.push({
+      ...event,
+      position: this.currentIndex,
+      swipeVelocity: Math.abs(this.swipeVelocity),
+    });
+    this.scheduleEventFlush();
   }
 
-  private async flushDwell(): Promise<void> {
-    if (this.pendingDwell.length === 0) return;
-    const batch = this.pendingDwell.splice(0);
-    this.dwellFlushTimer = null;
+  private scheduleEventFlush(): void {
+    if (this.eventFlushTimer) return;
+    this.eventFlushTimer = window.setTimeout(() => this.flushEvents(), 5000);
+  }
+
+  private async flushEvents(): Promise<void> {
+    if (this.pendingEvents.length === 0) return;
+    const batch = this.pendingEvents.splice(0);
+    this.eventFlushTimer = null;
     try {
-      await fetch('/api/games/dwell', {
+      await fetch('/api/games/events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         keepalive: true,
-        body: JSON.stringify({ plays: batch }),
+        body: JSON.stringify({ sessionId: this.sessionId, events: batch }),
       });
     } catch {
-      // Silently fail — dwell data is non-critical
+      // Silently fail — event data is non-critical
     }
   }
 
@@ -1719,7 +1767,7 @@ export class ArcadePage {
   private navigateToNext(): void {
     if (this.isTransitioning) return;
 
-    this.recordDwell();
+    this.recordView();
 
     if (this.currentIndex >= this.games.length - 1) {
       if (this.hasMore && !this.isLoadingMore) {
@@ -1744,7 +1792,7 @@ export class ArcadePage {
   private navigateToPrevious(): void {
     if (this.isTransitioning || this.currentIndex <= 0) return;
 
-    this.recordDwell();
+    this.recordView();
     this.isTransitioning = true;
     this.currentIndex--;
     this.renderCurrentGame();
@@ -1787,6 +1835,20 @@ export class ArcadePage {
     );
     if (isFullscreen === this.isFullscreen) return;
     this.isFullscreen = isFullscreen;
+
+    if (isFullscreen) {
+      const game = this.games[this.currentIndex];
+      if (game) {
+        this.pushEvent({
+          postId: game.postId,
+          eventType: 'fullscreen',
+          dwellMs: Math.round(performance.now() - this.gameEntryTime),
+          didSkip: 0,
+          isFullscreen: 1,
+          gameType: game.type,
+        });
+      }
+    }
 
     const viewport = this.gameContainer.querySelector('.arcade-viewport') as HTMLElement;
     if (!viewport) return;
@@ -2465,7 +2527,7 @@ export class ArcadePage {
     document.removeEventListener('webkitfullscreenchange', this.boundHandleFullscreenChange);
     document.removeEventListener('keydown', this.boundHandleKeyDown);
     window.removeEventListener('spaNavigate', this.boundHandleSpaNavigate);
-    window.removeEventListener('beforeunload', this.boundFlushDwell);
+    window.removeEventListener('beforeunload', this.boundFlushEvents);
     if (this.boundPostUpdatedHandler) {
       window.removeEventListener('postUpdated', this.boundPostUpdatedHandler);
     }
@@ -2483,24 +2545,24 @@ export class ArcadePage {
     document.addEventListener('webkitfullscreenchange', this.boundHandleFullscreenChange);
     document.addEventListener('keydown', this.boundHandleKeyDown);
     window.addEventListener('spaNavigate', this.boundHandleSpaNavigate);
-    window.addEventListener('beforeunload', this.boundFlushDwell);
+    window.addEventListener('beforeunload', this.boundFlushEvents);
     if (this.boundPostUpdatedHandler) {
       window.addEventListener('postUpdated', this.boundPostUpdatedHandler);
     }
   }
 
   public destroy(): void {
-    this.recordDwell();
-    this.flushDwell();
+    this.recordView();
+    this.flushEvents();
     this.closeCommentPanel();
     if (this.tutorialEl) {
       this.tutorialEl.remove();
       this.tutorialEl = null;
     }
     this.suspend();
-    if (this.dwellFlushTimer) {
-      clearTimeout(this.dwellFlushTimer);
-      this.dwellFlushTimer = null;
+    if (this.eventFlushTimer) {
+      clearTimeout(this.eventFlushTimer);
+      this.eventFlushTimer = null;
     }
     if (this.boundPostUpdatedHandler) {
       this.boundPostUpdatedHandler = undefined;
