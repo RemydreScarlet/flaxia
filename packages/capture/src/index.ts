@@ -34,7 +34,35 @@ const MAX_WIDTH = 360;
 // drawing buffer once it is composited. Reading pixels (toBlob/drawImage)
 // outside the render loop then yields an all-black frame. The bridge runs
 // before game scripts (injected at <head>), so we can force the flag on at
-// context creation to make captures show the actual game image.
+// context creation to make captures show the actual game image. The same patch
+// is applied to OffscreenCanvas, and canvases that were handed off via
+// transferControlToOffscreen() are tracked so the composite can draw from the
+// OffscreenCanvas instead of the (unreadable) placeholder element.
+const webglContexts = new Set<WebGLRenderingContext | WebGL2RenderingContext>();
+const offscreenMap = new WeakMap<HTMLCanvasElement, OffscreenCanvas>();
+
+function trackWebGLContext(context: unknown): void {
+  if (context && typeof (context as { finish?: unknown }).finish === 'function') {
+    webglContexts.add(context as WebGLRenderingContext | WebGL2RenderingContext);
+  }
+}
+
+// Make sure the latest frame has been fully presented before reading pixels;
+// otherwise drawImage may capture a half-rendered or cleared buffer.
+function syncWebGLContexts(): void {
+  for (const ctx of webglContexts) {
+    try {
+      ctx.finish();
+    } catch {
+      // Context lost or moved to a worker — nothing to sync.
+    }
+  }
+}
+
+function resolveCanvasSource(canvas: HTMLCanvasElement): HTMLCanvasElement | OffscreenCanvas {
+  return offscreenMap.get(canvas) ?? canvas;
+}
+
 {
   const originalGetContext = HTMLCanvasElement.prototype.getContext;
   HTMLCanvasElement.prototype.getContext = function (
@@ -45,8 +73,43 @@ const MAX_WIDTH = 360;
     if (contextId === 'webgl' || contextId === 'webgl2' || contextId === 'experimental-webgl') {
       options = { ...(options as Record<string, unknown> | undefined), preserveDrawingBuffer: true };
     }
-    return originalGetContext.call(this, contextId, options);
+    const ctx = originalGetContext.call(this, contextId, options);
+    if (ctx) trackWebGLContext(ctx);
+    return ctx;
   } as typeof HTMLCanvasElement.prototype.getContext;
+
+  const originalTransfer = HTMLCanvasElement.prototype.transferControlToOffscreen;
+  if (typeof originalTransfer === 'function') {
+    HTMLCanvasElement.prototype.transferControlToOffscreen = function (this: HTMLCanvasElement) {
+      const offscreen = originalTransfer.call(this);
+      if (offscreen) offscreenMap.set(this, offscreen);
+      return offscreen;
+    } as typeof HTMLCanvasElement.prototype.transferControlToOffscreen;
+  }
+
+  const OffscreenCanvasCtor = (typeof OffscreenCanvas !== 'undefined' ? OffscreenCanvas : undefined) as
+    | typeof OffscreenCanvas
+    | undefined;
+  if (OffscreenCanvasCtor && typeof OffscreenCanvasCtor.prototype.getContext === 'function') {
+    const originalOffscreenGetContext = OffscreenCanvasCtor.prototype.getContext as (
+      this: OffscreenCanvas,
+      contextId: string,
+      options?: any,
+    ) =>
+      | OffscreenCanvasRenderingContext2D
+      | ImageBitmapRenderingContext
+      | WebGLRenderingContext
+      | WebGL2RenderingContext
+      | null;
+    OffscreenCanvasCtor.prototype.getContext = function (this: OffscreenCanvas, contextId: string, options?: any) {
+      if (contextId === 'webgl' || contextId === 'webgl2' || contextId === 'experimental-webgl') {
+        options = { ...(options as Record<string, unknown> | undefined), preserveDrawingBuffer: true };
+      }
+      const ctx = originalOffscreenGetContext.call(this, contextId, options);
+      if (ctx) trackWebGLContext(ctx);
+      return ctx;
+    } as typeof OffscreenCanvasCtor.prototype.getContext;
+  }
 }
 
 interface BufferedFrame {
@@ -113,9 +176,10 @@ function documentOrder(a: Element, b: Element): number {
   return 0;
 }
 
-function isCanvasTainted(source: HTMLCanvasElement): boolean {
-  if (taintedCanvases.has(source)) return true;
-  if (cleanCanvases.has(source)) return false;
+function isCanvasTainted(canvas: HTMLCanvasElement): boolean {
+  if (taintedCanvases.has(canvas)) return true;
+  if (cleanCanvases.has(canvas)) return false;
+  const source = resolveCanvasSource(canvas);
   try {
     const probe = document.createElement('canvas');
     probe.width = 1;
@@ -124,10 +188,10 @@ function isCanvasTainted(source: HTMLCanvasElement): boolean {
     if (!pctx) return false;
     pctx.drawImage(source, 0, 0, 1, 1);
     pctx.getImageData(0, 0, 1, 1);
-    cleanCanvases.add(source);
+    cleanCanvases.add(canvas);
     return false;
   } catch {
-    taintedCanvases.add(source);
+    taintedCanvases.add(canvas);
     return true;
   }
 }
@@ -137,9 +201,11 @@ function isCanvasTainted(source: HTMLCanvasElement): boolean {
 // (background + foreground, game + HUD) blend correctly. The composite keeps
 // the largest canvas at its native resolution; siblings are scaled relative
 // to it. Tainted canvases (cross-origin images without CORS) are skipped so
-// one bad layer can't blank the whole capture.
-function composeCanvases(placements: CanvasPlacement[]): HTMLCanvasElement | null {
-  const composed = renderComposite(placements);
+// one bad layer can't blank the whole capture. `sync` forces WebGL contexts to
+// present before reading (only used for one-shot screenshots, not the rolling
+// buffer, where a blocking finish() every sample would be wasteful).
+function composeCanvases(placements: CanvasPlacement[], sync = false): HTMLCanvasElement | null {
+  const composed = renderComposite(placements, sync);
   if (composed) return composed;
   // Fallback for canvases with a zero-size layout box (e.g. display:none):
   // position them by intrinsic size at the origin.
@@ -152,12 +218,13 @@ function composeCanvases(placements: CanvasPlacement[]): HTMLCanvasElement | nul
         width: p.canvas.width,
         height: p.canvas.height,
       })),
+      sync,
     );
   }
   return null;
 }
 
-function renderComposite(placements: CanvasPlacement[]): HTMLCanvasElement | null {
+function renderComposite(placements: CanvasPlacement[], sync = false): HTMLCanvasElement | null {
   let minLeft = Infinity;
   let minTop = Infinity;
   let maxRight = -Infinity;
@@ -200,13 +267,16 @@ function renderComposite(placements: CanvasPlacement[]): HTMLCanvasElement | nul
     .filter((p) => p.width > 0 && p.height > 0)
     .sort((a, b) => documentOrder(a.canvas, b.canvas));
 
+  if (sync) syncWebGLContexts();
+
   let drawn = 0;
   for (const p of sorted) {
     if (isCanvasTainted(p.canvas)) continue;
+    const source = resolveCanvasSource(p.canvas);
     const dx = (p.left - minLeft) * scale;
     const dy = (p.top - minTop) * scale;
     try {
-      ctx.drawImage(p.canvas, dx, dy, p.canvas.width, p.canvas.height);
+      ctx.drawImage(source, dx, dy, source.width, source.height);
       drawn++;
     } catch {
       // Unreadable layer — skip.
@@ -338,7 +408,7 @@ function run(): void {
       send({ type: 'CAPTURE_ERROR', requestId, message: 'no-canvas' });
       return;
     }
-    const composite = composeCanvases(placements);
+    const composite = composeCanvases(placements, true);
     if (!composite) {
       send({ type: 'CAPTURE_ERROR', requestId, message: 'no-valid-canvas' });
       return;
