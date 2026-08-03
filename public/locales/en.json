@@ -378,6 +378,8 @@
   "arcade.capture_screenshot_failed": "Could not capture a screenshot",
   "arcade.capture_clip_failed": "Could not capture a clip",
   "arcade.capture_processing": "Processing capture...",
+  "arcade.share_capturing": "Capturing screenshot...",
+  "arcade.share_capture_footer": "Flaxia Arcade",
 
   "arcade.tutorial_btn": "❓",
   "arcade.tutorial_welcome_title": "🌿 Welcome to Flaxia!",

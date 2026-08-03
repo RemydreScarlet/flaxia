@@ -943,7 +943,7 @@ export class ArcadePage {
     });
   }
 
-  private handleShare(): void {
+  private async handleShare(): Promise<void> {
     const game = this.games[this.currentIndex];
     if (!game) return;
 
@@ -957,8 +957,7 @@ export class ArcadePage {
     });
 
     const arcadeUrl = `${window.location.origin}/arcade/${game.id}`;
-
-    createShareModal({
+    const shareProps = {
       post: {
         id: game.postId,
         text: game.title,
@@ -967,7 +966,33 @@ export class ArcadePage {
       },
       url: arcadeUrl,
       onClose: () => {},
-    });
+    };
+
+    const client = this.captureClient;
+    if (!client || this.captureBusy) {
+      createShareModal(shareProps);
+      return;
+    }
+
+    this.captureBusy = true;
+    showToast(t('arcade.share_capturing'));
+    try {
+      const blob = await client.requestFrame();
+      const card = await client.composeScoreCard(blob, {
+        title: game.title,
+        username: game.username,
+        footer: t('arcade.share_capture_footer'),
+      });
+      createShareModal({
+        ...shareProps,
+        media: { blob: card, filename: `flaxia-${game.id}-share.png` },
+      });
+    } catch (error) {
+      console.warn('Share capture failed:', error);
+      createShareModal(shareProps);
+    } finally {
+      this.captureBusy = false;
+    }
   }
 
   private commentPanel: HTMLElement | null = null;
