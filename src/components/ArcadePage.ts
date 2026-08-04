@@ -50,6 +50,7 @@ export class ArcadePage {
   private currentGameHandle: { destroy: () => void } | null = null;
   private captureClient: ArcadeCaptureClient | null = null;
   private captureBusy: boolean = false;
+  private bookmarkBusy: boolean = false;
   private touchStartY: number = 0;
   private touchEndY: number = 0;
   private touchStartX: number = 0;
@@ -841,6 +842,19 @@ export class ArcadePage {
     const commentsBtn = this.createActionButton('💬', formatCount(game.replyCount || 0), () => this.handleComments());
     commentsBtn.dataset.tutorial = 'comments';
 
+    // Bookmark (flag to save) button
+    const bookmarkBtn = this.createActionButton(
+      '🔖',
+      formatCount(game.bookmarkCount || 0),
+      () => this.handleBookmark(),
+      game.isBookmarked || false,
+    );
+    bookmarkBtn.title = t('arcade.bookmark');
+
+    // Report (flag) button
+    const reportBtn = this.createActionButton('🚩', '', () => this.handleReport());
+    reportBtn.title = t('arcade.report');
+
     // Screenshot button (hidden for now)
     // const screenshotBtn = this.createActionButton('📸', '', () => void this.handleCaptureScreenshot());
     // screenshotBtn.title = t('arcade.capture_screenshot');
@@ -853,6 +867,8 @@ export class ArcadePage {
     container.appendChild(fullscreenBtn);
     container.appendChild(shareBtn);
     container.appendChild(commentsBtn);
+    container.appendChild(bookmarkBtn);
+    container.appendChild(reportBtn);
     // container.appendChild(screenshotBtn);
     // container.appendChild(clipBtn);
 
@@ -1350,6 +1366,318 @@ export class ArcadePage {
       game.freshCount = Math.max(0, game.freshCount + (wasFreshed ? 1 : -1));
     }
     this.updateFloatingActions(game);
+  }
+
+  private async handleBookmark(): Promise<void> {
+    const game = this.games[this.currentIndex];
+    if (!game || this.bookmarkBusy) return;
+
+    if (!this.props.currentUser) {
+      showSignInPrompt(
+        'bookmark',
+        () => {
+          window.history.pushState({}, '', '/login');
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        },
+        () => {
+          window.history.pushState({}, '', '/register');
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        },
+      );
+      return;
+    }
+
+    const wasBookmarked = game.isBookmarked || false;
+    this.bookmarkBusy = true;
+
+    // Optimistic update
+    game.isBookmarked = !wasBookmarked;
+    game.bookmarkCount = Math.max(0, (game.bookmarkCount || 0) + (wasBookmarked ? -1 : 1));
+    this.updateFloatingActions(game);
+
+    try {
+      const res = await fetch(`/api/posts/${game.postId}/bookmark`, { method: 'POST', credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to toggle bookmark');
+      const data = (await res.json()) as { bookmarked: boolean; bookmark_count: number };
+      game.isBookmarked = data.bookmarked;
+      game.bookmarkCount = data.bookmark_count;
+      showToast(data.bookmarked ? t('arcade.bookmarked') : t('arcade.bookmark_removed'));
+    } catch {
+      // Rollback on error
+      game.isBookmarked = wasBookmarked;
+      game.bookmarkCount = Math.max(0, (game.bookmarkCount || 0) + (wasBookmarked ? 1 : -1));
+      showToast(t('arcade.bookmark_failed'), true);
+    } finally {
+      this.bookmarkBusy = false;
+    }
+    this.updateFloatingActions(game);
+  }
+
+  private handleReport(): void {
+    const game = this.games[this.currentIndex];
+    if (!game) return;
+
+    if (!this.props.currentUser) {
+      showSignInPrompt(
+        'report',
+        () => {
+          window.history.pushState({}, '', '/login');
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        },
+        () => {
+          window.history.pushState({}, '', '/register');
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        },
+      );
+      return;
+    }
+
+    this.showReportModal(game);
+  }
+
+  private showReportModal(game: Game): void {
+    const overlay = document.createElement('div');
+    const unregister = registerModal();
+    overlay.className = 'report-modal-overlay';
+    overlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    `;
+
+    const dialog = document.createElement('div');
+    dialog.style.cssText = `
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 24px;
+      max-width: 420px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+    `;
+
+    const categories = [
+      { value: 'spam', label: t('post.report_category_spam') },
+      { value: 'harassment', label: t('post.report_category_harassment') },
+      { value: 'hate_speech', label: t('post.report_category_hate_speech') },
+      { value: 'inappropriate', label: t('post.report_category_inappropriate') },
+      { value: 'misinformation', label: t('post.report_category_misinformation') },
+      { value: 'privacy', label: t('post.report_category_privacy') },
+      { value: 'copyright', label: t('post.report_category_copyright') },
+      { value: 'malware', label: t('post.report_category_malware') },
+      { value: 'csam', label: t('post.report_category_csam') },
+      { value: 'nsfw_untagged', label: t('post.report_category_nsfw_untagged') },
+      { value: 'other', label: t('post.report_category_other') },
+    ];
+
+    dialog.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h3 style="margin: 0; font-size: 18px; color: var(--text-primary);">${t('arcade.report_title')}</h3>
+        <button class="close-btn" style="
+          background: none;
+          border: none;
+          color: var(--text-muted);
+          font-size: 20px;
+          cursor: pointer;
+        ">✕</button>
+      </div>
+      <p style="margin: 0 0 16px 0; color: var(--text-muted); font-size: 14px;">${t('post.report_question')}</p>
+      <div class="categories" style="margin-bottom: 24px;">
+        ${categories
+          .map(
+            (c) => `
+          <label style="
+            display: flex;
+            align-items: center;
+            padding: 10px 0;
+            cursor: pointer;
+            color: var(--text-primary);
+          ">
+            <input type="radio" name="report-category" value="${c.value}" style="margin-right: 12px;">
+            <span>${c.label}</span>
+          </label>
+        `,
+          )
+          .join('')}
+      </div>
+      <div class="dmca-section" style="display: none; margin-bottom: 24px; padding: 16px; background: var(--bg-secondary); border-radius: 8px;">
+        <h4 style="margin: 0 0 12px 0; font-size: 14px; color: var(--text-primary);">${t('post.report_dmca_title')}</h4>
+        <div style="margin-bottom: 12px;">
+          <label style="display: block; margin-bottom: 4px; font-size: 12px; color: var(--text-muted);">${t('post.report_dmca_work_label')}</label>
+          <input type="text" class="dmca-work" style="
+            width: 100%;
+            padding: 8px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 14px;
+            box-sizing: border-box;
+          " placeholder="${t('post.report_dmca_work_placeholder')}">
+        </div>
+        <div style="margin-bottom: 12px;">
+          <label style="display: block; margin-bottom: 4px; font-size: 12px; color: var(--text-muted);">${t('post.report_dmca_email_label')}</label>
+          <input type="email" class="dmca-email" style="
+            width: 100%;
+            padding: 8px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 14px;
+            box-sizing: border-box;
+          " placeholder="${t('post.report_dmca_email_placeholder')}">
+        </div>
+        <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer;">
+          <input type="checkbox" class="dmca-sworn" style="margin-top: 2px;">
+          <span style="font-size: 12px; color: var(--text-muted);">${t('post.report_dmca_swear')}</span>
+        </label>
+      </div>
+      <div style="display: flex; justify-content: flex-end;">
+        <button class="submit-btn" disabled style="
+          padding: 10px 24px;
+          background: var(--accent);
+          border: none;
+          border-radius: 9999px;
+          color: #000;
+          font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          font-size: 14px;
+          cursor: pointer;
+          opacity: 0.5;
+        ">${t('common.submit')}</button>
+      </div>
+    `;
+
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    const submitBtn = dialog.querySelector('.submit-btn') as HTMLButtonElement;
+    const closeBtn = dialog.querySelector('.close-btn');
+    const radioInputs = dialog.querySelectorAll('input[name="report-category"]');
+    const dmcaSection = dialog.querySelector('.dmca-section') as HTMLElement;
+    const dmcaWorkInput = dialog.querySelector('.dmca-work') as HTMLInputElement;
+    const dmcaEmailInput = dialog.querySelector('.dmca-email') as HTMLInputElement;
+    const dmcaSwornCheckbox = dialog.querySelector('.dmca-sworn') as HTMLInputElement;
+
+    let selectedCategory: string | null = null;
+
+    radioInputs.forEach((input) => {
+      input.addEventListener('change', (e) => {
+        selectedCategory = (e.target as HTMLInputElement).value;
+        submitBtn.disabled = false;
+        submitBtn.style.opacity = '1';
+
+        if (selectedCategory === 'copyright') {
+          dmcaSection.style.display = 'block';
+        } else {
+          dmcaSection.style.display = 'none';
+        }
+      });
+    });
+
+    const checkSubmitEnabled = () => {
+      if (!selectedCategory) {
+        return false;
+      }
+      if (selectedCategory === 'copyright') {
+        const workDescription = dmcaWorkInput.value.trim();
+        const email = dmcaEmailInput.value.trim();
+        const sworn = dmcaSwornCheckbox.checked;
+        return workDescription.length > 0 && email.length > 0 && sworn;
+      }
+      return true;
+    };
+
+    dmcaWorkInput?.addEventListener('input', () => {
+      submitBtn.disabled = !checkSubmitEnabled();
+      submitBtn.style.opacity = checkSubmitEnabled() ? '1' : '0.5';
+    });
+
+    dmcaEmailInput?.addEventListener('input', () => {
+      submitBtn.disabled = !checkSubmitEnabled();
+      submitBtn.style.opacity = checkSubmitEnabled() ? '1' : '0.5';
+    });
+
+    dmcaSwornCheckbox?.addEventListener('change', () => {
+      submitBtn.disabled = !checkSubmitEnabled();
+      submitBtn.style.opacity = checkSubmitEnabled() ? '1' : '0.5';
+    });
+
+    closeBtn?.addEventListener('click', () => {
+      unregister();
+      overlay.remove();
+    });
+
+    submitBtn?.addEventListener('click', async () => {
+      if (!selectedCategory) return;
+
+      let dmcaData: { work_description: string; reporter_email: string; sworn: boolean } | undefined;
+      if (selectedCategory === 'copyright') {
+        dmcaData = {
+          work_description: dmcaWorkInput.value.trim(),
+          reporter_email: dmcaEmailInput.value.trim(),
+          sworn: dmcaSwornCheckbox.checked,
+        };
+      }
+
+      unregister();
+      overlay.remove();
+      await this.submitReport(game.postId, selectedCategory, dmcaData);
+    });
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        unregister();
+        overlay.remove();
+      }
+    });
+  }
+
+  private async submitReport(
+    postId: string,
+    category: string,
+    dmcaData?: { work_description: string; reporter_email: string; sworn: boolean },
+  ): Promise<void> {
+    try {
+      const body: {
+        post_id: string;
+        category: string;
+        dmca?: { work_description: string; reporter_email: string; sworn: boolean };
+      } = { post_id: postId, category };
+      if (dmcaData) {
+        body.dmca = dmcaData;
+      }
+
+      const response = await fetch('/api/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body),
+      });
+
+      if (response.status === 409) {
+        showToast(t('post.report_already'));
+        return;
+      }
+
+      if (!response.ok) {
+        const errorData = (await response.json()) as { error?: string };
+        throw new Error(errorData?.error || 'Failed to submit report');
+      }
+
+      showToast(t('post.report_submitted'));
+    } catch (error) {
+      console.error('Report error:', error);
+      showToast(t('post.report_failed'), true);
+    }
   }
 
   private updateFloatingActions(game: Game): void {

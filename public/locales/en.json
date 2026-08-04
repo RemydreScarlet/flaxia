@@ -379,6 +379,12 @@
   "arcade.capture_processing": "Processing capture...",
   "arcade.share_capturing": "Capturing screenshot...",
   "arcade.share_capture_footer": "Flaxia Arcade",
+  "arcade.bookmark": "Bookmark",
+  "arcade.bookmarked": "Added to bookmarks",
+  "arcade.bookmark_removed": "Removed from bookmarks",
+  "arcade.bookmark_failed": "Failed to update bookmark",
+  "arcade.report": "Report",
+  "arcade.report_title": "🚩 Report game",
 
   "arcade.tutorial_btn": "❓",
   "arcade.tutorial_welcome_title": "🌿 Welcome to Flaxia!",

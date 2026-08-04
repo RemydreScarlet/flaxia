@@ -14,8 +14,10 @@ export interface Game {
   thumbnailKey?: string;
   freshCount: number;
   replyCount: number;
+  bookmarkCount: number;
   impressions: number;
   isFreshed?: boolean;
+  isBookmarked?: boolean;
   createdAt: string;
 }
 

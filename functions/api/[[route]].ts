@@ -1396,18 +1396,29 @@ app.get('/api/games', async (c) => {
 
         if (currentUserId && parsed.games.length > 0) {
           const gameIds = parsed.games.map((g: Record<string, unknown>) => g.id as string);
-          const freshResults = await c.env.DB.prepare(`
-            SELECT post_id FROM freshs WHERE user_id = ? AND post_id IN (${gameIds.map(() => '?').join(',')})
-          `)
-            .bind(currentUserId, ...gameIds)
-            .all();
+          const [freshResults, bookmarkResults] = await Promise.all([
+            c.env.DB.prepare(`
+              SELECT post_id FROM freshs WHERE user_id = ? AND post_id IN (${gameIds.map(() => '?').join(',')})
+            `)
+              .bind(currentUserId, ...gameIds)
+              .all(),
+            c.env.DB.prepare(`
+              SELECT post_id FROM bookmarks WHERE user_id = ? AND post_id IN (${gameIds.map(() => '?').join(',')})
+            `)
+              .bind(currentUserId, ...gameIds)
+              .all(),
+          ]);
 
           const freshedPostIds = new Set(
             freshResults.results?.map((r: Record<string, unknown>) => r.post_id as string) || [],
           );
+          const bookmarkedPostIds = new Set(
+            bookmarkResults.results?.map((r: Record<string, unknown>) => r.post_id as string) || [],
+          );
 
           parsed.games.forEach((game: Record<string, unknown>) => {
             game.isFreshed = freshedPostIds.has(game.id as string);
+            game.isBookmarked = bookmarkedPostIds.has(game.id as string);
           });
         }
 
@@ -1502,7 +1513,8 @@ app.get('/api/games', async (c) => {
             p.id as postId, p.user_id, p.text, p.swf_key, p.payload_key,
             p.thumbnail_key, p.fresh_count,
             COALESCE(p.reply_count, 0) as reply_count,
-            p.bookmark_count, p.impressions, p.created_at,
+            COALESCE(p.bookmark_count, 0) as bookmark_count,
+            p.impressions, p.created_at,
             u.username, u.display_name, u.avatar_key
           FROM posts p
           JOIN users u ON p.user_id = u.id
@@ -1518,6 +1530,7 @@ app.get('/api/games', async (c) => {
             thumbnail_key: string | null;
             fresh_count: number;
             reply_count: number;
+            bookmark_count: number;
             impressions: number;
             created_at: string;
             username: string;
@@ -1528,15 +1541,26 @@ app.get('/api/games', async (c) => {
         const gameMap = new Map((sliceData || []).map((r) => [r.postId, r]));
 
         let sliceFreshedPostIds: Set<string> = new Set();
+        let sliceBookmarkedPostIds: Set<string> = new Set();
         if (currentUserId && sliceData && sliceData.length > 0) {
           const slicePostIds = sliceData.map((r) => r.postId);
-          const freshResults = await c.env.DB.prepare(`
-            SELECT post_id FROM freshs WHERE user_id = ? AND post_id IN (${slicePostIds.map(() => '?').join(',')})
-          `)
-            .bind(currentUserId, ...slicePostIds)
-            .all();
+          const [freshResults, bookmarkResults] = await Promise.all([
+            c.env.DB.prepare(`
+              SELECT post_id FROM freshs WHERE user_id = ? AND post_id IN (${slicePostIds.map(() => '?').join(',')})
+            `)
+              .bind(currentUserId, ...slicePostIds)
+              .all(),
+            c.env.DB.prepare(`
+              SELECT post_id FROM bookmarks WHERE user_id = ? AND post_id IN (${slicePostIds.map(() => '?').join(',')})
+            `)
+              .bind(currentUserId, ...slicePostIds)
+              .all(),
+          ]);
           sliceFreshedPostIds = new Set(
             freshResults.results?.map((r: Record<string, unknown>) => r.post_id as string) || [],
+          );
+          sliceBookmarkedPostIds = new Set(
+            bookmarkResults.results?.map((r: Record<string, unknown>) => r.post_id as string) || [],
           );
         }
 
@@ -1560,8 +1584,10 @@ app.get('/api/games', async (c) => {
               thumbnailKey: row.thumbnail_key || undefined,
               freshCount: row.fresh_count,
               replyCount: row.reply_count,
+              bookmarkCount: row.bookmark_count,
               impressions: row.impressions,
               isFreshed: sliceFreshedPostIds.has(row.postId),
+              isBookmarked: sliceBookmarkedPostIds.has(row.postId),
               createdAt: row.created_at,
             };
             return game;
@@ -1614,6 +1640,7 @@ app.get('/api/games', async (c) => {
       const candidateQuery = `
         SELECT p.id as postId, p.user_id, p.text, p.swf_key, p.payload_key,
                p.thumbnail_key, p.fresh_count, COALESCE(p.reply_count, 0) as reply_count,
+               COALESCE(p.bookmark_count, 0) as bookmark_count,
                p.impressions, p.created_at,
                u.username, u.display_name, u.avatar_key
         FROM posts p
@@ -1632,6 +1659,7 @@ app.get('/api/games', async (c) => {
         thumbnail_key: string | null;
         fresh_count: number;
         reply_count: number;
+        bookmark_count: number;
         impressions: number;
         created_at: string;
         username: string;
@@ -1725,16 +1753,25 @@ app.get('/api/games', async (c) => {
       const page = scored.slice(offset, offset + limit);
       const hasMore = offset + limit < scored.length;
 
-      // Check fresh status
+      // Check fresh / bookmark status
       let freshedPostIds: Set<string> = new Set();
+      let bookmarkedPostIds: Set<string> = new Set();
       if (page.length > 0) {
         const pageIds = page.map((s) => s.row.postId);
-        const freshResult = await c.env.DB.prepare(
-          `SELECT post_id FROM freshs WHERE user_id = ? AND post_id IN (${pageIds.map(() => '?').join(',')})`,
-        )
-          .bind(currentUserId, ...pageIds)
-          .all<{ post_id: string }>();
+        const [freshResult, bookmarkResult] = await Promise.all([
+          c.env.DB.prepare(
+            `SELECT post_id FROM freshs WHERE user_id = ? AND post_id IN (${pageIds.map(() => '?').join(',')})`,
+          )
+            .bind(currentUserId, ...pageIds)
+            .all<{ post_id: string }>(),
+          c.env.DB.prepare(
+            `SELECT post_id FROM bookmarks WHERE user_id = ? AND post_id IN (${pageIds.map(() => '?').join(',')})`,
+          )
+            .bind(currentUserId, ...pageIds)
+            .all<{ post_id: string }>(),
+        ]);
         freshedPostIds = new Set((freshResult.results || []).map((r) => r.post_id));
+        bookmarkedPostIds = new Set((bookmarkResult.results || []).map((r) => r.post_id));
       }
 
       const games = page.map(({ row }) => {
@@ -1754,8 +1791,10 @@ app.get('/api/games', async (c) => {
           thumbnailKey: row.thumbnail_key || undefined,
           freshCount: row.fresh_count,
           replyCount: row.reply_count,
+          bookmarkCount: row.bookmark_count,
           impressions: row.impressions,
           isFreshed: freshedPostIds.has(row.postId),
+          isBookmarked: bookmarkedPostIds.has(row.postId),
           createdAt: row.created_at,
         };
       });
@@ -1773,6 +1812,7 @@ app.get('/api/games', async (c) => {
         p.thumbnail_key,
         p.fresh_count,
         COALESCE(p.reply_count, 0) as reply_count,
+        COALESCE(p.bookmark_count, 0) as bookmark_count,
         p.impressions,
         p.created_at,
         u.username,
@@ -1813,6 +1853,7 @@ app.get('/api/games', async (c) => {
         thumbnail_key: string | null;
         fresh_count: number;
         reply_count: number;
+        bookmark_count: number;
         impressions: number;
         created_at: string;
         username: string;
@@ -1821,15 +1862,26 @@ app.get('/api/games', async (c) => {
       }>();
 
     let freshedPostIds: Set<string> = new Set();
+    let bookmarkedPostIds: Set<string> = new Set();
     if (currentUserId && results.length > 0) {
       const postIds = results.map((row) => row.postId);
-      const freshResults = await c.env.DB.prepare(`
-        SELECT post_id FROM freshs WHERE user_id = ? AND post_id IN (${postIds.map(() => '?').join(',')})
-      `)
-        .bind(currentUserId, ...postIds)
-        .all();
+      const [freshResults, bookmarkResults] = await Promise.all([
+        c.env.DB.prepare(`
+          SELECT post_id FROM freshs WHERE user_id = ? AND post_id IN (${postIds.map(() => '?').join(',')})
+        `)
+          .bind(currentUserId, ...postIds)
+          .all(),
+        c.env.DB.prepare(`
+          SELECT post_id FROM bookmarks WHERE user_id = ? AND post_id IN (${postIds.map(() => '?').join(',')})
+        `)
+          .bind(currentUserId, ...postIds)
+          .all(),
+      ]);
 
       freshedPostIds = new Set(freshResults.results?.map((r: Record<string, unknown>) => r.post_id as string) || []);
+      bookmarkedPostIds = new Set(
+        bookmarkResults.results?.map((r: Record<string, unknown>) => r.post_id as string) || [],
+      );
     }
 
     const games = (results || []).map((row) => {
@@ -1852,8 +1904,10 @@ app.get('/api/games', async (c) => {
         thumbnailKey: row.thumbnail_key || undefined,
         freshCount: row.fresh_count,
         replyCount: row.reply_count,
+        bookmarkCount: row.bookmark_count,
         impressions: row.impressions,
         isFreshed: freshedPostIds.has(row.postId),
+        isBookmarked: bookmarkedPostIds.has(row.postId),
         createdAt: row.created_at,
       };
     });
@@ -1874,6 +1928,7 @@ app.get('/api/games', async (c) => {
           games: trimmedGames.map((game) => ({
             ...game,
             isFreshed: false,
+            isBookmarked: false,
           })),
           hasMore,
           cursor: nextCursor,
