@@ -812,8 +812,7 @@ export class ArcadePage {
     container.style.cssText = `
       position: absolute;
       right: 1rem;
-      top: 50%;
-      transform: translateY(-50%);
+      bottom: 1.5rem;
       display: flex;
       flex-direction: column;
       gap: 1rem;
