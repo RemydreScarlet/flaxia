@@ -497,7 +497,7 @@ function parseRange(rangeHeader: string, fileSize: number): { start: number; end
   return { start, end };
 }
 
-async function handleRangeRequest(c: any, object: any, contentType: string): Promise<Response> {
+async function handleRangeRequest(c: any, key: string, object: any, contentType: string): Promise<Response> {
   const fileSize = object.size || 0;
   const rangeHeader = c.req.header('Range');
 
@@ -523,8 +523,16 @@ async function handleRangeRequest(c: any, object: any, contentType: string): Pro
     });
   }
 
+  // R2 has no R2ObjectBody.range(); byte ranges are requested via the get()
+  // options, otherwise execution throws and the video proxy returns HTTP 500.
   const chunkSize = range.end - range.start + 1;
-  const ranged = await object.range(range.start, chunkSize);
+  const ranged = await c.env.BUCKET.get(key, {
+    range: { offset: range.start, length: chunkSize },
+  });
+
+  if (!ranged) {
+    return c.json({ error: 'Video not found' }, 404);
+  }
 
   return new Response(ranged.body, {
     status: 206,
@@ -628,7 +636,7 @@ app.get('/api/audio/*', async (c) => {
       }
     }
 
-    return handleRangeRequest(c, object, contentType);
+    return handleRangeRequest(c, key, object, contentType);
   } catch (error: unknown) {
     console.error('Audio proxy error:', error);
     return c.json({ error: 'Failed to fetch audio' }, 500);
@@ -671,7 +679,7 @@ app.get('/api/video/*', async (c) => {
       }
     }
 
-    return handleRangeRequest(c, object, contentType);
+    return handleRangeRequest(c, key, object, contentType);
   } catch (error: unknown) {
     console.error('Video proxy error:', error);
     return c.json({ error: 'Failed to fetch video' }, 500);
