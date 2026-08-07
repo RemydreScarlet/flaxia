@@ -172,6 +172,13 @@ export function parseBanditConfig(raw: string | null | undefined): LinUCBConfig 
   }
 }
 
+// Stable key identifying a projection config (seed/srcDim/dim). Stored projected
+// vectors are tagged with this key so reads can detect staleness when the bandit
+// config changes.
+export function projConfigKey(config: Pick<LinUCBConfig, 'seed' | 'srcDim' | 'dim'>): string {
+  return `${config.seed}:${config.srcDim}:${config.dim}`;
+}
+
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }

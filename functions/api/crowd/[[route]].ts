@@ -5,6 +5,32 @@ const MIME: Record<string, string> = {
   json: 'application/json',
 };
 
+import type { LinUCBConfig } from '../../lib/linucb';
+import { createProjection, parseBanditConfig, projConfigKey, project } from '../../lib/linucb';
+
+const BANDIT_CONFIG_KEY = 'arcade:bandit:config';
+const projectionCache = new Map<string, number[][]>();
+
+function getProjection(config: LinUCBConfig): number[][] {
+  const key = projConfigKey(config);
+  let proj = projectionCache.get(key);
+  if (!proj) {
+    proj = createProjection(config.srcDim, config.dim, config.seed);
+    projectionCache.set(key, proj);
+  }
+  return proj;
+}
+
+async function loadBanditConfig(env: Record<string, unknown>): Promise<LinUCBConfig> {
+  const cache = env.CACHE as KVNamespace | undefined;
+  if (!cache) return { ...parseBanditConfig(null) };
+  try {
+    return parseBanditConfig(await cache.get(BANDIT_CONFIG_KEY));
+  } catch {
+    return { ...parseBanditConfig(null) };
+  }
+}
+
 export async function onRequest(context: {
   request: Request;
   env: Record<string, unknown>;
@@ -67,11 +93,21 @@ export async function onRequest(context: {
                   console.error('Vectorize upsert failed:', ve);
                 }
               }
+              const banditConfig = await loadBanditConfig(context.env as Record<string, unknown>);
+              const proj = getProjection(banditConfig);
+              const projected = project(vector, proj);
               await db
                 .prepare(
-                  'INSERT OR REPLACE INTO post_embeddings (post_id, embedding, model, dimensions) VALUES (?, ?, ?, ?)',
+                  'INSERT OR REPLACE INTO post_embeddings (post_id, embedding, model, dimensions, bandit_vec, bandit_cfg) VALUES (?, ?, ?, ?, ?, ?)',
                 )
-                .bind(postId, JSON.stringify(vector), model, dimensions)
+                .bind(
+                  postId,
+                  JSON.stringify(vector),
+                  model,
+                  dimensions,
+                  JSON.stringify(projected),
+                  projConfigKey(banditConfig),
+                )
                 .run();
               console.log(`Vector embed webhook done for post ${postId}: dims=${dimensions}`);
             }

@@ -35,6 +35,7 @@ import {
   type LinUCBConfig,
   type LinUCBState,
   parseBanditConfig,
+  projConfigKey,
   serializeState,
 } from '../lib/linucb';
 import { sendPushToAll } from '../lib/notify';
@@ -153,7 +154,7 @@ app.use('/api/*', async (c, next) => {
     return;
   }
   const token = getSessionToken(c.req.raw);
-  const sessionData = token ? await getSession(c.env, token) : null;
+  const sessionData = token ? await getMeWithSession(c.env, token) : null;
   c.set('user', sessionData?.user || null);
   await next();
 });
@@ -557,11 +558,32 @@ async function kvCacheSet(c: any, key: string, data: unknown, ttl: number): Prom
   }
 }
 
-function makeCacheKey(prefix: string, c: any, extra?: string): string {
+// includeUser=false makes the key user-agnostic so logged-in users share the
+// cache. Only safe for feeds whose result set is user-independent; per-user
+// filtering (e.g. block lists) must then be applied on cache read.
+function makeCacheKey(prefix: string, c: any, extra?: string, includeUser = true): string {
   const token = getSessionToken(c.req.raw);
   const userId = token ? token.substring(0, 12) : 'anon';
   const query = c.req.raw.url.split('?')[1] || '';
-  return `${prefix}:${userId}:${query}${extra ? ':' + extra : ''}`;
+  const userPart = includeUser ? userId : '';
+  return `${prefix}:${userPart}:${query}${extra ? ':' + extra : ''}`;
+}
+
+// Apply the current user's block list to a post list in JS so user-agnostic
+// caches can be shared across users without baking one user's blocks into them.
+async function filterBlockedAuthors(
+  db: D1Database,
+  currentUserId: string | null | undefined,
+  posts: Array<Record<string, unknown>>,
+): Promise<Array<Record<string, unknown>>> {
+  if (!currentUserId || posts.length === 0) return posts;
+  const blockedResult = await db
+    .prepare('SELECT blocked_id FROM blocks WHERE blocker_id = ?')
+    .bind(currentUserId)
+    .all<{ blocked_id: string }>();
+  if (!blockedResult.success || blockedResult.results.length === 0) return posts;
+  const blocked = new Set(blockedResult.results.map((r) => r.blocked_id));
+  return posts.filter((p) => !blocked.has(String(p.user_id)));
 }
 
 app.get('/api/audio/*', async (c) => {
@@ -1391,7 +1413,7 @@ app.get('/api/games', async (c) => {
         const parsed = JSON.parse(cachedData);
 
         const token = getSessionToken(c.req.raw);
-        const sessionData = token ? await getSession(c.env, token) : null;
+        const sessionData = token ? await getMeWithSession(c.env, token) : null;
         const currentUserId = sessionData?.user?.id;
 
         if (currentUserId && parsed.games.length > 0) {
@@ -1427,7 +1449,7 @@ app.get('/api/games', async (c) => {
     }
 
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token) : null;
     const currentUserId = sessionData?.user?.id;
 
     if (shuffle) {
@@ -1612,20 +1634,8 @@ app.get('/api/games', async (c) => {
       const profile = await loadOrComputeInterestVector(c.env.DB, currentUserId);
       const interestVector = profile?.vector ?? null;
 
-      // Get dwell stats for all games from other users
-      const dwellStats = new Map<string, { avgDwell: number; playCount: number }>();
-      const dwellResult = await c.env.DB.prepare(
-        `SELECT post_id, AVG(dwell_ms) as avg_dwell, COUNT(*) as play_count
-         FROM user_game_plays
-         WHERE dwell_ms > 2000 AND user_id != ?
-         GROUP BY post_id`,
-      )
-        .bind(currentUserId)
-        .all<{ post_id: string; avg_dwell: number; play_count: number }>();
-      for (const row of dwellResult.results || []) {
-        dwellStats.set(row.post_id, { avgDwell: Number(row.avg_dwell) || 0, playCount: row.play_count });
-      }
-      const maxAvgDwell = Math.max(...Array.from(dwellStats.values()).map((d) => d.avgDwell), 1);
+      // Get dwell stats for all games (shared across users, cached in KV)
+      const { dwellStats, maxAvgDwell } = await loadDwellStats(c.env.DB, c.env.CACHE);
 
       // Get games the user has already played
       const playedSet = new Set<string>();
@@ -1668,19 +1678,29 @@ app.get('/api/games', async (c) => {
       }>();
       const candidateRows = candidates.results || [];
 
-      // Get embeddings for candidates
-      const candEmbeds = new Map<string, number[]>();
+      // Get embeddings for candidates (plus precomputed bandit projections)
+      const candEmbeds = new Map<string, { vec: number[]; banditVec: number[] | null; banditCfg: string | null }>();
       if (candidateRows.length > 0) {
         const cIds = candidateRows.map((r) => r.postId);
         const eRows = await c.env.DB.prepare(
-          `SELECT post_id, embedding FROM post_embeddings WHERE post_id IN (${cIds.map(() => '?').join(',')})`,
+          `SELECT post_id, embedding, bandit_vec, bandit_cfg FROM post_embeddings WHERE post_id IN (${cIds.map(() => '?').join(',')})`,
         )
           .bind(...cIds)
-          .all<{ post_id: string; embedding: string }>();
+          .all<{ post_id: string; embedding: string; bandit_vec: string | null; bandit_cfg: string | null }>();
         for (const row of eRows.results || []) {
           try {
             const v = JSON.parse(row.embedding);
-            if (Array.isArray(v)) candEmbeds.set(row.post_id, v);
+            if (!Array.isArray(v)) continue;
+            let banditVec: number[] | null = null;
+            if (row.bandit_vec) {
+              try {
+                const bv = JSON.parse(row.bandit_vec);
+                if (Array.isArray(bv)) banditVec = bv;
+              } catch {
+                /* ignore malformed projection */
+              }
+            }
+            candEmbeds.set(row.post_id, { vec: v, banditVec, banditCfg: row.bandit_cfg ?? null });
           } catch {
             /* skip */
           }
@@ -1694,10 +1714,12 @@ app.get('/api/games', async (c) => {
       // Contextual bandit (LinUCB) layer, gated by KV config (default off).
       const banditConfig = await loadBanditConfig(c.env.CACHE);
       const banditProj = banditConfig.enabled ? getProjection(banditConfig) : null;
+      const banditCfgKey = banditProj ? projConfigKey(banditConfig) : null;
       const banditState = banditConfig.enabled ? await loadBanditState(c.env.DB, currentUserId, banditConfig) : null;
 
       const scored = candidateRows.map((row) => {
-        const emb = candEmbeds.get(row.postId);
+        const cand = candEmbeds.get(row.postId);
+        const emb = cand?.vec;
         let vecSim = 0;
         if (interestVector && emb) {
           vecSim = cosineSimilarity(interestVector, emb);
@@ -1715,8 +1737,11 @@ app.get('/api/games', async (c) => {
         const score = 0.35 * vecSim + 0.35 * expectedDwellNorm + 0.2 * explorationBonus + 0.1 * freshnessBonus;
 
         let banditScore = Number.NaN;
-        if (banditState && banditProj && emb) {
-          banditScore = banditComputeScore(banditState, banditProject(emb, banditProj), banditConfig.alpha);
+        if (banditState && banditProj && cand && emb) {
+          // Use the precomputed projection when its config matches the current
+          // one; otherwise fall back to projecting on the fly.
+          const x = cand.banditVec && cand.banditCfg === banditCfgKey ? cand.banditVec : banditProject(emb, banditProj);
+          banditScore = banditComputeScore(banditState, x, banditConfig.alpha);
         }
 
         return { row, score, banditScore };
@@ -1726,8 +1751,12 @@ app.get('/api/games', async (c) => {
       if (banditConfig.enabled) {
         const finiteBandit = scored.map((s) => s.banditScore).filter((v) => Number.isFinite(v));
         if (finiteBandit.length > 0) {
-          const bMin = Math.min(...finiteBandit);
-          const bMax = Math.max(...finiteBandit);
+          let bMin = Number.POSITIVE_INFINITY;
+          let bMax = Number.NEGATIVE_INFINITY;
+          for (const v of finiteBandit) {
+            if (v < bMin) bMin = v;
+            if (v > bMax) bMax = v;
+          }
           for (const item of scored) {
             if (!Number.isFinite(item.banditScore)) continue;
             const norm = bMax > bMin ? (item.banditScore - bMin) / (bMax - bMin) : 0.5;
@@ -1953,6 +1982,15 @@ app.get('/api/games', async (c) => {
 // views are also mirrored into user_game_plays so the existing dwell-based
 // recommendation keeps working.
 const ARCADE_EVENT_TYPES = new Set(['view', 'fresh', 'reply', 'fullscreen', 'share']);
+const MAX_ARCADE_EVENTS_PER_REQUEST = 200;
+const BATCH_CHUNK_SIZE = 100;
+
+async function runBatched(db: D1Database, statements: D1PreparedStatement[]): Promise<void> {
+  for (let i = 0; i < statements.length; i += BATCH_CHUNK_SIZE) {
+    await db.batch(statements.slice(i, i + BATCH_CHUNK_SIZE));
+  }
+}
+
 app.post('/api/games/events', async (c) => {
   try {
     const currentUserId = c.get('user')?.id;
@@ -1993,8 +2031,10 @@ app.post('/api/games/events', async (c) => {
     );
 
     const banditEvents: Array<{ postId: string; eventType: string; dwellMs: number }> = [];
+    const statements: D1PreparedStatement[] = [];
+    const eventList = events.slice(0, MAX_ARCADE_EVENTS_PER_REQUEST);
 
-    for (const event of events) {
+    for (const event of eventList) {
       if (typeof event?.postId !== 'string' || event.postId.length === 0) continue;
       if (typeof event?.eventType !== 'string' || !ARCADE_EVENT_TYPES.has(event.eventType)) continue;
 
@@ -2005,8 +2045,8 @@ app.post('/api/games/events', async (c) => {
       const isFullscreen = event.isFullscreen ? 1 : 0;
       const gameType = typeof event.gameType === 'string' ? event.gameType.slice(0, 32) : '';
 
-      await eventStmt
-        .bind(
+      statements.push(
+        eventStmt.bind(
           crypto.randomUUID(),
           currentUserId,
           event.postId,
@@ -2018,16 +2058,20 @@ app.post('/api/games/events', async (c) => {
           didSkip,
           isFullscreen,
           gameType,
-        )
-        .run();
+        ),
+      );
 
       // Mirror positive-dwell views into the existing dwell aggregate table.
       if (event.eventType === 'view' && dwellMs > 2000) {
-        await dwellStmt.bind(crypto.randomUUID(), currentUserId, event.postId, dwellMs, isFullscreen, gameType).run();
+        statements.push(
+          dwellStmt.bind(crypto.randomUUID(), currentUserId, event.postId, dwellMs, isFullscreen, gameType),
+        );
       }
 
       banditEvents.push({ postId: event.postId, eventType: event.eventType, dwellMs });
     }
+
+    await runBatched(c.env.DB, statements);
 
     // Feed the dwell-maximizing bandit with rewards (no-op while disabled).
     await applyBanditRewards(c.env.DB, c.env.CACHE, currentUserId, banditEvents);
@@ -2059,10 +2103,12 @@ app.post('/api/games/dwell', async (c) => {
        VALUES (?, ?, ?, ?, ?, ?, 'arcade')`,
     );
 
-    for (const play of plays) {
+    const statements: D1PreparedStatement[] = [];
+    for (const play of plays.slice(0, MAX_ARCADE_EVENTS_PER_REQUEST)) {
       const id = crypto.randomUUID();
-      await stmt.bind(id, currentUserId, play.postId, play.dwellMs, play.isFullscreen, play.gameType).run();
+      statements.push(stmt.bind(id, currentUserId, play.postId, play.dwellMs, play.isFullscreen, play.gameType));
     }
+    await runBatched(c.env.DB, statements);
 
     return c.json({ ok: true });
   } catch (error: unknown) {
@@ -2171,7 +2217,7 @@ app.get('/api/users/suggestions', async (c) => {
   try {
     // Get current user from session
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token) : null;
 
     // If not authenticated, return empty list
     if (!sessionData || !c.env.DB) {
@@ -2224,7 +2270,7 @@ app.post('/api/follows/:id', requireAuth, async (c) => {
     }
 
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token) : null;
     if (!sessionData) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
@@ -2273,7 +2319,7 @@ app.post('/api/remote-follow', requireAuth, async (c) => {
     }
 
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token) : null;
     if (!sessionData) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
@@ -2382,7 +2428,7 @@ app.delete('/api/remote-follow', requireAuth, async (c) => {
     }
 
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token) : null;
     if (!sessionData) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
@@ -3374,7 +3420,7 @@ app.get('/api/users/:username', async (c) => {
     // Check if current user follows this user (if authenticated)
     let is_following = false;
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token) : null;
     if (sessionData && sessionData.user.id !== user.id) {
       const followResult = await c.env.DB.prepare('SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ?')
         .bind(sessionData.user.id, user.id)
@@ -3428,7 +3474,7 @@ app.get('/api/users/:username/followers', async (c) => {
     // Get current user for follow status (optional)
     let currentUserId: string | null = null;
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token) : null;
     if (sessionData) {
       currentUserId = sessionData.user.id;
     }
@@ -3546,7 +3592,7 @@ app.get('/api/users/:username/following', async (c) => {
     // Get current user for follow status (optional)
     let currentUserId: string | null = null;
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token) : null;
     if (sessionData) {
       currentUserId = sessionData.user.id;
     }
@@ -3637,7 +3683,7 @@ app.get('/api/users/:username/following', async (c) => {
 app.patch('/api/users/me', requireAuth, async (c) => {
   try {
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token) : null;
     if (!sessionData) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
@@ -3828,7 +3874,7 @@ app.patch('/api/users/me', requireAuth, async (c) => {
 app.patch('/api/users/me/email', requireAuth, async (c) => {
   try {
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token) : null;
     if (!sessionData) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
@@ -3895,7 +3941,7 @@ app.patch('/api/users/me/email', requireAuth, async (c) => {
 app.patch('/api/users/me/password', requireAuth, async (c) => {
   try {
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token) : null;
     if (!sessionData) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
@@ -3957,7 +4003,7 @@ app.patch('/api/users/me/password', requireAuth, async (c) => {
 app.delete('/api/users/me', requireAuth, async (c) => {
   try {
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token) : null;
     if (!sessionData) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
@@ -3991,7 +4037,7 @@ app.delete('/api/users/me', requireAuth, async (c) => {
 app.post('/api/users/me/avatar', requireAuth, async (c) => {
   try {
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token) : null;
     if (!sessionData) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
@@ -4088,7 +4134,7 @@ app.post('/api/users/:username/follow', requireAuth, async (c) => {
     }
 
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token) : null;
     if (!sessionData) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
@@ -4145,7 +4191,7 @@ app.delete('/api/users/:username/follow', requireAuth, async (c) => {
     }
 
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token) : null;
     if (!sessionData) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
@@ -4320,7 +4366,7 @@ app.get('/api/posts', async (c) => {
     // Get current user ID for fresh status (optional for all tabs, required for Following tab)
     let currentUserId: string | null = null;
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token) : null;
     if (sessionData) {
       currentUserId = sessionData.user.id;
     }
@@ -4336,10 +4382,15 @@ app.get('/api/posts', async (c) => {
         'timeline',
         c,
         `${limit}:${hashtag || ''}:${following ? 'following' : ''}:${username || ''}`,
+        !following,
       );
       const cached = await kvCacheGet<{ posts: Record<string, unknown>[] }>(c, cacheKey);
       if (cached) {
-        const posts = cached.posts;
+        // User-agnostic cache: shared feeds must re-apply the current user's block list.
+        let posts = cached.posts;
+        if (!following && !username) {
+          posts = (await filterBlockedAuthors(c.env.DB, currentUserId, posts)).slice(0, limit);
+        }
         if (currentUserId && posts.length > 0) {
           const postIds = posts.map((p) => String(p.id));
           const [freshResult, bookmarkResult] = await Promise.all([
@@ -4378,6 +4429,9 @@ app.get('/api/posts', async (c) => {
       ? 'AND p.user_id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id = ?)'
       : '';
     const blockParam = currentUserId ? [currentUserId] : [];
+    // Shared first pages fetch a small surplus so the user-agnostic cache can
+    // still return a full page after the per-user block filter runs in JS.
+    const fetchLimit = limit + 20;
 
     if (hashtag) {
       // Filter by hashtag using json_each
@@ -4385,8 +4439,8 @@ app.get('/api/posts', async (c) => {
         query = `SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, u.language as author_language, p.text, p.hashtags, p.mentions, p.gif_key, p.payload_key, p.swf_key, p.thumbnail_key, p.fresh_count, COALESCE(p.bookmark_count, 0) as bookmark_count, COALESCE(p.reply_count, 0) as reply_count,           COALESCE(p.impressions, 0) as impressions, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = 'published' AND p.hidden = 0 AND p.parent_id IS NULL AND EXISTS (SELECT 1 FROM json_each(p.hashtags) WHERE value = ?) AND p.created_at < ? ${blockFilter} ORDER BY p.created_at DESC LIMIT ?`;
         params = [hashtag, cursor, ...blockParam, limit];
       } else {
-        query = `SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, u.language as author_language, p.text, p.hashtags, p.mentions, p.gif_key, p.payload_key, p.swf_key, p.thumbnail_key, p.fresh_count, COALESCE(p.bookmark_count, 0) as bookmark_count, COALESCE(p.reply_count, 0) as reply_count,           COALESCE(p.impressions, 0) as impressions, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = 'published' AND p.hidden = 0 AND p.parent_id IS NULL AND EXISTS (SELECT 1 FROM json_each(p.hashtags) WHERE value = ?) ${blockFilter} ORDER BY p.created_at DESC LIMIT ?`;
-        params = [hashtag, ...blockParam, limit];
+        query = `SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, u.language as author_language, p.text, p.hashtags, p.mentions, p.gif_key, p.payload_key, p.swf_key, p.thumbnail_key, p.fresh_count, COALESCE(p.bookmark_count, 0) as bookmark_count, COALESCE(p.reply_count, 0) as reply_count,           COALESCE(p.impressions, 0) as impressions, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = 'published' AND p.hidden = 0 AND p.parent_id IS NULL AND EXISTS (SELECT 1 FROM json_each(p.hashtags) WHERE value = ?) ORDER BY p.created_at DESC LIMIT ?`;
+        params = [hashtag, fetchLimit];
       }
     } else if (following && currentUserId) {
       // Following tab - show posts from followed users and current user's own posts
@@ -4438,8 +4492,8 @@ app.get('/api/posts', async (c) => {
         query = `SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, u.language as author_language, p.text, p.hashtags, p.mentions, p.gif_key, p.payload_key, p.swf_key, p.thumbnail_key, p.fresh_count, COALESCE(p.bookmark_count, 0) as bookmark_count, COALESCE(p.reply_count, 0) as reply_count,           COALESCE(p.impressions, 0) as impressions, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = 'published' AND p.hidden = 0 AND p.parent_id IS NULL AND p.created_at < ? ${blockFilter} ORDER BY p.created_at DESC LIMIT ?`;
         params = [cursor, ...blockParam, limit];
       } else {
-        query = `SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, u.language as author_language, p.text, p.hashtags, p.mentions, p.gif_key, p.payload_key, p.swf_key, p.thumbnail_key, p.fresh_count, COALESCE(p.bookmark_count, 0) as bookmark_count, COALESCE(p.reply_count, 0) as reply_count,           COALESCE(p.impressions, 0) as impressions, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = 'published' AND p.hidden = 0 AND p.parent_id IS NULL ${blockFilter} ORDER BY p.created_at DESC LIMIT ?`;
-        params = [...blockParam, limit];
+        query = `SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, u.language as author_language, p.text, p.hashtags, p.mentions, p.gif_key, p.payload_key, p.swf_key, p.thumbnail_key, p.fresh_count, COALESCE(p.bookmark_count, 0) as bookmark_count, COALESCE(p.reply_count, 0) as reply_count,           COALESCE(p.impressions, 0) as impressions, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = 'published' AND p.hidden = 0 AND p.parent_id IS NULL ORDER BY p.created_at DESC LIMIT ?`;
+        params = [fetchLimit];
       }
     }
 
@@ -4452,7 +4506,15 @@ app.get('/api/posts', async (c) => {
       return c.json({ error: 'Failed to fetch posts' }, 500);
     }
 
-    const posts = result.results || [];
+    const rawPosts = result.results || [];
+
+    // Shared first pages (For You / hashtag) fetch without the SQL block filter
+    // so the cache can be shared across users; apply the block list in JS here
+    // and trim back to the requested page size.
+    const posts =
+      !cursor && !following && !username
+        ? (await filterBlockedAuthors(c.env.DB, currentUserId, rawPosts)).slice(0, limit)
+        : rawPosts;
 
     // Parallel: fresh/bookmark status, poll enrichment, vector embedding check
     await Promise.all([
@@ -4510,15 +4572,17 @@ app.get('/api/posts', async (c) => {
       })(),
     ]);
 
-    // Write to KV cache (first page only)
+    // Write to KV cache (first page only). Shared feeds cache the raw
+    // (unblocked) post list so any user's block list can be applied on read.
     if (!cursor && c.env.CACHE) {
       const cacheKey = makeCacheKey(
         'timeline',
         c,
         `${limit}:${hashtag || ''}:${following ? 'following' : ''}:${username || ''}`,
+        !following,
       );
       const cacheData = {
-        posts: (posts as Record<string, unknown>[]).map((p) => ({ ...p, is_freshed: false, is_bookmarked: false })),
+        posts: (rawPosts as Record<string, unknown>[]).map((p) => ({ ...p, is_freshed: false, is_bookmarked: false })),
       };
       await kvCacheSet(c, cacheKey, cacheData, 15);
     }
@@ -4560,17 +4624,18 @@ app.get('/api/posts/trending', async (c) => {
     // Get current user for fresh status
     let currentUserId: string | null = null;
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token) : null;
     if (sessionData) {
       currentUserId = sessionData.user.id;
     }
 
     // Try cache hit (only for non-cursor requests)
     if (!cursor) {
-      const cacheKey = makeCacheKey('trending', c, `${limit}`);
+      const cacheKey = makeCacheKey('trending', c, `${limit}`, false);
       const cached = await kvCacheGet<{ posts: Record<string, unknown>[] }>(c, cacheKey);
       if (cached) {
-        const posts = cached.posts;
+        // User-agnostic cache: re-apply the current user's block list.
+        const posts = await filterBlockedAuthors(c.env.DB, currentUserId, cached.posts);
         if (currentUserId && posts.length > 0) {
           const postIds = posts.map((p) => String(p.id));
           const freshResult = await c.env.DB.prepare(
@@ -4605,10 +4670,6 @@ app.get('/api/posts/trending', async (c) => {
     // Trending algorithm:
     //   base_score = (fresh*2 + reply*3 + impression*0.1 + 1) / (hours+2)^1.5
     //   adjusted by content type weights and quality score
-    const blockFilterTrending = currentUserId
-      ? 'AND p.user_id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id = ?)'
-      : '';
-    const blockParamTrending = currentUserId ? [currentUserId] : [];
     const trendingFetchLimit = limit * 5;
     const query = `
       SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, u.language as author_language, p.text, p.hashtags, p.mentions, p.gif_key, p.payload_key, p.swf_key, p.thumbnail_key, p.fresh_count, COALESCE(p.bookmark_count, 0) as bookmark_count,
@@ -4619,11 +4680,10 @@ app.get('/api/posts/trending', async (c) => {
       FROM posts p
       LEFT JOIN users u ON p.user_id = u.id
       WHERE p.status = 'published' AND p.hidden = 0 AND p.parent_id IS NULL AND p.created_at > datetime('now', '-7 days')
-      ${blockFilterTrending}
       ORDER BY score DESC, p.created_at DESC
       LIMIT ?
     `;
-    const params: Array<unknown> = [...blockParamTrending, trendingFetchLimit];
+    const params: Array<unknown> = [trendingFetchLimit];
 
     const result = await c.env.DB.prepare(query)
       .bind(...params)
@@ -4711,16 +4771,19 @@ app.get('/api/posts/trending', async (c) => {
 
     const page = filtered.slice(0, limit);
 
-    // Build enriched posts
+    // Build enriched posts (unfiltered, so the shared cache stays block-free)
     const posts = page.map((s) => {
       const p = s.post;
       p.score = s.score;
       return p;
     });
 
+    // Re-apply the current user's block list for the response only.
+    const visiblePosts = await filterBlockedAuthors(c.env.DB, currentUserId, posts);
+
     // Add fresh and bookmark status for current user if logged in
-    if (currentUserId && posts.length > 0) {
-      const postIds = posts.map((p: Record<string, unknown>) => String(p.id));
+    if (currentUserId && visiblePosts.length > 0) {
+      const postIds = visiblePosts.map((p: Record<string, unknown>) => String(p.id));
       const [freshResult, bookmarkResult] = await Promise.all([
         c.env.DB.prepare(
           `SELECT post_id FROM freshs WHERE user_id = ? AND post_id IN (${postIds.map(() => '?').join(',')})`,
@@ -4739,17 +4802,17 @@ app.get('/api/posts/trending', async (c) => {
       const bookmarkedPostIds = new Set(
         (bookmarkResult.results || []).map((b: Record<string, unknown>) => b.post_id as string),
       );
-      posts.forEach((post: Record<string, unknown>) => {
+      visiblePosts.forEach((post: Record<string, unknown>) => {
         post.is_freshed = freshedPostIds.has(post.id as string);
         post.is_bookmarked = bookmarkedPostIds.has(post.id as string);
       });
     }
 
-    await enrichPostsWithPolls(posts as PostRow[], c.env.DB, currentUserId);
+    await enrichPostsWithPolls(visiblePosts as PostRow[], c.env.DB, currentUserId);
 
     // Write to cache (non-cursor only)
     if (!cursor && c.env.CACHE) {
-      const cacheKey = makeCacheKey('trending', c, `${limit}`);
+      const cacheKey = makeCacheKey('trending', c, `${limit}`, false);
       const cacheData = {
         posts: posts.map((p: Record<string, unknown>) => ({ ...p, is_freshed: false, is_bookmarked: false })),
         next_cursor:
@@ -4761,11 +4824,11 @@ app.get('/api/posts/trending', async (c) => {
     }
 
     const nextCursor =
-      posts.length > 0
-        ? `${(posts[posts.length - 1] as Record<string, unknown>).score},${(posts[posts.length - 1] as Record<string, unknown>).created_at},${(posts[posts.length - 1] as Record<string, unknown>).id}`
+      visiblePosts.length > 0
+        ? `${(visiblePosts[visiblePosts.length - 1] as Record<string, unknown>).score},${(visiblePosts[visiblePosts.length - 1] as Record<string, unknown>).created_at},${(visiblePosts[visiblePosts.length - 1] as Record<string, unknown>).id}`
         : null;
 
-    return c.json({ posts, next_cursor: nextCursor });
+    return c.json({ posts: visiblePosts, next_cursor: nextCursor });
   } catch (error: unknown) {
     console.error('Trending posts error:', error);
     return c.json({ error: 'Internal server error' }, 500);
@@ -4969,6 +5032,60 @@ async function loadOrComputeInterestVector(
   return vector ? { vector, sourceCount } : null;
 }
 
+const DWELL_STATS_CACHE_KEY = 'arcade:dwell:stats:v2';
+const DWELL_STATS_TTL_S = 60;
+
+// Aggregate dwell stats are shared across all users, so cache them globally
+// (60s) instead of re-scanning the whole user_game_plays table on every
+// recommended-games request. The scan is also bounded to a recent window.
+async function loadDwellStats(
+  db: D1Database,
+  cache: KVNamespace | undefined,
+): Promise<{ dwellStats: Map<string, { avgDwell: number; playCount: number }>; maxAvgDwell: number }> {
+  if (cache) {
+    try {
+      const raw = await cache.get(DWELL_STATS_CACHE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, { avgDwell: number; playCount: number }>;
+        const dwellStats = new Map(Object.entries(parsed));
+        let maxAvgDwell = 1;
+        for (const d of dwellStats.values()) {
+          if (d.avgDwell > maxAvgDwell) maxAvgDwell = d.avgDwell;
+        }
+        return { dwellStats, maxAvgDwell };
+      }
+    } catch {
+      /* fall through to recompute */
+    }
+  }
+
+  const dwellStats = new Map<string, { avgDwell: number; playCount: number }>();
+  const dwellResult = await db
+    .prepare(
+      `SELECT post_id, AVG(dwell_ms) as avg_dwell, COUNT(*) as play_count
+       FROM user_game_plays
+       WHERE dwell_ms > 2000 AND created_at > datetime('now', '-30 days')
+       GROUP BY post_id`,
+    )
+    .all<{ post_id: string; avg_dwell: number; play_count: number }>();
+  let maxAvgDwell = 1;
+  for (const row of dwellResult.results || []) {
+    const avgDwell = Number(row.avg_dwell) || 0;
+    dwellStats.set(row.post_id, { avgDwell, playCount: row.play_count });
+    if (avgDwell > maxAvgDwell) maxAvgDwell = avgDwell;
+  }
+  if (cache) {
+    try {
+      await cache.put(DWELL_STATS_CACHE_KEY, JSON.stringify(Object.fromEntries(dwellStats)), {
+        expirationTtl: DWELL_STATS_TTL_S,
+      });
+    } catch {
+      /* ignore cache write failure */
+    }
+  }
+  return { dwellStats, maxAvgDwell };
+}
+
 const BANDIT_CONFIG_KEY = 'arcade:bandit:config';
 const projectionCache = new Map<string, number[][]>();
 
@@ -5039,20 +5156,31 @@ async function applyBanditRewards(
   if (!config.enabled || events.length === 0) return;
 
   const proj = getProjection(config);
+  const cfgKey = projConfigKey(config);
   const distinctPostIds = Array.from(new Set(events.map((e) => e.postId)));
   if (distinctPostIds.length === 0) return;
 
   const embedRows = await db
     .prepare(
-      `SELECT post_id, embedding FROM post_embeddings WHERE post_id IN (${distinctPostIds.map(() => '?').join(',')})`,
+      `SELECT post_id, embedding, bandit_vec, bandit_cfg FROM post_embeddings WHERE post_id IN (${distinctPostIds.map(() => '?').join(',')})`,
     )
     .bind(...distinctPostIds)
-    .all<{ post_id: string; embedding: string }>();
-  const embeds = new Map<string, number[]>();
+    .all<{ post_id: string; embedding: string; bandit_vec: string | null; bandit_cfg: string | null }>();
+  const embeds = new Map<string, { vec: number[]; banditVec: number[] | null; banditCfg: string | null }>();
   for (const row of embedRows.results || []) {
     try {
       const v = JSON.parse(row.embedding);
-      if (Array.isArray(v)) embeds.set(row.post_id, v);
+      if (!Array.isArray(v)) continue;
+      let banditVec: number[] | null = null;
+      if (row.bandit_vec) {
+        try {
+          const bv = JSON.parse(row.bandit_vec);
+          if (Array.isArray(bv)) banditVec = bv;
+        } catch {
+          /* ignore malformed projection */
+        }
+      }
+      embeds.set(row.post_id, { vec: v, banditVec, banditCfg: row.bandit_cfg ?? null });
     } catch {
       /* skip */
     }
@@ -5061,9 +5189,9 @@ async function applyBanditRewards(
   const state = await loadBanditState(db, userId, config);
   let dirty = false;
   for (const event of events) {
-    const emb = embeds.get(event.postId);
-    if (!emb) continue;
-    const x = banditProject(emb, proj);
+    const cand = embeds.get(event.postId);
+    if (!cand || !cand.vec) continue;
+    const x = cand.banditVec && cand.banditCfg === cfgKey ? cand.banditVec : banditProject(cand.vec, proj);
     banditApplyReward(state, x, eventReward(event.eventType, event.dwellMs));
     dirty = true;
   }
@@ -5115,59 +5243,13 @@ app.get('/api/posts/recommended', async (c) => {
 
     const currentUserId = c.get('user')?.id;
 
-    // Build user interest vector from Fresh history + game dwell signals
+    // Build user interest vector from Fresh history + game dwell signals.
+    // Uses the materialized user_profiles vector (5-min TTL) instead of
+    // re-deriving and JSON-parsing up to 100 embeddings on every request.
     let interestVector: number[] | null = null;
     if (currentUserId) {
-      // Get recent 50 fresh post IDs for this user
-      const freshRows = await c.env.DB.prepare(
-        'SELECT f.post_id FROM freshs f JOIN posts p ON p.id = f.post_id WHERE f.user_id = ? ORDER BY p.created_at DESC LIMIT 50',
-      )
-        .bind(currentUserId)
-        .all<{ post_id: string }>();
-      const freshIds = (freshRows.results || []).map((r) => r.post_id);
-
-      // Get recent game plays with significant dwell time
-      const dwellRows = await c.env.DB.prepare(
-        `SELECT post_id, dwell_ms FROM user_game_plays
-         WHERE user_id = ? AND dwell_ms > 5000
-         ORDER BY created_at DESC LIMIT 50`,
-      )
-        .bind(currentUserId)
-        .all<{ post_id: string; dwell_ms: number }>();
-      const dwellItems = dwellRows.results || [];
-
-      // Combine: fresh posts (weight 1.0) + dwell plays (weight by time)
-      const allIds = [...freshIds, ...dwellItems.map((r) => r.post_id)];
-      const dwellWeightMap = new Map(dwellItems.map((r) => [r.post_id, r.dwell_ms]));
-
-      if (allIds.length > 0) {
-        const embedRows = await c.env.DB.prepare(
-          `SELECT post_id, embedding FROM post_embeddings WHERE post_id IN (${allIds.map(() => '?').join(',')})`,
-        )
-          .bind(...allIds)
-          .all<{ post_id: string; embedding: string }>();
-        const weightedEmbeds: Array<{ vec: number[]; weight: number }> = [];
-        for (const row of embedRows.results || []) {
-          try {
-            const v = JSON.parse(row.embedding);
-            if (!Array.isArray(v)) continue;
-            const dwellMs = dwellWeightMap.get(row.post_id);
-            const weight = dwellMs ? Math.min(dwellMs / 30000, 1.0) : 1.0;
-            weightedEmbeds.push({ vec: v, weight });
-          } catch {
-            /* skip malformed */
-          }
-        }
-        if (weightedEmbeds.length > 0) {
-          const dim = weightedEmbeds[0].vec.length;
-          const totalWeight = weightedEmbeds.reduce((s, e) => s + e.weight, 0);
-          interestVector = new Array(dim).fill(0);
-          for (const { vec, weight } of weightedEmbeds) {
-            for (let i = 0; i < dim; i++) interestVector[i] += (vec[i] || 0) * weight;
-          }
-          for (let i = 0; i < dim; i++) interestVector[i] /= totalWeight;
-        }
-      }
+      const profile = await loadOrComputeInterestVector(c.env.DB, currentUserId);
+      interestVector = profile?.vector ?? null;
     }
 
     // Try hybrid vector-based recommendations if we have an interest vector
@@ -5195,7 +5277,7 @@ app.get('/api/posts/recommended', async (c) => {
       // Fallback: compute cosine similarity from D1 post_embeddings
       if (vectorMatches.length === 0) {
         const allEmbedRows = await c.env.DB.prepare(
-          'SELECT post_id, embedding FROM post_embeddings ORDER BY created_at DESC LIMIT 1000',
+          'SELECT post_id, embedding FROM post_embeddings ORDER BY created_at DESC LIMIT 300',
         ).all<{
           post_id: string;
           embedding: string;
@@ -5349,7 +5431,6 @@ app.get('/api/posts/recommended', async (c) => {
         ? 'AND p.user_id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id = ?)'
         : '';
       const blockParamRecommended = currentUserId ? [currentUserId] : [];
-      const orderClause = 'ORDER BY score DESC, p.created_at DESC, p.id DESC';
 
       // Fetch raw engagement-based candidates, then re-rank with quality/type/author weights
       const rawQuery = `${RECOMMENDED_SELECT}, ${scoreFormula} as score FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = 'published' AND p.hidden = 0 AND p.parent_id IS NULL ${currentUserId ? 'AND p.user_id != ?' : ''} ${blockFilterRecommended} ORDER BY score DESC, p.created_at DESC LIMIT ?`;
@@ -6825,7 +6906,7 @@ app.get('/api/polls/:postId', async (c) => {
 
     let userVote: string | null = null;
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token) : null;
     if (sessionData) {
       const vote = (await c.env.DB.prepare('SELECT option_id FROM poll_votes WHERE poll_id = ? AND user_id = ?')
         .bind(poll.id, sessionData.user.id)
@@ -7406,7 +7487,7 @@ app.get('/api/posts/:id/replies', async (c) => {
 
     // Get current user ID from session (optional)
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token) : null;
     const currentUserId = sessionData?.user?.id || null;
 
     if (!c.env.DB) {
@@ -7496,7 +7577,7 @@ app.get('/api/posts/:id/thread', async (c) => {
     const postId = c.req.param('id');
 
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token) : null;
     const currentUserId = sessionData?.user?.id || null;
 
     if (!c.env.DB) {
