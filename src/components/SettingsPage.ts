@@ -172,9 +172,57 @@ export function createSettingsPage({ currentUser }: SettingsPageProps) {
       }
     });
 
+    const deleteButton = document.createElement('button');
+    deleteButton.textContent = t('settings.delete_account');
+    deleteButton.style.cssText = `
+      background: transparent;
+      color: var(--danger);
+      border: 1px solid var(--danger);
+      padding: 0.75rem 1.5rem;
+      border-radius: 9999px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 600;
+      transition: all 0.2s;
+      margin-top: 1.5rem;
+    `;
+
+    deleteButton.addEventListener('mouseenter', () => {
+      deleteButton.style.backgroundColor = 'var(--danger)';
+      deleteButton.style.color = '#fff';
+    });
+    deleteButton.addEventListener('mouseleave', () => {
+      deleteButton.style.backgroundColor = 'transparent';
+      deleteButton.style.color = 'var(--danger)';
+    });
+
+    deleteButton.addEventListener('click', async () => {
+      const confirmed = await createConfirmDialog(
+        t('settings.delete_account_confirm', { username: currentUser.username }),
+      );
+      if (!confirmed) return;
+      try {
+        const response = await fetch('/api/users/me', {
+          method: 'DELETE',
+          credentials: 'include',
+        });
+
+        if (response.ok) {
+          clearMeCache();
+          window.location.href = '/';
+        } else {
+          alert(t('settings.delete_account_failed'));
+        }
+      } catch (error) {
+        console.error('Delete account error:', error);
+        alert(t('settings.delete_account_error'));
+      }
+    });
+
     accountSection.appendChild(accountTitle);
     accountSection.appendChild(userChip);
     accountSection.appendChild(logoutButton);
+    accountSection.appendChild(deleteButton);
     container.appendChild(accountSection);
   }
 
