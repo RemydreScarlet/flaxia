@@ -44,20 +44,22 @@ export function createImagePreview(props: GifPreviewProps): HTMLElement {
   }
 
   if (props.isThumbnail) {
-    // Thumbnail: fit width, variable (natural) height
+    // Thumbnail: fit width, variable (natural) height capped at 700px
     img.style.cssText = `
       width: 100%;
       height: auto;
+      max-height: 700px;
       cursor: pointer;
       display: block;
     `;
     img.src = imageUrl;
     container.appendChild(img);
   } else {
-    // Full image: fit width, natural (variable) height
+    // Full image: fit width, natural (variable) height capped at 700px
     img.style.cssText = `
       width: 100%;
       height: auto;
+      max-height: 700px;
       cursor: pointer;
       display: block;
       border-radius: 8px;
