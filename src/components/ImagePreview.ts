@@ -29,42 +29,61 @@ export function createImagePreview(props: GifPreviewProps): HTMLElement {
     createImageOverlay(imageUrl, props.postId);
   };
 
-  // Override CSS default positioning for non-thumbnails
-  if (!props.isThumbnail) {
-    container.style.cssText = `
-      position: relative;
-      width: 100%;
-      height: auto;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      background: var(--bg-input);
-      border-radius: 8px;
-    `;
-  }
+  // Lay out the container as relative so the stage wraps the image's height.
+  container.style.cssText = `
+    position: relative;
+    width: 100%;
+    height: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    ${props.isThumbnail ? '' : 'background: var(--bg-input); border-radius: 8px;'}
+  `;
+
+  const MAX_IMG_HEIGHT = 700;
+
+  // Fit the image to the container width, capping the height at MAX_IMG_HEIGHT
+  // while preserving the natural aspect ratio (explicit px sizing avoids the
+  // browser-inconsistent aspect-ratio/max-height transfer that leaves the width
+  // unsqueezed and distorts tall images).
+  const fit = () => {
+    if (img.naturalWidth <= 0 || img.naturalHeight <= 0) return;
+    const naturalRatio = img.naturalHeight / img.naturalWidth; // height per unit width
+    const containerW = container.clientWidth || img.parentElement?.clientWidth || 0;
+    if (containerW <= 0) return;
+    let w = containerW;
+    let h = w * naturalRatio;
+    if (h > MAX_IMG_HEIGHT) {
+      h = MAX_IMG_HEIGHT;
+      w = h / naturalRatio;
+    }
+    // Never upscale beyond the image's natural size
+    w = Math.min(w, img.naturalWidth);
+    h = w * naturalRatio;
+    img.style.width = `${w}px`;
+    img.style.height = `${h}px`;
+  };
+
+  // Re-fit on container size changes
+  const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(fit) : null;
+  ro?.observe(container);
+  container.addEventListener('DOMNodeRemoved', () => ro?.disconnect(), { once: true });
+
+  img.style.cssText = `
+    width: 100%;
+    height: auto;
+    max-height: 700px;
+    cursor: pointer;
+    display: block;
+    ${props.isThumbnail ? '' : 'border-radius: 8px;'}
+  `;
 
   if (props.isThumbnail) {
-    // Thumbnail: fit width, variable (natural) height capped at 700px
-    img.style.cssText = `
-      width: 100%;
-      height: auto;
-      max-height: 700px;
-      cursor: pointer;
-      display: block;
-    `;
+    img.onload = fit;
+    if (img.complete) fit();
     img.src = imageUrl;
     container.appendChild(img);
   } else {
-    // Full image: fit width, natural (variable) height capped at 700px
-    img.style.cssText = `
-      width: 100%;
-      height: auto;
-      max-height: 700px;
-      cursor: pointer;
-      display: block;
-      border-radius: 8px;
-    `;
-
     // Show a placeholder with the same styling before load
     const placeholder = document.createElement('div');
     placeholder.className = 'image-preview-loading';
@@ -84,6 +103,7 @@ export function createImagePreview(props: GifPreviewProps): HTMLElement {
 
     img.onload = () => {
       placeholder.style.display = 'none';
+      fit();
     };
     img.onerror = () => {
       placeholder.style.display = 'none';
