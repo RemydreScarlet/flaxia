@@ -303,6 +303,7 @@ export function createVideoPlayer(props: VideoPlayerProps): HTMLElement {
 
   video.addEventListener('loadedmetadata', () => {
     timeDuration.textContent = formatTime(video.duration);
+    container.classList.add('video-player--loaded');
   });
 
   video.addEventListener('error', () => {
@@ -311,8 +312,10 @@ export function createVideoPlayer(props: VideoPlayerProps): HTMLElement {
 
   video.addEventListener('volumechange', updateVolumeIcon);
 
-  // --- Overlay click ---
-  overlay.addEventListener('click', togglePlay);
+  // --- Overlay click (tap the video surface = stop/pause) ---
+  overlay.addEventListener('click', () => {
+    video.pause();
+  });
 
   // --- Big play button ---
   bigPlayBtn.addEventListener('click', (e) => {

@@ -441,6 +441,7 @@ export class PostCard {
         const closestTextarea = target.closest('textarea');
         const closestLink = target.closest('a');
         const closestPollOption = target.closest('.poll-option');
+        const closestMediaPlayer = target.closest('.video-player, .audio-player, .image-preview');
 
         // Check if text is being selected
         const selection = window.getSelection();
@@ -452,11 +453,20 @@ export class PostCard {
           closestTextarea,
           closestLink,
           closestPollOption,
+          closestMediaPlayer,
           isSelectingText,
           selectedText: selection?.toString(),
         });
 
-        if (closestButton || closestInput || closestTextarea || closestLink || closestPollOption || isSelectingText) {
+        if (
+          closestButton ||
+          closestInput ||
+          closestTextarea ||
+          closestLink ||
+          closestPollOption ||
+          closestMediaPlayer ||
+          isSelectingText
+        ) {
           console.log('Navigation prevented - clicked on interactive element or text is being selected');
           return;
         }
