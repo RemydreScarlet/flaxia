@@ -422,10 +422,10 @@
   "legal.footer_privacy": "プライバシーポリシー",
   "legal.footer_about": "Flaxiaについて",
   "legal.footer_whitepaper": "技術から見るFlaxia",
-  "legal.footer_docs": "色々",
+  "legal.footer_docs": "ドキュメント",
   "legal.footer_separator": " | ",
 
-  "docs.title": "色々",
+  "docs.title": "ドキュメント",
   "docs.load_failed": "コンテンツの読み込みに失敗しました。後でもう一度お試しください。",
   "docs.not_found": "お探しのドキュメントが見つかりませんでした。",
 

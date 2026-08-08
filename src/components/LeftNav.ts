@@ -318,7 +318,7 @@ export class LeftNav {
     legalLinks.appendChild(termsLink);
     legalLinks.appendChild(privacyLink);
 
-    // Create Docs link (色々 blog)
+    // Create Docs link (blog)
     const docsLink = document.createElement('a');
     docsLink.href = '/docs';
     docsLink.textContent = t('legal.footer_docs');
@@ -791,7 +791,7 @@ export function updateLeftNavUser(
   legalLinks.appendChild(termsLink);
   legalLinks.appendChild(privacyLink);
 
-  // Create Docs link (色々 blog)
+  // Create Docs link (blog)
   const docsLink = document.createElement('a');
   docsLink.href = '/docs';
   docsLink.textContent = t('legal.footer_docs');
