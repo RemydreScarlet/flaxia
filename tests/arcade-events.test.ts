@@ -149,4 +149,58 @@ describe('POST /api/games/events', () => {
     });
     assert.equal(res.status, 200);
   });
+
+  it('mirrors positive-dwell views (>2s) into user_game_plays but not skips', async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const reg = await registerUser({
+      email: `evt-${suffix}@test.com`,
+      password: 'password123',
+      username: `evtuser${suffix}`.slice(0, 20),
+      display_name: `Event ${suffix}`,
+    });
+    if (reg.status !== 201) {
+      assert.fail(`register failed: ${await reg.text()}`);
+    }
+    const user = ((await reg.json()) as { user: { id: string } }).user;
+    const { cookie } = await loginUser(`evt-${suffix}@test.com`, 'password123');
+
+    const res = await fetch(`${BASE_URL}/api/games/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({
+        sessionId: 'mirror-session',
+        events: [
+          {
+            postId: 'p-watch',
+            eventType: 'view',
+            dwellMs: 15000,
+            didSkip: 0,
+            isFullscreen: 0,
+            position: 0,
+            gameType: 'zip',
+          },
+          {
+            postId: 'p-skip',
+            eventType: 'view',
+            dwellMs: 800,
+            didSkip: 1,
+            isFullscreen: 0,
+            position: 1,
+            gameType: 'zip',
+          },
+        ],
+      }),
+    });
+    assert.equal(res.status, 200);
+
+    const playsRes = await fetch(`${BASE_URL}/api/test/game-plays?userId=${user.id}`);
+    assert.equal(playsRes.status, 200);
+    const { plays } = (await playsRes.json()) as {
+      plays: Array<{ post_id: string; dwell_ms: number; source: string }>;
+    };
+    assert.deepEqual(plays.map((p) => p.post_id).sort(), ['p-watch']);
+    const watch = plays.find((p) => p.post_id === 'p-watch');
+    assert.equal(watch?.dwell_ms, 15000);
+    assert.equal(watch?.source, 'arcade');
+  });
 });

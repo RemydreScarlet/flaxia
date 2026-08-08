@@ -1720,6 +1720,30 @@ app.get('/api/games', async (c) => {
       const now = Date.now();
       const dayMs = 86400000;
 
+      // Users without a materialized interest profile (no freshs / long dwells)
+      // fall back to a popularity signal so the feed doesn't degenerate to
+      // plain recency. Normalized across the candidate set.
+      const hasProfile = !!(profile && profile.sourceCount > 0);
+      const popularityById = new Map<string, number>();
+      if (!hasProfile) {
+        let popMin = Number.POSITIVE_INFINITY;
+        let popMax = Number.NEGATIVE_INFINITY;
+        const popRaw = candidateRows.map((row) => {
+          const pop =
+            0.5 * Math.log1p(row.fresh_count || 0) +
+            0.3 * Math.log1p(row.reply_count || 0) +
+            0.2 * Math.log1p(row.bookmark_count || 0) +
+            0.4 * Math.log1p(row.impressions || 0);
+          if (pop < popMin) popMin = pop;
+          if (pop > popMax) popMax = pop;
+          return pop;
+        });
+        candidateRows.forEach((row, i) => {
+          const pop = popRaw[i];
+          popularityById.set(row.postId, popMax > popMin ? (pop - popMin) / (popMax - popMin) : 0);
+        });
+      }
+
       // Contextual bandit (LinUCB) layer, gated by KV config (default off).
       const banditConfig = await loadBanditConfig(c.env.CACHE);
       const banditProj = banditConfig.enabled ? getProjection(banditConfig) : null;
@@ -1743,7 +1767,11 @@ app.get('/api/games', async (c) => {
         const age = now - new Date(row.created_at).getTime();
         const freshnessBonus = age < dayMs ? 0.1 : 0;
 
-        const score = 0.35 * vecSim + 0.35 * expectedDwellNorm + 0.2 * explorationBonus + 0.1 * freshnessBonus;
+        // Personalization: interest-vector similarity when a profile exists,
+        // otherwise the normalized popularity fallback.
+        const personalization = hasProfile ? vecSim : popularityById.get(row.postId) || 0;
+
+        const score = 0.35 * personalization + 0.35 * expectedDwellNorm + 0.2 * explorationBonus + 0.1 * freshnessBonus;
 
         let banditScore = Number.NaN;
         if (banditState && banditProj && cand && emb) {
@@ -11200,6 +11228,30 @@ app.post('/api/test/reset', async (c) => {
     db.prepare('DELETE FROM users'),
   ]);
   return c.json({ ok: true });
+});
+
+// GET /api/test/game-plays - inspect user_game_plays rows for integration tests.
+// Gated like /api/test/reset: only reachable from the test dev server.
+app.get('/api/test/game-plays', async (c) => {
+  const isTestEnvironment = c.env.BASE_URL === 'http://localhost:8788' || c.req.url.includes('localhost:8788');
+  if (!isTestEnvironment) {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+
+  const userId = c.req.query('userId');
+  if (!userId) return c.json({ error: 'Missing userId' }, 400);
+
+  // App routes write to the primary DB binding, so inspect that one.
+  const db = c.env.DB;
+  const rows = await db
+    .prepare(
+      `SELECT post_id, dwell_ms, is_fullscreen, game_type, source
+       FROM user_game_plays WHERE user_id = ?
+       ORDER BY created_at DESC`,
+    )
+    .bind(userId)
+    .all<{ post_id: string; dwell_ms: number; is_fullscreen: number; game_type: string; source: string }>();
+  return c.json({ plays: rows.results || [] });
 });
 
 // Get current topic - randomly selected Flash/HTML post

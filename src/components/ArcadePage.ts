@@ -714,12 +714,13 @@ export class ArcadePage {
     // Track impression
     impressionTracker.trackImpression(game.postId);
 
-    // Record dwell entry time
+    // Clear previous game first so its dwell is recorded with the entry time it
+    // was actually shown for (recordView consumes this.gameEntryTime).
+    this.clearCurrentGame();
+
+    // Record dwell entry time for the new game
     this.gameEntryTime = performance.now();
     this.gameEntryFullscreen = this.isFullscreen;
-
-    // Clear previous game
-    this.clearCurrentGame();
 
     // Create game viewport with initial animation state
     const viewport = document.createElement('div');
@@ -2063,6 +2064,10 @@ export class ArcadePage {
 
     if (!this.currentViewport) return;
 
+    // Record the current game's dwell before the index changes so it is
+    // attributed to the game being left.
+    this.recordView();
+
     this.isTransitioning = true;
     this.currentViewport.style.transition = 'transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.4s ease';
     this.currentViewport.style.transform = 'translateY(-100%)';
@@ -2096,6 +2101,10 @@ export class ArcadePage {
     }
 
     if (!this.currentViewport) return;
+
+    // Record the current game's dwell before the index changes so it is
+    // attributed to the game being left.
+    this.recordView();
 
     this.isTransitioning = true;
     this.currentViewport.style.transition = 'transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.4s ease';
