@@ -1,10 +1,10 @@
-const CACHE_NAME = 'flaxia-v1';
-const _STATIC_ASSETS = ['/', '/assets/', '/fonts/', '/icons/'];
+const CACHE_NAME = 'flaxia-v2';
+const OFFLINE_FALLBACK = '/offline';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(['/', '/offline']).catch(() => {
+      return cache.addAll(['/offline']).catch(() => {
         /* non-critical */
       });
     }),
@@ -23,7 +23,12 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-  const url = new URL(request.url);
+  let url;
+  try {
+    url = new URL(request.url);
+  } catch {
+    return;
+  }
 
   // API requests: network-only (no cache)
   if (url.pathname.startsWith('/api/')) {
@@ -47,17 +52,17 @@ self.addEventListener('fetch', (event) => {
 });
 
 async function cacheFirst(request) {
-  const cached = await caches.match(request);
-  if (cached) return cached;
   try {
+    const cached = await caches.match(request);
+    if (cached) return cached;
     const response = await fetch(request);
     if (response.ok) {
       const cache = await caches.open(CACHE_NAME);
-      cache.put(request, response.clone());
+      await cache.put(request, response.clone()).catch(() => {});
     }
     return response;
   } catch {
-    return caches.match('/offline');
+    return fallbackResponse(request);
   }
 }
 
@@ -66,14 +71,24 @@ async function networkFirst(request) {
     const response = await fetch(request);
     if (response.ok) {
       const cache = await caches.open(CACHE_NAME);
-      cache.put(request, response.clone());
+      await cache.put(request, response.clone()).catch(() => {});
     }
     return response;
   } catch {
     const cached = await caches.match(request);
     if (cached) return cached;
-    return caches.match('/offline');
+    return fallbackResponse(request);
   }
+}
+
+async function fallbackResponse(request) {
+  const cached = await caches.match(OFFLINE_FALLBACK);
+  if (cached) return cached;
+  return new Response(request.mode === 'navigate' ? 'Offline' : '', {
+    status: 503,
+    statusText: 'Service Unavailable',
+    headers: { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' },
+  });
 }
 
 self.addEventListener('push', (event) => {
