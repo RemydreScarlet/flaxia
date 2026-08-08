@@ -7,6 +7,7 @@ import { isAdmin } from '../../src/lib/admin';
 import { CAPTURE_BRIDGE_IIFE } from '../../src/lib/capture-bridge.generated';
 import { copyHtmlToWvfs, extractFileFromZip, extractZipToR2 } from '../../src/lib/wvfs-zip-server';
 import type { ReportCategory } from '../../src/types/post';
+import { deleteAccount } from '../lib/account-deletion';
 import { exportPrivateKey, exportPublicKey, generateKeyPair } from '../lib/activitypub/crypto';
 import { buildCreateActivity, buildDeleteActivity, buildNoteObject } from '../lib/activitypub/note';
 import { fetchActorPublicKey, verifyDigest, verifyHttpSignature } from '../lib/activitypub/signature';
@@ -4022,12 +4023,8 @@ app.delete('/api/users/me', requireAuth, async (c) => {
 
     const userId = sessionData.user.id;
 
-    // Delete user (posts remain with user_id intact)
-    const result = await c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(userId).run();
-
-    if (!result.success) {
-      return c.json({ error: 'Failed to delete account' }, 500);
-    }
+    // Delete the user along with their posts, related data, and R2 files
+    await deleteAccount(c.env, userId);
 
     // Delete the session
     if (token) {
@@ -4036,8 +4033,9 @@ app.delete('/api/users/me', requireAuth, async (c) => {
 
     return c.json({ success: true });
   } catch (error: unknown) {
+    const err = error as { message?: string };
     console.error('Delete account error:', error);
-    return c.json({ error: 'Failed to delete account' }, 500);
+    return c.json({ error: 'Failed to delete account', details: err.message || 'Unknown error' }, 500);
   }
 });
 
@@ -9518,15 +9516,11 @@ app.delete('/api/admin/users/:id', requireAuth, requireAdmin, async (c) => {
       return c.json({ error: 'Cannot delete admin accounts' }, 403);
     }
 
-    // Delete the user (posts remain with user_id intact)
-    const result = await c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(targetUserId).run();
+    // Delete the user along with their posts, related data, and R2 files
+    await deleteAccount(c.env, targetUser.id);
 
-    if (!result.success) {
-      return c.json({ error: 'Failed to delete account' }, 500);
-    }
-
-    // Invalidate all sessions for this user (simplified - in production, use session table)
-    // For now, we just delete the user row
+    // Invalidate all sessions for this user
+    // (deleteAccount removes all sessions for the user)
 
     return c.json({ success: true });
   } catch (error: unknown) {
