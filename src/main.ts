@@ -51,7 +51,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       | 'terms'
       | 'privacy'
       | 'about'
-      | 'whitepaper'
       | 'docs'
       | 'admin'
       | 'settings'
@@ -783,7 +782,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       // - /users/:username (profile pages)
       // - /profile/:username (profile pages - alias for /users/)
       // - /thread/:id (thread pages)
-      // - /terms, /privacy, /about, /whitepaper (legal pages)
+      // - /terms, /privacy, /about (legal pages)
       // - /docs, /docs/:slug (docs blog)
       // - /login, /register (auth pages)
       const isPublicRoute =
@@ -798,7 +797,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         cleanPath === '/terms' ||
         cleanPath === '/privacy' ||
         cleanPath === '/about' ||
-        cleanPath === '/whitepaper' ||
         cleanPath === '/docs' ||
         cleanPath.startsWith('/docs/') ||
         cleanPath.startsWith('/users/') ||
@@ -887,11 +885,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (cleanPath === '/about') {
         console.log('About route detected');
         return { view: 'about' as const, postId: null, username: null, tag: null };
-      }
-
-      if (cleanPath === '/whitepaper') {
-        console.log('Whitepaper route detected');
-        return { view: 'whitepaper' as const, postId: null, username: null, tag: null };
       }
 
       // Docs route (blog) - public, no auth required
@@ -1113,7 +1106,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         | 'terms'
         | 'privacy'
         | 'about'
-        | 'whitepaper'
         | 'docs'
         | 'admin'
         | 'settings'
@@ -1355,7 +1347,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         // Handle legal pages (public, no auth required, no layout)
-        if (view === 'terms' || view === 'privacy' || view === 'about' || view === 'whitepaper') {
+        if (view === 'terms' || view === 'privacy' || view === 'about') {
           if (leftNavOpenButton) {
             leftNavOpenButton.remove();
             leftNavOpenButton = null;
@@ -2794,7 +2786,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             | 'terms'
             | 'privacy'
             | 'about'
-            | 'whitepaper'
             | 'docs'
             | 'admin'
             | 'settings'

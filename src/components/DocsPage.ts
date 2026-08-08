@@ -22,7 +22,7 @@ const FOOTER_PAGES = [
   { path: '/about', key: 'legal.footer_about' },
   { path: '/terms', key: 'legal.footer_terms' },
   { path: '/privacy', key: 'legal.footer_privacy' },
-  { path: '/whitepaper', key: 'legal.footer_whitepaper' },
+  { path: '/docs/whitepaper', key: 'legal.footer_whitepaper' },
   { path: '/docs', key: 'legal.footer_docs' },
 ] as const;
 
