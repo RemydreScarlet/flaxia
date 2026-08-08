@@ -75,6 +75,57 @@ export function createState(dim: number): LinUCBState {
   return { aInv, b: new Array<number>(dim).fill(0), t: 0 };
 }
 
+// A learned global policy from the offline training pipeline
+// (scripts/train_linucb.py). theta is the fitted weight vector in the projected
+// feature space, lambda0 the prior precision that anchors fresh user states.
+export interface BanditPrior {
+  v: number;
+  dim: number;
+  seed: number;
+  srcDim: number;
+  theta: number[];
+  lambda0: number;
+  trainedAt: string;
+  records: number;
+}
+
+// Seed a fresh bandit state with a learned prior: A⁻¹ = (1/λ₀)·I and b = λ₀·θ₀,
+// so the initial posterior mean θ = A⁻¹b equals θ₀. λ₀ controls how strongly
+// the prior anchors subsequent online updates (larger = more anchored).
+export function createStateFromPrior(dim: number, theta: number[], lambda0: number): LinUCBState {
+  const lambda = Math.max(lambda0, 1e-6);
+  const aInv = new Array<number>(dim * dim).fill(0);
+  const b = new Array<number>(dim).fill(0);
+  for (let i = 0; i < dim; i++) {
+    aInv[i * dim + i] = 1 / lambda;
+    b[i] = (theta[i] || 0) * lambda;
+  }
+  return { aInv, b, t: 0 };
+}
+
+export function parseBanditPrior(raw: string | null | undefined): BanditPrior | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<BanditPrior>;
+    if (parsed?.v !== 1 || typeof parsed.dim !== 'number' || !Array.isArray(parsed.theta)) return null;
+    if (parsed.theta.length !== parsed.dim) return null;
+    const theta = parsed.theta.map(Number);
+    if (theta.some((x) => !Number.isFinite(x))) return null;
+    return {
+      v: 1,
+      dim: parsed.dim,
+      seed: Math.round(Number(parsed.seed) || 0),
+      srcDim: Math.round(Number(parsed.srcDim) || 0),
+      theta,
+      lambda0: Math.max(Number(parsed.lambda0) || 1, 1e-6),
+      trainedAt: typeof parsed.trainedAt === 'string' ? parsed.trainedAt : '',
+      records: Math.round(Number(parsed.records) || 0),
+    };
+  } catch {
+    return null;
+  }
+}
+
 function matVec(a: number[], x: number[], dim: number): number[] {
   const out = new Array<number>(dim);
   for (let i = 0; i < dim; i++) {

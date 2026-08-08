@@ -46,14 +46,34 @@ Flaxia の Arcade は TikTok/Shorts 風の縦スクロール全画面フィー�
 `arcade:bandit:config` (JSON) で動作を制御します。**デフォルトは無効**です。
 
 ```json
-{ "enabled": true, "alpha": 0.6, "dim": 64, "seed": 20260701, "lambda": 0.6 }
+{ "enabled": true, "alpha": 0.6, "dim": 64, "srcDim": 1024, "seed": 20260701, "lambda": 0.6 }
 ```
 
 - `enabled` — バンディットを有効化。
 - `alpha` — 探索強度（大きいほど探索重視）。
 - `lambda` — ヒューリスティックへの重み（1 で完全に無効化と同等）。
 - `dim` — 投影次元（8〜256）。
+- `srcDim` — ソース埋め込み次元（通常 1024）。
 - `seed` — 射影行列の決定シード（**変更すると過去の学習状態が無効化**されます）。
+
+### 学習済み prior (`arcade:bandit:prior`)
+
+オフライン学習で得た**グローバル方策**を KV `arcade:bandit:prior` にデプロイすると、
+`bandit_state` を持たない新規ユーザーの状態を初期シードできます
+（`createStateFromPrior`）。prior はユーザー非依存のコールドスタート方策で、
+`arcade:bandit:config` と別キーに分離されており、デフォルト KV 設定は無効のまま維持されます。
+
+スキーマ (`BanditPrior`):
+```json
+{
+  "v": 1, "dim": 64, "seed": 20260701, "srcDim": 1024,
+  "theta": [...], "lambda0": 1.0, "trainedAt": "...", "records": 12345
+}
+```
+
+- シードは `A⁻¹ = (1/λ₀)·I`, `b = λ₀·θ₀` として表現され、初期 posterior mean が `θ₀` と一致。
+- `λ₀` が大きいほどオンライン更新が prior に強くアンカーされます。
+- **投影設定 (`seed`/`srcDim`/`dim`) が有効な config と一致する場合のみ適用**されます。
 
 設定例:
 ```bash
@@ -105,17 +125,49 @@ npx wrangler secret put HF_TOKEN --config wrangler.toml.worker
 
 ## 4. 外部トレーニング手順
 
-1. 公開データセットを取得:
-   ```python
-   from datasets import load_dataset
-   ds = load_dataset("youruser/flaxia-arcade-dwell")
-   ```
-2. **方策 1 (LinUCB 再学習)** — `post_embedding` を特徴量に、
-   `label` を報酬としたオフライン回帰でパラメータを再計算し、
-   `arcade:bandit:config` と KV の状態初期化に利用。
-3. **方策 2 (深層 RL)** — フィード上のセッションを系列とみなし、
-   累積滞在を最大化する方策（例: 系列レコメンダー、学習済み方策のロールアウト）を学習。
-4. 学習済みパラメータを KV/D1 にデプロイして配信へ反映。
+方策 1 (LinUCB 再学習) は `scripts/train_linucb.py` で実行します。
+このスクリプトは `functions/lib/linucb.ts` の `mulberry32` と ±1 JL 射影を
+**ビット完全に移植**しており、オンライン配信と同じ射影空間で回帰を学習します。
+必要なのは numpy のみです（HF ソースを使う場合は `datasets` も必要）。
+
+```bash
+# R2 成果物 (JSONL) から学習
+python3 scripts/train_linucb.py --dataset path/to/arcade-dwell-<ts>.jsonl \
+  --dim 64 --seed 20260701 --src-dim 1024 --out prior.json
+
+# HuggingFace データセットから学習（--seed/--dim/--src-dim は online config と一致させる）
+python3 scripts/train_linucb.py --dataset youruser/flaxia-arcade-dwell \
+  --dim 64 --seed 20260701 --src-dim 1024 --out prior.json
+
+# 射影の一致確認（Node の出力と突き合わせる）
+python3 scripts/train_linucb.py --dataset /dev/null --check-projection
+```
+
+- 回帰は `A = XᵀX + λ·I`, `θ = A⁻¹Xᵀy`（ridge）。`--val-fraction` で train/val RMSE を表示。
+- 出力 `prior.json` は `parseBanditPrior` を通る形の `BanditPrior`。
+- フィンガープリント (`fingerprint`) は `v/dim/seed/srcDim/theta` の SHA-256 先頭 16 桁で、
+  デプロイ時の整合確認に使えます。
+
+### デプロイ
+
+`scripts/deploy-prior.mjs` で KV に書き込みます。serving 側の検証関数を再利用するため
+`--experimental-strip-types` を付けて実行します。
+
+```bash
+node --experimental-strip-types scripts/deploy-prior.mjs \
+  --kv <namespace-id> --file prior.json
+
+# バンディット設定も同時にデプロイする場合
+node --experimental-strip-types scripts/deploy-prior.mjs \
+  --kv <namespace-id> --file prior.json --config bandit-config.json
+```
+
+- `--kv` には KV ネームスペース ID を指定します（`wrangler.toml` の `[[kv_namespaces]]` `id`）。
+- 優先度は `arcade:bandit:prior`、設定は `arcade:bandit:config` に書き込まれます。
+- **設定を明示しない限り `arcade:bandit:config` は無効のまま**です。
+
+方策 2 (深層 RL) — フィード上のセッションを系列とみなし、累積滞在を最大化する方策
+（例: 系列レコメンダー、学習済み方策のロールアウト）を学習し、結果を KV/D1 にデプロイします。
 
 ## 実運用上の注意
 

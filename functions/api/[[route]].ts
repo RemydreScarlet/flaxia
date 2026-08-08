@@ -27,15 +27,18 @@ import {
   verifyPassword,
 } from '../lib/auth';
 import {
+  type BanditPrior,
   applyReward as banditApplyReward,
   computeScore as banditComputeScore,
   project as banditProject,
   createProjection,
   createState,
+  createStateFromPrior,
   eventReward,
   type LinUCBConfig,
   type LinUCBState,
   parseBanditConfig,
+  parseBanditPrior,
   projConfigKey,
   serializeState,
 } from '../lib/linucb';
@@ -1748,7 +1751,9 @@ app.get('/api/games', async (c) => {
       const banditConfig = await loadBanditConfig(c.env.CACHE);
       const banditProj = banditConfig.enabled ? getProjection(banditConfig) : null;
       const banditCfgKey = banditProj ? projConfigKey(banditConfig) : null;
-      const banditState = banditConfig.enabled ? await loadBanditState(c.env.DB, currentUserId, banditConfig) : null;
+      const banditState = banditConfig.enabled
+        ? await loadBanditState(c.env.DB, currentUserId, banditConfig, c.env.CACHE)
+        : null;
 
       const scored = candidateRows.map((row) => {
         const cand = candEmbeds.get(row.postId);
@@ -5121,6 +5126,7 @@ async function loadDwellStats(
 }
 
 const BANDIT_CONFIG_KEY = 'arcade:bandit:config';
+const BANDIT_PRIOR_KEY = 'arcade:bandit:prior';
 const projectionCache = new Map<string, number[][]>();
 
 function getProjection(config: LinUCBConfig): number[][] {
@@ -5142,7 +5148,23 @@ async function loadBanditConfig(cache: KVNamespace | undefined): Promise<LinUCBC
   }
 }
 
-async function loadBanditState(db: D1Database, userId: string, config: LinUCBConfig): Promise<LinUCBState> {
+// Learned global policy deployed from the offline training pipeline. Only used
+// when its projection config (seed/srcDim/dim) matches the active bandit.
+async function loadBanditPrior(cache: KVNamespace | undefined): Promise<BanditPrior | null> {
+  if (!cache) return null;
+  try {
+    return parseBanditPrior(await cache.get(BANDIT_PRIOR_KEY));
+  } catch {
+    return null;
+  }
+}
+
+async function loadBanditState(
+  db: D1Database,
+  userId: string,
+  config: LinUCBConfig,
+  cache?: KVNamespace | undefined,
+): Promise<LinUCBState> {
   const row = await db
     .prepare(`SELECT a_inv, b, t FROM bandit_state WHERE user_id = ?`)
     .bind(userId)
@@ -5162,6 +5184,16 @@ async function loadBanditState(db: D1Database, userId: string, config: LinUCBCon
     } catch {
       /* fall through to fresh state */
     }
+  }
+  const prior = await loadBanditPrior(cache);
+  if (
+    prior &&
+    prior.dim === config.dim &&
+    prior.seed === config.seed &&
+    prior.srcDim === config.srcDim &&
+    prior.theta.length === config.dim
+  ) {
+    return createStateFromPrior(config.dim, prior.theta, prior.lambda0);
   }
   return createState(config.dim);
 }
@@ -5220,7 +5252,7 @@ async function applyBanditRewards(
     }
   }
 
-  const state = await loadBanditState(db, userId, config);
+  const state = await loadBanditState(db, userId, config, cache);
   let dirty = false;
   for (const event of events) {
     const cand = embeds.get(event.postId);

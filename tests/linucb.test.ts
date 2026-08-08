@@ -5,9 +5,11 @@ import {
   computeScore,
   createProjection,
   createState,
+  createStateFromPrior,
   deserializeState,
   eventReward,
   parseBanditConfig,
+  parseBanditPrior,
   project,
   serializeState,
 } from '../functions/lib/linucb.ts';
@@ -112,5 +114,56 @@ describe('linucb', () => {
   it('parseBanditConfig falls back on invalid JSON', () => {
     const c = parseBanditConfig('not json');
     assert.equal(c.enabled, false);
+  });
+
+  it('createStateFromPrior seeds A as (1/lambda0)*I and b as lambda0*theta', () => {
+    const theta = [0.5, -0.25, 1, 2];
+    const lambda0 = 2;
+    const s = createStateFromPrior(4, theta, lambda0);
+    assert.equal(s.t, 0);
+    for (let i = 0; i < 4; i++) {
+      for (let j = 0; j < 4; j++) {
+        assert.equal(s.aInv[i * 4 + j], i === j ? 1 / lambda0 : 0);
+      }
+    }
+    assert.deepEqual(
+      s.b,
+      theta.map((v) => v * lambda0),
+    );
+  });
+
+  it('createStateFromPrior yields theta0 as the initial mean estimate', () => {
+    const theta = [0.5, -0.25, 1, 2];
+    const s = createStateFromPrior(4, theta, 1);
+    const score = computeScore(s, theta, 0);
+    assert.ok(Math.abs(score - theta.reduce((a, b) => a + b * b, 0)) < 1e-6);
+  });
+
+  it('parseBanditPrior accepts a valid prior', () => {
+    const prior = parseBanditPrior(
+      JSON.stringify({ v: 1, dim: 4, seed: 1, srcDim: 16, theta: [1, 2, 3, 4], lambda0: 1 }),
+    );
+    assert.ok(prior);
+    assert.equal(prior.dim, 4);
+    assert.equal(prior.seed, 1);
+    assert.equal(prior.srcDim, 16);
+    assert.deepEqual(prior.theta, [1, 2, 3, 4]);
+    assert.equal(prior.lambda0, 1);
+  });
+
+  it('parseBanditPrior rejects malformed or mismatched priors', () => {
+    assert.equal(parseBanditPrior(null), null);
+    assert.equal(parseBanditPrior('not json'), null);
+    assert.equal(parseBanditPrior('{}'), null);
+    assert.equal(parseBanditPrior(JSON.stringify({ v: 2, dim: 4, seed: 1, srcDim: 16, theta: [1, 2, 3, 4] })), null);
+    assert.equal(parseBanditPrior(JSON.stringify({ v: 1, dim: 4, seed: 1, srcDim: 16, theta: [1, 2, 3] })), null);
+  });
+
+  it('parseBanditPrior clamps lambda0 to a positive floor', () => {
+    const prior = parseBanditPrior(
+      JSON.stringify({ v: 1, dim: 4, seed: 1, srcDim: 16, theta: [1, 2, 3, 4], lambda0: 0 }),
+    );
+    assert.ok(prior);
+    assert.ok(prior.lambda0 >= 1e-6);
   });
 });
