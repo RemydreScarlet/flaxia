@@ -1,4 +1,4 @@
-Flaxia Contributor License Agreement
+# Flaxia Contributor License Agreement
 
 1. 定義
    「寄稿」とは、あなたが本プロジェクトに対して提出するコード、

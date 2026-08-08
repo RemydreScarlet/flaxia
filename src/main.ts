@@ -52,6 +52,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       | 'privacy'
       | 'about'
       | 'whitepaper'
+      | 'docs'
       | 'admin'
       | 'settings'
       | 'arcade'
@@ -70,6 +71,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let profilePage: PageComponent | null = null;
     let explorePage: ExplorePage | null = null;
     let legalPage: PageComponent | null = null;
+    let docsPage: PageComponent | null = null;
     let notificationsPage: NotificationsPage | null = null;
     let settingsPage: PageComponent | null = null;
     let arcadePage: ArcadePageHandle | null = null;
@@ -782,6 +784,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       // - /profile/:username (profile pages - alias for /users/)
       // - /thread/:id (thread pages)
       // - /terms, /privacy, /about, /whitepaper (legal pages)
+      // - /docs, /docs/:slug (docs blog)
       // - /login, /register (auth pages)
       const isPublicRoute =
         cleanPath === '' ||
@@ -796,6 +799,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         cleanPath === '/privacy' ||
         cleanPath === '/about' ||
         cleanPath === '/whitepaper' ||
+        cleanPath === '/docs' ||
+        cleanPath.startsWith('/docs/') ||
         cleanPath.startsWith('/users/') ||
         cleanPath.startsWith('/profile/') ||
         cleanPath.startsWith('/arcade/') ||
@@ -887,6 +892,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (cleanPath === '/whitepaper') {
         console.log('Whitepaper route detected');
         return { view: 'whitepaper' as const, postId: null, username: null, tag: null };
+      }
+
+      // Docs route (blog) - public, no auth required
+      const docsMatch = cleanPath.match(/^\/docs\/([^/]+)$/);
+      if (docsMatch) {
+        console.log('Docs article route detected, slug:', docsMatch[1]);
+        return { view: 'docs' as const, postId: decodeURIComponent(docsMatch[1]), username: null, tag: null };
+      }
+
+      if (cleanPath === '/docs') {
+        console.log('Docs route detected');
+        return { view: 'docs' as const, postId: null, username: null, tag: null };
       }
 
       // Explore route - public, no auth required
@@ -1097,6 +1114,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         | 'privacy'
         | 'about'
         | 'whitepaper'
+        | 'docs'
         | 'admin'
         | 'settings'
         | 'arcade'
@@ -1356,6 +1374,30 @@ document.addEventListener('DOMContentLoaded', async () => {
           });
 
           app.appendChild(legalPage.getElement());
+          hidePageLoader();
+          return;
+        }
+
+        // Handle docs blog (public, no auth required, no layout)
+        if (view === 'docs') {
+          if (leftNavOpenButton) {
+            leftNavOpenButton.remove();
+            leftNavOpenButton = null;
+          }
+          if (leftNavOverlay) {
+            leftNavOverlay.remove();
+            leftNavOverlay = null;
+          }
+          currentView = view;
+          currentPostId = postId || null;
+          _currentUsername = null;
+
+          const { createDocsPage } = await import('./components/DocsPage.js');
+          docsPage = createDocsPage({
+            slug: postId || undefined,
+          });
+
+          app.appendChild(docsPage.getElement());
           hidePageLoader();
           return;
         }
@@ -2753,6 +2795,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             | 'privacy'
             | 'about'
             | 'whitepaper'
+            | 'docs'
             | 'admin'
             | 'settings'
             | 'arcade'

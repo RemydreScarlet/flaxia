@@ -1,6 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { defineConfig } from 'vite';
+import { docsManifestPlugin } from './vite-docs-manifest';
 
 export default defineConfig({
   build: {
@@ -60,6 +61,7 @@ export default defineConfig({
     noExternal: ['hono'],
   },
   plugins: [
+    docsManifestPlugin(),
     {
       name: 'modulepreload',
       enforce: 'post',

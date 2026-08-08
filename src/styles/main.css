@@ -3379,6 +3379,67 @@ html {
 }
 
 /* ==========================================
+   DOCS (色々 BLOG) STYLES
+   ========================================== */
+
+.docs-page .legal-content-wrapper {
+  max-width: 680px;
+  padding: 0 1rem;
+}
+
+.docs-title {
+  margin-bottom: 2rem;
+}
+
+.docs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.docs-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  color: var(--text-primary);
+  text-decoration: none;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.docs-list-item:hover {
+  background: var(--bg-hover, rgba(0, 0, 0, 0.04));
+  border-color: var(--accent);
+}
+
+.docs-list-title {
+  font-family: "Noto Sans", system-ui, -apple-system, sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.docs-list-arrow {
+  color: var(--text-muted);
+  font-size: 1rem;
+  font-family: monospace;
+}
+
+.docs-article-title {
+  color: var(--text-primary);
+  font-size: 1.75rem;
+  font-weight: 600;
+  margin-bottom: 1.5rem;
+  font-family: "Noto Sans", system-ui, -apple-system, sans-serif;
+}
+
+/* ==========================================
    LOGIN LEGAL NOTICE STYLES
    ========================================== */
 

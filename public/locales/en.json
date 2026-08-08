@@ -423,7 +423,12 @@
   "legal.footer_privacy": "Privacy Policy",
   "legal.footer_about": "About flaxia",
   "legal.footer_whitepaper": "Technical White Paper",
+  "legal.footer_docs": "Docs",
   "legal.footer_separator": " | ",
+
+  "docs.title": "Docs",
+  "docs.load_failed": "Failed to load content. Please try again later.",
+  "docs.not_found": "The requested document could not be found.",
 
   "admin_alerts.title": "Alerts",
   "admin_alerts.empty": "No alerts",

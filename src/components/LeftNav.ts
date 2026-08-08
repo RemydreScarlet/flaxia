@@ -318,6 +318,30 @@ export class LeftNav {
     legalLinks.appendChild(termsLink);
     legalLinks.appendChild(privacyLink);
 
+    // Create Docs link (色々 blog)
+    const docsLink = document.createElement('a');
+    docsLink.href = '/docs';
+    docsLink.textContent = t('legal.footer_docs');
+    docsLink.style.cssText = `
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.875rem;
+      transition: color 0.2s;
+    `;
+    docsLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      window.history.pushState({}, '', '/docs');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    docsLink.addEventListener('mouseenter', () => {
+      docsLink.style.color = 'var(--text-primary)';
+    });
+    docsLink.addEventListener('mouseleave', () => {
+      docsLink.style.color = 'var(--text-muted)';
+    });
+
+    legalLinks.appendChild(docsLink);
+
     // Create White Paper link
     const whitepaperLink = document.createElement('a');
     whitepaperLink.href = '/whitepaper';
@@ -789,6 +813,30 @@ export function updateLeftNavUser(
   legalLinks.appendChild(aboutLink);
   legalLinks.appendChild(termsLink);
   legalLinks.appendChild(privacyLink);
+
+  // Create Docs link (色々 blog)
+  const docsLink = document.createElement('a');
+  docsLink.href = '/docs';
+  docsLink.textContent = t('legal.footer_docs');
+  docsLink.style.cssText = `
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.875rem;
+    transition: color 0.2s;
+  `;
+  docsLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    window.history.pushState({}, '', '/docs');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  docsLink.addEventListener('mouseenter', () => {
+    docsLink.style.color = 'var(--text-primary)';
+  });
+  docsLink.addEventListener('mouseleave', () => {
+    docsLink.style.color = 'var(--text-muted)';
+  });
+
+  legalLinks.appendChild(docsLink);
 
   // Create White Paper link
   const whitepaperLink = document.createElement('a');
