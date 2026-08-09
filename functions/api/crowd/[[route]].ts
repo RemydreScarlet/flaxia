@@ -1,4 +1,4 @@
-const UPSTREAM = 'https://unpkg.com/@flaxia/node@0.2.0/dist';
+const UPSTREAM = 'https://unpkg.com/@flaxia/node@0.3.0/dist';
 const MIME: Record<string, string> = {
   js: 'application/javascript',
   wasm: 'application/wasm',
@@ -7,6 +7,7 @@ const MIME: Record<string, string> = {
 
 import type { LinUCBConfig } from '../../lib/linucb';
 import { createProjection, parseBanditConfig, projConfigKey, project } from '../../lib/linucb';
+import { applyNsfwTags, resolveNsfwTags } from '../../lib/nsfw';
 
 const BANDIT_CONFIG_KEY = 'arcade:bandit:config';
 const projectionCache = new Map<string, number[][]>();
@@ -72,6 +73,16 @@ export async function onRequest(context: {
                 .run();
               console.log(`Translation webhook done for post ${postId} → ${lang}`);
             }
+          }
+        } else if (callbackType === 'nsfw') {
+          const postId = url.searchParams.get('postId');
+          const detections = (resultObj?.detections as Array<{ label: string; score: number }> | undefined) ?? [];
+          if (postId) {
+            const { nsfw, tags } = resolveNsfwTags(detections as never);
+            const applied = await applyNsfwTags(db, postId, tags);
+            console.log(
+              `NSFW webhook for post ${postId}: nsfw=${nsfw}, tags=${tags.join(',') || 'none'}, applied=${applied}`,
+            );
           }
         } else if (callbackType === 'vector-embed') {
           const postId = url.searchParams.get('postId');

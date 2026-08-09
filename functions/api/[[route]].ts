@@ -273,6 +273,34 @@ async function embedPost(
   }
 }
 
+const IMAGE_KEY_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
+
+function submitDetectNsfw(
+  orchestratorUrl: string,
+  apiKey: string,
+  baseUrl: string,
+  postId: string,
+  gifKey: string | null,
+): Promise<void> {
+  const normalizedUrl = orchestratorUrl.replace(/\/+$/, '');
+  if (!normalizedUrl || !apiKey || !gifKey) return Promise.resolve();
+
+  const lower = gifKey.toLowerCase();
+  if (!IMAGE_KEY_EXTENSIONS.some((ext) => lower.endsWith(ext))) return Promise.resolve();
+
+  const client = new FlaxiaClient({ baseUrl: `${normalizedUrl}/crowd`, apiKey });
+  const callbackUrl = `${baseUrl || 'https://flaxia.app'}/api/crowd/webhook?type=nsfw&postId=${postId}`;
+  return client
+    .submit({
+      workload: 'nudenet',
+      payload: { imageUrl: `${baseUrl || 'https://flaxia.app'}/api/images/${gifKey}` },
+      callbackUrl,
+      timeoutMs: 120000,
+    } as never)
+    .then(() => console.log(`NSFW detection task submitted for post ${postId}`))
+    .catch((err) => console.error(`NSFW detection submission failed for post ${postId}:`, err));
+}
+
 // Magic byte detection to prevent MIME type spoofing
 const MAGIC_TYPES: { offset: number; bytes: number[]; mime: string }[] = [
   { offset: 0, bytes: [0xff, 0xd8, 0xff], mime: 'image/jpeg' },
@@ -6913,6 +6941,8 @@ app.post('/api/posts/commit', requireAuth, async (c) => {
       (e) => console.error('Background embed failed:', e),
     );
 
+    submitDetectNsfw(c.env.CROWD_ORCHESTRATOR_URL, c.env.CROWD_API_KEY, c.env.BASE_URL, fullPost.id, fullPost.gif_key);
+
     // Pre-extract ZIP to R2 for WVFS persistent caching
     if (payloadKey && (payloadKey.endsWith('.zip') || payloadKey.endsWith('.jsdos'))) {
       const execCtx = (c as any).executionCtx;
@@ -8191,6 +8221,10 @@ app.post('/api/posts/:id/replies/commit', requireAuth, async (c) => {
       }
     } catch (e) {
       console.error('Failed to create >>N reference notifications:', e);
+    }
+
+    if (gifKey) {
+      submitDetectNsfw(c.env.CROWD_ORCHESTRATOR_URL, c.env.CROWD_API_KEY, c.env.BASE_URL, replyId, gifKey);
     }
 
     return c.json({ reply });

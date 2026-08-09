@@ -2986,7 +2986,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           brandName: 'Flaxia',
           position: 'bottom-right',
         },
-        capabilities: ['ai-inference', 'vector-embed'],
+        capabilities: ['ai-inference', 'vector-embed', 'nudenet'],
         maxCpuLoad: 0.15,
       });
     });
