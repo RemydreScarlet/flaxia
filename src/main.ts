@@ -2978,7 +2978,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       initCapacitorPushRegistration().catch(() => {});
 
       // @ts-expect-error - dynamic import of local path
-      const { initFlaxiaNode } = await import('/api/crowd/index.js');
+      const { initFlaxiaNode } = await import('/api/crowd/v0.3.0/index.js');
       initFlaxiaNode({
         orchestratorUrl: 'https://crowd.flaxia.app',
         siteId: 'flaxia',
