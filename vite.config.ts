@@ -7,7 +7,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     rollupOptions: {
-      external: ['/api/crowd/index.js'],
+      external: (id) => id.startsWith('/api/crowd/'),
       input: {
         main: 'index.html',
       },
