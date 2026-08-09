@@ -43,7 +43,7 @@ export async function onRequest(context: {
 
   // Strip a leading version segment (e.g. /api/crowd/v0.3.0/index.js) so clients
   // can cache-bust the immutable assets by bumping the versioned path.
-  path = path.replace(/^v\d+\.\d+\.\d+\//, '');
+  path = path.replace(/^v[^/]+\//, '');
 
   if (method === 'POST' && path === 'webhook') {
     try {
