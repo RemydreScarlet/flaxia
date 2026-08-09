@@ -1,9 +1,4 @@
-// Structural match of the NudeNet detection result emitted by @flaxia/sdk 0.3.0+.
-export interface NudeNetDetection {
-  label: string;
-  score: number;
-  box: [number, number, number, number];
-}
+import { NudeNetDetection } from '@flaxia/sdk';
 
 const THRESHOLD = 0.5;
 

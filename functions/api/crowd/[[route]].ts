@@ -5,6 +5,7 @@ const MIME: Record<string, string> = {
   json: 'application/json',
 };
 
+import { NudeNetDetection } from '@flaxia/sdk';
 import type { LinUCBConfig } from '../../lib/linucb';
 import { createProjection, parseBanditConfig, projConfigKey, project } from '../../lib/linucb';
 import { applyNsfwTags, resolveNsfwTags } from '../../lib/nsfw';
@@ -80,9 +81,9 @@ export async function onRequest(context: {
           }
         } else if (callbackType === 'nsfw') {
           const postId = url.searchParams.get('postId');
-          const detections = (resultObj?.detections as Array<{ label: string; score: number }> | undefined) ?? [];
+          const detections = (resultObj?.detections as NudeNetDetection[] | undefined) ?? [];
           if (postId) {
-            const { nsfw, tags } = resolveNsfwTags(detections as never);
+            const { nsfw, tags } = resolveNsfwTags(detections);
             const applied = await applyNsfwTags(db, postId, tags);
             console.log(
               `NSFW webhook for post ${postId}: nsfw=${nsfw}, tags=${tags.join(',') || 'none'}, applied=${applied}`,
