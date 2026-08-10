@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>Flaxia System Status</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%2322c55e'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="brand" href="/">
+          <span class="brand-mark">F</span>
+          <span class="brand-name">Flaxia</span>
+          <span class="brand-sub">System Status</span>
+        </a>
+        <div id="last-updated" class="last-updated">読み込み中…</div>
+      </div>
+    </header>
+
+    <main class="container">
+      <section id="banner" class="banner" data-state="loading">
+        <div class="banner-icon" aria-hidden="true"></div>
+        <div class="banner-text">
+          <h1 id="banner-title">状態を確認中…</h1>
+          <p id="banner-desc">Flaxia の機能チェックを定期実行しています。</p>
+        </div>
+      </section>
+
+      <section id="incident-banner" class="incident-banner hidden"></section>
+
+      <section class="card-grid-wrapper">
+        <div id="groups" class="groups"></div>
+      </section>
+
+      <section class="incidents-section">
+        <h2>インシデント履歴</h2>
+        <div id="incidents" class="incidents"></div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <p>Flaxia System Status — 各チェックは毎分実行されます（認証・Crowd 実タスクは間隔を絞っています）。</p>
+        <p>
+          <a href="https://flaxia.app">flaxia.app</a> ·
+          <a href="/api/status">JSON API</a> ·
+          <a href="/api/history?check=flaxia.web&days=7">履歴 API</a>
+        </p>
+      </div>
+    </footer>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

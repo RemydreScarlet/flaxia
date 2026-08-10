@@ -9,6 +9,7 @@ Flaxia consists of 3 deployable components:
 | Main Pages (SPA + API) | `wrangler.toml` | `pnpm deploy` |
 | Backend Worker (Queue consumer) | `wrangler.toml.worker` | Manual `wrangler deploy` |
 | Sandbox Worker | `wrangler.sandbox.toml` | `pnpm deploy:sandbox` |
+| Status Worker (`status.flaxia.app`) | `status-worker/wrangler.toml` | `pnpm deploy:status` |
 
 ## Main Pages Deployment
 
@@ -50,6 +51,48 @@ pnpm deploy:sandbox
 ```
 
 The sandbox worker serves ZIP/HTML5 content from R2 at the sandbox origin (`sandbox.flaxia.app`).
+
+## Status Worker (`status.flaxia.app`)
+
+`status.flaxia.app` は Flaxia の各コンポーネント（Web / API / 認証 / Crowd）を定期チェックする
+ステータスサイトです。独自の D1 データベース・Cron トリガー・静的アセットを持ちます。
+
+**初回セットアップ（手動で 1 回だけ）:**
+
+```bash
+# 1. D1 データベースを作成し、database_id を status-worker/wrangler.toml に記述
+npx wrangler d1 create flaxia-status
+
+# 2. マイグレーションを適用
+pnpm migrate:status:local   # ローカル
+pnpm migrate:status         # 本番
+
+# 3. シークレットを設定（認証シナリオと Crowd 検証に必要）
+npx wrangler secret put CROWD_API_KEY        --config status-worker/wrangler.toml
+npx wrangler secret put STATUS_TEST_EMAIL    --config status-worker/wrangler.toml
+npx wrangler secret put STATUS_TEST_PASSWORD --config status-worker/wrangler.toml
+
+# 4. ログイン検証用のテストアカウントを本番に作成（1 回だけ）
+curl -X POST https://flaxia.app/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"dev@flaxia.app","password":"<強固なパスワード>","username":"devstatus","display_name":"Status Monitor"}'
+# STATUS_TEST_USERNAME (wrangler.toml) と username を一致させること
+
+# 5. デプロイ（routes により status.flaxia.app が自動で付与される）
+pnpm deploy:status
+```
+
+**ローカル開発:**
+
+```bash
+# シークレットは status-worker/.dev.vars に記載（.dev.vars.example 参照）
+pnpm dev:status                    # 起動後 http://localhost:8791
+curl -X POST "http://localhost:8791/__scheduled?cron=* * * * *"  # 手動トリガー
+```
+
+- チェック間隔: `wrangler.toml` の `[triggers] crons`（毎分）。認証は 2 分おき、Crowd 実タスクは 5 分おきに絞られています。
+- 公開 API: `/api/status`（最新状態）、`/api/history?check=&days=`（稼働率グラフ用）。
+- テストアカウントは本番 DB に永続化されるため、強固なパスワードを使い、誤ってコミットしないこと。
 
 ## Post-Deployment Steps
 

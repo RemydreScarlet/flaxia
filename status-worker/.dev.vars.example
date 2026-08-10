@@ -1,0 +1,6 @@
+# status-worker のローカル開発用シークレット (git にはコミットしない)
+# wrangler dev はこのファイルを自動で読み込む。
+# 本番では `npx wrangler secret put --config status-worker/wrangler.toml` で設定する。
+CROWD_API_KEY=fc_live_status_check_local
+STATUS_TEST_EMAIL=dev@flaxia.app
+STATUS_TEST_PASSWORD=devdevdev
