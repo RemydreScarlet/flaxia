@@ -31,7 +31,7 @@ export default defineConfig({
     },
     proxy: {
       '/api/crowd': {
-        target: 'https://unpkg.com/@flaxia/node@0.1.2/dist',
+        target: 'https://unpkg.com/@flaxia/node@0.3.1/dist',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/crowd/, ''),
       },
@@ -111,10 +111,11 @@ export default defineConfig({
         if (existsSync(crowdSrc)) {
           const entries = readdirSync(crowdSrc, { withFileTypes: true });
           for (const entry of entries) {
-            if (entry.name.startsWith('transformers.web')) continue;
+            const excluded = entry.name.startsWith('transformers.web') || entry.name === 'nudenet.js';
+            if (excluded) continue;
             copyFileSync(join(crowdSrc, entry.name), join(crowdDest, entry.name));
           }
-          console.log('Copied @flaxia/node assets (excluding transformers.web)');
+          console.log('Copied @flaxia/node assets (excluding transformers.web and nudenet.js)');
 
           const aiFile = entries.find((e) => e.name.startsWith('ai-inference'));
           if (aiFile) {
