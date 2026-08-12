@@ -403,13 +403,6 @@ export function renderHtmlShell(content: string, options: HtmlShellOptions): str
     </div>
   </div>
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8703789531673358" crossorigin="anonymous"></script>
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-JZWZ08QFCW"></script>
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-    gtag('config', 'G-JZWZ08QFCW');
-  </script>
 </body>
 </html>`;
 
