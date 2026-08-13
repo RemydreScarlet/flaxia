@@ -58,13 +58,19 @@ export function renderFilePreview(
   } else if (kind === 'audio') {
     const url = URL.createObjectURL(file);
     revokeUrls.push(() => URL.revokeObjectURL(url));
-    const audio = createAudioPlayer({ gifKey: '', postId: 'preview', src: url });
-    body.appendChild(audio);
+    const wrap = document.createElement('div');
+    wrap.className = 'file-preview-media file-preview-media--audio';
+    const player = createAudioPlayer({ gifKey: '', postId: 'preview', src: url });
+    wrap.appendChild(player);
+    body.appendChild(wrap);
   } else if (kind === 'video') {
     const url = URL.createObjectURL(file);
     revokeUrls.push(() => URL.revokeObjectURL(url));
-    const video = createVideoPlayer({ gifKey: '', postId: 'preview', src: url });
-    body.appendChild(video);
+    const wrap = document.createElement('div');
+    wrap.className = 'file-preview-media file-preview-media--video';
+    const player = createVideoPlayer({ gifKey: '', postId: 'preview', src: url });
+    wrap.appendChild(player);
+    body.appendChild(wrap);
   } else if (kind === 'game') {
     const gameStage = document.createElement('div');
     gameStage.className = 'file-preview-game-stage';
