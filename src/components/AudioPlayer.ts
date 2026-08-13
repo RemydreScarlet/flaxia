@@ -6,7 +6,7 @@ export function createAudioPlayer(props: GifPreviewProps): HTMLElement {
   const container = document.createElement('div');
   container.className = 'audio-player';
 
-  if (!props.gifKey) {
+  if (!props.gifKey && !props.src) {
     // Fallback for posts without audio
     const fallback = document.createElement('div');
     fallback.className = 'audio-player-error';
@@ -42,7 +42,7 @@ export function createAudioPlayer(props: GifPreviewProps): HTMLElement {
   audio.style.minHeight = '54px';
 
   // Use the API proxy endpoint for audio
-  const audioUrl = `/api/audio/${props.gifKey}`;
+  const audioUrl = props.src || `/api/audio/${props.gifKey}`;
 
   // Initialize visualizer after audio element is ready
   let visualizer: AudioVisualizer | null = null;

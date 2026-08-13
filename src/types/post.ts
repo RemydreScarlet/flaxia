@@ -95,6 +95,7 @@ export interface GifPreviewProps {
   gifKey?: string;
   postId: string;
   isThumbnail?: boolean;
+  src?: string;
 }
 
 export interface SandboxFrameProps {

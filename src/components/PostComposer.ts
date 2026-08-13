@@ -7,6 +7,7 @@ export interface PostComposerProps {
 }
 
 import { getMimeType } from '../lib/file-extensions.js';
+import { AttachPreviewHandle, renderFilePreview } from '../lib/file-preview.js';
 import { formatCount } from '../lib/format.js';
 import { t } from '../lib/i18n.js';
 import { registerModal } from '../lib/modal-state.js';
@@ -24,6 +25,7 @@ export class PostComposer {
   private selectedFile: File | null = null;
   private selectedThumbnail: File | null = null;
   private zipType: 'html5' | 'dos' | null = null;
+  private previewHandle: AttachPreviewHandle | null = null;
   private isSubmitting = false;
   private dragCounter = 0;
   private errorDisplay!: HTMLElement;
@@ -941,12 +943,16 @@ export class PostComposer {
     const preview = this.element.querySelector('.composer-file-preview')! as HTMLElement;
     const fileName = preview.querySelector('.file-name')!;
 
+    this.previewHandle?.destroy();
     fileName.textContent = `${file.name} (${this.formatFileSize(file.size)})`;
     preview.style.display = 'block';
+    this.previewHandle = renderFilePreview(file, preview, () => this.zipType);
   }
 
   private hideFilePreview(): void {
     const preview = this.element.querySelector('.composer-file-preview')! as HTMLElement;
+    this.previewHandle?.destroy();
+    this.previewHandle = null;
     preview.style.display = 'none';
   }
 

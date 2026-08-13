@@ -6,7 +6,7 @@ import { detectZipType } from '../lib/zip-type.js';
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
 const MAX_THUMBNAIL_SIZE = 1024 * 1024;
-const ALLOWED_EXTS = ['zip', 'jsdos', 'dosz', 'html', 'htm'];
+const ALLOWED_EXTS = ['zip', 'html', 'htm'];
 
 export interface GameUploadModalProps {
   onUploaded: (postId: string) => void;
@@ -175,7 +175,7 @@ export class GameUploadModal {
     this.fileArea.appendChild(this.fileLabel);
     this.fileInput = document.createElement('input');
     this.fileInput.type = 'file';
-    this.fileInput.accept = '.zip,.jsdos,.dosz,.html,.htm';
+    this.fileInput.accept = '.zip,.html,.htm';
     this.fileInput.style.display = 'none';
     this.fileInput.addEventListener('change', (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
@@ -286,11 +286,9 @@ export class GameUploadModal {
     this.selectedFile = file;
     this.zipType = null;
 
-    // Detect type: .jsdos/.dosz are always DOS, .html/.htm are HTML5
-    if (ext === 'jsdos' || ext === 'dosz') {
-      this.zipType = 'dos';
-      this.renderFileLabel();
-    } else if (ext === 'html' || ext === 'htm') {
+    // Detect type: .zip is auto-detected (HTML5 if index.html, DOS if an
+    // executable is present), .html/.htm are always HTML5
+    if (ext === 'html' || ext === 'htm') {
       this.zipType = 'html5';
       this.renderFileLabel();
     } else {
