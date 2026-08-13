@@ -7,7 +7,7 @@ export interface PostComposerProps {
 }
 
 import { getMimeType } from '../lib/file-extensions.js';
-import { AttachPreviewHandle, renderFilePreview } from '../lib/file-preview.js';
+import { AttachPreviewHandle, checkImageSizeLimit, renderFilePreview } from '../lib/file-preview.js';
 import { formatCount } from '../lib/format.js';
 import { t } from '../lib/i18n.js';
 import { registerModal } from '../lib/modal-state.js';
@@ -711,7 +711,7 @@ export class PostComposer {
     this.errorDisplay.style.display = 'none';
   }
 
-  private handleFileSelection(file: File): void {
+  private async handleFileSelection(file: File): Promise<void> {
     this.clearError();
 
     const validation = this.validateFile(file);
@@ -720,7 +720,6 @@ export class PostComposer {
       showToast(validation.error!, true);
       return;
     }
-
     // Check if file is an accepted format (MIME type validation)
     const allowedTypes = [
       'image/gif',
@@ -760,6 +759,15 @@ export class PostComposer {
     if (!isValidType) {
       this.clearFileSelection();
       showToast(t('composer.error_unsupported_type'), true);
+      return;
+    }
+
+    // Reject oversized images before the browser decodes/previews them, so a
+    // huge image can't crash the tab in the composer or after posting.
+    const dimError = await checkImageSizeLimit(file);
+    if (dimError) {
+      this.clearFileSelection();
+      showToast(dimError, true);
       return;
     }
 

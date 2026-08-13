@@ -26,6 +26,7 @@ import {
   User,
   verifyPassword,
 } from '../lib/auth';
+import { validateImageDimensions } from '../lib/image-dimensions';
 import {
   type BanditPrior,
   applyReward as banditApplyReward,
@@ -437,6 +438,12 @@ app.put('/api/upload/*', requireAuth, async (c) => {
     // Sanity check: declared content-type should be consistent (relaxed for zip/swf which may use generic types)
     if (declaredContentType && detectedMime.startsWith('image/') && !declaredContentType.startsWith('image/')) {
       return c.json({ error: 'Declared Content-Type does not match actual file content' }, 400);
+    }
+
+    // Reject oversized images to prevent renderer OOM crashes when decoded in the browser
+    const dimError = validateImageDimensions(fileData, detectedMime);
+    if (dimError) {
+      return c.json({ error: dimError }, 413);
     }
 
     // Upload to R2 with detected content type
@@ -6212,6 +6219,10 @@ app.post('/api/admin/ads', requireAuth, async (c) => {
       // Upload thumbnail to R2
       const thumbnailR2Key = `ad/thumbnail/${adId}.${ext}`;
       const thumbnailBuffer = await thumbnailFile.arrayBuffer();
+      const thumbnailDimError = validateImageDimensions(thumbnailBuffer, thumbnailFile.type);
+      if (thumbnailDimError) {
+        return c.json({ error: `Thumbnail too large. ${thumbnailDimError}` }, 413);
+      }
       await c.env.BUCKET.put(thumbnailR2Key, thumbnailBuffer, {
         httpMetadata: {
           contentType: thumbnailFile.type,
@@ -6704,6 +6715,10 @@ app.post('/api/posts/commit', requireAuth, async (c) => {
         }
         const thumbnailR2Key = `payload/${postId || crypto.randomUUID()}.thumb.${ext}`;
         const thumbnailBuffer = await thumbnailFile.arrayBuffer();
+        const thumbnailDimError = validateImageDimensions(thumbnailBuffer, thumbnailFile.type);
+        if (thumbnailDimError) {
+          return c.json({ error: `Thumbnail too large. ${thumbnailDimError}` }, 413);
+        }
         await c.env.BUCKET.put(thumbnailR2Key, thumbnailBuffer, {
           httpMetadata: { contentType: thumbnailFile.type },
         });
@@ -10311,6 +10326,12 @@ app.put('/api/dm/upload/*', requireAuth, async (c) => {
       return c.json({ error: 'File type not allowed' }, 400);
     }
 
+    // Reject oversized images to prevent renderer OOM crashes when decoded in the browser
+    const dimError = validateImageDimensions(fileData, detectedMime);
+    if (dimError) {
+      return c.json({ error: dimError }, 413);
+    }
+
     await c.env.BUCKET.put(key, fileData, {
       httpMetadata: { contentType: detectedMime },
     });
@@ -11138,6 +11159,12 @@ app.put('/api/groups/upload/*', requireAuth, async (c) => {
       detectedMime !== 'text/html'
     ) {
       return c.json({ error: 'File type not allowed' }, 400);
+    }
+
+    // Reject oversized images to prevent renderer OOM crashes when decoded in the browser
+    const dimError = validateImageDimensions(fileData, detectedMime);
+    if (dimError) {
+      return c.json({ error: dimError }, 413);
     }
 
     await c.env.BUCKET.put(key, fileData, {

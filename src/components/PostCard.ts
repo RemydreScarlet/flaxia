@@ -14,6 +14,11 @@ import { createReplyComposer, ReplyComposer } from './ReplyComposer.js';
 import { createShareModal } from './ShareModal.js';
 import { showSignInPrompt } from './SignInPrompt.js';
 
+// How many 100ms attempts to make before giving up on attaching the sandbox
+// bridge. The iframe is created synchronously once a post starts executing, so
+// a small cap is enough to catch it without piling up dead timers.
+const MAX_SANDBOX_BRIDGE_RETRIES = 20;
+
 export class PostCard {
   private element: HTMLElement;
   private props: PostCardProps;
@@ -27,6 +32,8 @@ export class PostCard {
   private impressionTracked: boolean = false;
   private postStageElement?: HTMLElement;
   private sandboxBridge?: ReturnType<typeof useSandboxBridge>;
+  private sandboxBridgeTimer?: ReturnType<typeof setTimeout>;
+  private sandboxBridgeRetries: number = 0;
   private replyComposer?: ReplyComposer;
   private isReplyComposerOpen: boolean = false;
   private menuDropdown?: HTMLElement;
@@ -483,15 +490,33 @@ export class PostCard {
     const iframe = this.element.querySelector('.sandbox-frame') as HTMLIFrameElement;
 
     if (iframe) {
+      if (this.sandboxBridgeTimer) {
+        clearTimeout(this.sandboxBridgeTimer);
+        this.sandboxBridgeTimer = undefined;
+      }
       this.sandboxBridge = useSandboxBridge({
         iframe,
         post: this.props.post,
         onFreshRequest: () => this.handleFreshToggle(),
       });
-    } else {
-      // Iframe might not be ready yet, try again after a delay
-      setTimeout(() => this.setupSandboxBridge(), 100);
+      return;
     }
+
+    // The sandbox iframe only exists while a post is executing, so it can never
+    // appear in PREVIEW mode. Retrying there would run a 100ms timer forever per
+    // card, keeping dead cards (and their closures) alive — so retry only in
+    // EXECUTING mode and only for a bounded number of times.
+    if (this.mode !== PostCardMode.EXECUTING || this.sandboxBridgeRetries >= MAX_SANDBOX_BRIDGE_RETRIES) {
+      return;
+    }
+    this.sandboxBridgeRetries += 1;
+    if (this.sandboxBridgeTimer) {
+      clearTimeout(this.sandboxBridgeTimer);
+    }
+    this.sandboxBridgeTimer = setTimeout(() => {
+      this.sandboxBridgeTimer = undefined;
+      this.setupSandboxBridge();
+    }, 100);
   }
 
   private setupImpressionTracking(): void {
@@ -531,6 +556,12 @@ export class PostCard {
 
   private handleModeChange(newMode: PostCardMode): void {
     this.mode = newMode;
+    // The sandbox iframe only appears once the post starts executing, so begin
+    // (re)binding the bridge when we switch into EXECUTING mode.
+    if (newMode === PostCardMode.EXECUTING && !this.sandboxBridge) {
+      this.sandboxBridgeRetries = 0;
+      this.setupSandboxBridge();
+    }
     if (this.postStageElement) {
       updatePostStage(this.postStageElement, {
         post: this.props.post,
@@ -1654,6 +1685,12 @@ export class PostCard {
   }
 
   public destroy(): void {
+    // Cancel any pending sandbox bridge retry
+    if (this.sandboxBridgeTimer) {
+      clearTimeout(this.sandboxBridgeTimer);
+      this.sandboxBridgeTimer = undefined;
+    }
+
     // Cleanup sandbox bridge
     if (this.sandboxBridge) {
       this.sandboxBridge.destroy();

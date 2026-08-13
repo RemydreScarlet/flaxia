@@ -134,6 +134,7 @@ export function createAudioPlayer(props: GifPreviewProps): HTMLElement {
 
   let isDragging = false;
   let hideTimer: ReturnType<typeof setTimeout> | null = null;
+  let initTimer: ReturnType<typeof setTimeout> | null = null;
   let speedIndex = 1;
   let visualizer: AudioVisualizer | null = null;
 
@@ -195,6 +196,7 @@ export function createAudioPlayer(props: GifPreviewProps): HTMLElement {
 
   const togglePlay = () => {
     if (audio.paused || audio.ended) {
+      ensureVisualizer();
       audio.play().catch(() => {});
     } else {
       audio.pause();
@@ -216,19 +218,28 @@ export function createAudioPlayer(props: GifPreviewProps): HTMLElement {
     updateVolumeIcon();
   };
 
-  // --- Initialize source + visualizer (deferred for Chrome) ---
-  setTimeout(() => {
+  // --- Initialize source (deferred for Chrome) ---
+  initTimer = setTimeout(() => {
+    initTimer = null;
     audio.src = audioUrl;
     audio.load();
-
-    if (audio.src) {
-      try {
-        visualizer = new AudioVisualizer(audio, visualizerCanvas);
-      } catch (error) {
-        console.warn('Failed to initialize audio visualizer:', error);
-      }
+    // If the user already started playback before the src was attached, make
+    // sure the visualizer is created too.
+    if (!audio.paused && !visualizer) {
+      ensureVisualizer();
     }
   }, 100);
+
+  // --- Visualizer is created lazily on first play so idle audio posts don't
+  // each reserve an AudioContext (browsers cap how many can stay alive). ---
+  const ensureVisualizer = () => {
+    if (visualizer) return;
+    try {
+      visualizer = new AudioVisualizer(audio, visualizerCanvas);
+    } catch (error) {
+      console.warn('Failed to initialize audio visualizer:', error);
+    }
+  };
 
   // --- Error handling ---
   const showError = () => {
@@ -327,19 +338,24 @@ export function createAudioPlayer(props: GifPreviewProps): HTMLElement {
     container.classList.add('audio-player--scrubbing');
   });
 
-  document.addEventListener('mousemove', (e) => {
+  // --- Seekbar (drag tracking lives on document so the thumb follows the
+  // pointer even outside the track) ---
+  const onDocumentMouseMove = (e: MouseEvent) => {
     if (isDragging) {
       seekTo(e.clientX);
     }
-  });
+  };
 
-  document.addEventListener('mouseup', () => {
+  const onDocumentMouseUp = () => {
     if (isDragging) {
       isDragging = false;
       container.classList.remove('audio-player--scrubbing');
       resetHideTimer();
     }
-  });
+  };
+
+  document.addEventListener('mousemove', onDocumentMouseMove);
+  document.addEventListener('mouseup', onDocumentMouseUp);
 
   seekbarTrack.addEventListener(
     'touchstart',
@@ -439,7 +455,19 @@ export function createAudioPlayer(props: GifPreviewProps): HTMLElement {
 
   // --- Cleanup ---
   container.addEventListener('DOMNodeRemoved', () => {
-    if (hideTimer) clearTimeout(hideTimer);
+    if (hideTimer) {
+      clearTimeout(hideTimer);
+      hideTimer = null;
+    }
+    if (initTimer) {
+      clearTimeout(initTimer);
+      initTimer = null;
+    }
+    document.removeEventListener('mousemove', onDocumentMouseMove);
+    document.removeEventListener('mouseup', onDocumentMouseUp);
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
     if (visualizer) {
       visualizer.cleanup();
       visualizer = null;

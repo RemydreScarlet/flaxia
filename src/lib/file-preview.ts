@@ -11,6 +11,41 @@ export interface AttachPreviewHandle {
   destroy: () => void;
 }
 
+// Mirrors the server-side caps in functions/lib/image-dimensions.ts. Browsers
+// rasterize images at native resolution, so decoding a huge image (or an
+// oversized animated GIF) in the composer or timeline can crash the tab.
+const MAX_IMAGE_DIMENSION = 6000;
+const MAX_IMAGE_PIXELS = 24 * 1024 * 1024;
+
+const IMAGE_EXTENSIONS = new Set(['gif', 'png', 'jpg', 'jpeg']);
+
+// Decodes the image once to check its native dimensions, then revokes the
+// object URL. Returns an error message when the image exceeds the caps,
+// otherwise null. Unparseable files pass through (the server will reject them).
+export function checkImageSizeLimit(file: File): Promise<string | null> {
+  const ext = file.name.toLowerCase().split('.').pop() || '';
+  if (!IMAGE_EXTENSIONS.has(ext)) return Promise.resolve(null);
+
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const { naturalWidth: w, naturalHeight: h } = img;
+      if (w > MAX_IMAGE_DIMENSION || h > MAX_IMAGE_DIMENSION || w * h > MAX_IMAGE_PIXELS) {
+        resolve(t('composer.error_image_too_large'));
+      } else {
+        resolve(null);
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(null);
+    };
+    img.src = url;
+  });
+}
+
 export function detectAttachKind(file: File): AttachPreviewKind | null {
   const name = file.name.toLowerCase();
   if (name.endsWith('.gif') || name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg')) {

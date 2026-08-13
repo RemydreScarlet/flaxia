@@ -164,6 +164,7 @@
   "composer.thumbnail_button": "📷 Add thumbnail",
   "composer.thumbnail_hint": "accepts .jpg .png .gif, max 1MB",
   "composer.error_file_too_large": "File must be under 25MB",
+  "composer.error_image_too_large": "Image is too large (max 6000×6000px, 24 megapixels).",
   "composer.error_unsupported_type": "Unsupported file type",
   "composer.error_thumbnail_size": "Thumbnail must be ≤1MB",
   "composer.error_thumbnail_type": "Thumbnail must be .jpg, .jpeg, .png, or .gif",

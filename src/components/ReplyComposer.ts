@@ -1,4 +1,4 @@
-import { AttachPreviewHandle, renderFilePreview } from '../lib/file-preview.js';
+import { AttachPreviewHandle, checkImageSizeLimit, renderFilePreview } from '../lib/file-preview.js';
 import { formatCount } from '../lib/format.js';
 import { t } from '../lib/i18n.js';
 import { showToast } from '../lib/toast.js';
@@ -473,7 +473,7 @@ export class ReplyComposer {
     }
   }
 
-  private handleFileSelection(file: File): void {
+  private async handleFileSelection(file: File): Promise<void> {
     // Check file size (25MB limit)
     if (file.size > 25 * 1024 * 1024) {
       showToast(t('reply_composer.error_file_size'), true);
@@ -502,6 +502,14 @@ export class ReplyComposer {
       file.name.toLowerCase().endsWith('.mov');
     if (!allowedTypes.includes(file.type) && !isVideoByExtension) {
       showToast(t('reply_composer.error_file_type'), true);
+      this.clearFileSelection();
+      return;
+    }
+
+    // Reject oversized images before the browser decodes/previews them.
+    const dimError = await checkImageSizeLimit(file);
+    if (dimError) {
+      showToast(dimError, true);
       this.clearFileSelection();
       return;
     }
