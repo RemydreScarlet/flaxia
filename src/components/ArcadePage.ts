@@ -10,6 +10,7 @@ import { executeWvfsZip } from '../lib/wvfs-zip-client.js';
 import type { ArcadePageProps, Game, GameType } from '../types/game.js';
 import type { Post } from '../types/post.js';
 import { executeDos } from './DosPlayer.js';
+import { GameUploadModal } from './GameUploadModal.js';
 import { createPostCard } from './PostCard.js';
 import { createReplyComposer, ReplyComposer } from './ReplyComposer.js';
 import { createReplyNode } from './ReplyNode.js';
@@ -226,9 +227,34 @@ export class ArcadePage {
     titleGroup.appendChild(subtitle);
     header.appendChild(titleGroup);
 
-    // Spacer to push tutorial button to the right
+    // Spacer to push upload/tutorial buttons to the right
     const headerSpacer = document.createElement('div');
     headerSpacer.style.cssText = 'flex: 1;';
+
+    // Upload game button
+    const uploadBtn = document.createElement('button');
+    uploadBtn.textContent = t('arcade.upload_btn');
+    uploadBtn.title = t('arcade.upload_title');
+    uploadBtn.style.cssText = `
+      background: none;
+      border: none;
+      font-size: 1.2rem;
+      cursor: pointer;
+      color: var(--text-muted);
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      line-height: 1;
+      transition: color 0.2s, background 0.2s;
+    `;
+    uploadBtn.addEventListener('mouseenter', () => {
+      uploadBtn.style.color = 'var(--text-primary)';
+      uploadBtn.style.background = 'var(--bg-hover, rgba(255,255,255,0.1))';
+    });
+    uploadBtn.addEventListener('mouseleave', () => {
+      uploadBtn.style.color = 'var(--text-muted)';
+      uploadBtn.style.background = 'none';
+    });
+    uploadBtn.addEventListener('click', () => this.handleUploadClick());
 
     // Tutorial button
     const tutorialBtn = document.createElement('button');
@@ -256,6 +282,7 @@ export class ArcadePage {
     tutorialBtn.addEventListener('click', () => this.showTutorial());
 
     header.appendChild(headerSpacer);
+    header.appendChild(uploadBtn);
     header.appendChild(tutorialBtn);
 
     // Game container (vertical scroll area)
@@ -1433,6 +1460,32 @@ export class ArcadePage {
     }
 
     this.showReportModal(game);
+  }
+
+  private handleUploadClick(): void {
+    if (!this.props.currentUser) {
+      showSignInPrompt(
+        'upload',
+        () => {
+          window.history.pushState({}, '', '/login');
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        },
+        () => {
+          window.history.pushState({}, '', '/register');
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        },
+      );
+      return;
+    }
+
+    new GameUploadModal({
+      onUploaded: (postId) => this.navigateToGame(postId),
+    });
+  }
+
+  private navigateToGame(postId: string): void {
+    window.history.pushState({}, '', `/arcade/${postId}`);
+    window.dispatchEvent(new PopStateEvent('popstate'));
   }
 
   private showReportModal(game: Game): void {
