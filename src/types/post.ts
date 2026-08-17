@@ -31,6 +31,12 @@ export interface QuotedPost {
   created_at: string;
 }
 
+export interface ReactionSummary {
+  emoji: string;
+  count: number;
+  reacted: boolean;
+}
+
 export interface Post {
   id: string;
   user_id: string;
@@ -60,6 +66,7 @@ export interface Post {
   quoted_post?: QuotedPost | null;
   is_freshed?: boolean; // Whether current user has freshed this post
   is_bookmarked?: boolean; // Whether current user has bookmarked this post
+  reactions?: ReactionSummary[]; // Emoji reactions summary for this post
   poll?: {
     id: string;
     question: string;
@@ -131,12 +138,14 @@ export interface PostActionsProps {
   impressions: number;
   isFreshed: boolean;
   isBookmarked: boolean;
+  reactions: ReactionSummary[];
   depth: number;
   onFreshToggle: () => void;
   onBookmarkToggle: () => void;
   onReplyToggle: () => void;
   onShare?: () => void;
   onQuote?: () => void;
+  onReactionToggle: (emoji: string) => void;
 }
 
 export interface TimelineProps {

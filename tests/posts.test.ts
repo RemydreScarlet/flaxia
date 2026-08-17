@@ -461,6 +461,143 @@ describe('POST /api/posts/:id/fresh', () => {
   });
 });
 
+describe('POST /api/posts/:id/reactions', () => {
+  beforeEach(resetDb);
+
+  async function createPost(cookie: string, text = 'Reaction target'): Promise<string> {
+    const res = await fetch(`${BASE_URL}/api/posts`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: cookie,
+      },
+      body: JSON.stringify({ text }),
+    });
+    const data = await res.json();
+    return data.id as string;
+  }
+
+  function toggleReaction(cookie: string, postId: string, emoji: string): Promise<Response> {
+    return fetch(`${BASE_URL}/api/posts/${postId}/reactions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: cookie,
+      },
+      body: JSON.stringify({ emoji }),
+    });
+  }
+
+  it('adds a reaction and returns its summary → 200', async () => {
+    const { cookie } = await seedUserAndLogin('1');
+    const postId = await createPost(cookie);
+    const res = await toggleReaction(cookie, postId, '👍');
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.emoji, '👍');
+    assert.equal(data.reacted, true);
+    assert.deepEqual(data.reactions, [{ emoji: '👍', count: 1, reacted: true }]);
+  });
+
+  it('toggles the same reaction off → 200', async () => {
+    const { cookie } = await seedUserAndLogin('1');
+    const postId = await createPost(cookie);
+    await toggleReaction(cookie, postId, '👍');
+    const res = await toggleReaction(cookie, postId, '👍');
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.reacted, false);
+    assert.deepEqual(data.reactions, []);
+  });
+
+  it('allows multiple emojis from the same user → 200', async () => {
+    const { cookie } = await seedUserAndLogin('1');
+    const postId = await createPost(cookie);
+    await toggleReaction(cookie, postId, '👍');
+    const res = await toggleReaction(cookie, postId, '❤️');
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.reactions.length, 2);
+    const thumbs = data.reactions.find((r: { emoji: string }) => r.emoji === '👍');
+    const heart = data.reactions.find((r: { emoji: string }) => r.emoji === '❤️');
+    assert.deepEqual(thumbs, { emoji: '👍', count: 1, reacted: true });
+    assert.deepEqual(heart, { emoji: '❤️', count: 1, reacted: true });
+  });
+
+  it('aggregates counts across users and tracks reacted per user → 200', async () => {
+    const { cookie: cookie1 } = await seedUserAndLogin('1');
+    const { cookie: cookie2 } = await seedUserAndLogin('2');
+    const postId = await createPost(cookie1);
+
+    await toggleReaction(cookie1, postId, '👍');
+    const res1 = await toggleReaction(cookie2, postId, '👍');
+    assert.equal(res1.status, 200);
+    const data1 = (await res1.json()) as { reactions: Array<{ emoji: string; count: number; reacted: boolean }> };
+    assert.deepEqual(data1.reactions, [{ emoji: '👍', count: 2, reacted: true }]);
+
+    const res2 = await toggleReaction(cookie1, postId, '👍');
+    assert.equal(res2.status, 200);
+    const data2 = (await res2.json()) as { reactions: Array<{ emoji: string; count: number; reacted: boolean }> };
+    assert.deepEqual(data2.reactions, [{ emoji: '👍', count: 1, reacted: false }]);
+  });
+
+  it('includes the reactions summary in the post detail response', async () => {
+    const { cookie } = await seedUserAndLogin('1');
+    const postId = await createPost(cookie);
+    await toggleReaction(cookie, postId, '👍');
+
+    const res = await fetch(`${BASE_URL}/api/posts/${postId}`, {
+      headers: { Cookie: cookie },
+    });
+    assert.equal(res.status, 200);
+    const post = await res.json();
+    assert.deepEqual(post.reactions, [{ emoji: '👍', count: 1, reacted: true }]);
+  });
+
+  it('rejects missing emoji → 400', async () => {
+    const { cookie } = await seedUserAndLogin('1');
+    const postId = await createPost(cookie);
+    const res = await fetch(`${BASE_URL}/api/posts/${postId}/reactions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: cookie,
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(res.status, 400);
+  });
+
+  it('rejects empty emoji → 400', async () => {
+    const { cookie } = await seedUserAndLogin('1');
+    const postId = await createPost(cookie);
+    const res = await toggleReaction(cookie, postId, '   ');
+    assert.equal(res.status, 400);
+  });
+
+  it('rejects oversized emoji → 400', async () => {
+    const { cookie } = await seedUserAndLogin('1');
+    const postId = await createPost(cookie);
+    const res = await toggleReaction(cookie, postId, 'x'.repeat(33));
+    assert.equal(res.status, 400);
+  });
+
+  it('rejects reaction on non-existent post → 404', async () => {
+    const { cookie } = await seedUserAndLogin('1');
+    const res = await toggleReaction(cookie, 'nonexistent-id', '👍');
+    assert.equal(res.status, 404);
+  });
+
+  it('rejects unauthenticated reaction → 401', async () => {
+    const res = await fetch(`${BASE_URL}/api/posts/some-id/reactions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ emoji: '👍' }),
+    });
+    assert.equal(res.status, 401);
+  });
+});
+
 describe('POST /api/report', () => {
   beforeEach(resetDb);
 

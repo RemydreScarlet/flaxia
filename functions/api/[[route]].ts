@@ -105,6 +105,7 @@ type PostRow = {
   quoted_post?: Record<string, unknown> | null;
   is_freshed?: boolean;
   is_bookmarked?: boolean;
+  reactions?: Array<{ emoji: string; count: number; reacted: boolean }>;
   poll?: {
     id: string;
     question: string;
@@ -417,6 +418,28 @@ async function ensurePendingEmbedsTable(db: D1Database): Promise<void> {
       .run();
   } catch (e) {
     console.error('Failed to ensure pending_embeddings table:', e);
+  }
+}
+
+// The test dev server provisions its DB_TEST binding without migrations, so
+// ensure the reactions table exists before touching it there (mirrors
+// ensureNsfwScansTable).
+async function ensureReactionsTable(db: D1Database): Promise<void> {
+  try {
+    await db
+      .prepare(
+        `CREATE TABLE IF NOT EXISTS reactions (
+           post_id    TEXT NOT NULL,
+           user_id    TEXT NOT NULL,
+           emoji      TEXT NOT NULL,
+           created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+           PRIMARY KEY (post_id, user_id, emoji)
+         )`,
+      )
+      .run();
+    await db.prepare('CREATE INDEX IF NOT EXISTS idx_reactions_post ON reactions(post_id)').run();
+  } catch (e) {
+    console.error('Failed to ensure reactions table:', e);
   }
 }
 
@@ -4684,6 +4707,7 @@ app.get('/api/posts', async (c) => {
         }
         await enrichPostsWithPolls(posts as PostRow[], c.env.DB, currentUserId);
         await enrichPostsWithQuotes(posts as PostRow[], c.env.DB);
+        await enrichPostsWithReactions(posts as PostRow[], c.env.DB, currentUserId);
         return c.json({ posts });
       }
     }
@@ -4819,6 +4843,8 @@ app.get('/api/posts', async (c) => {
       enrichPostsWithPolls(posts as PostRow[], c.env.DB, currentUserId),
       // Quote enrichment
       enrichPostsWithQuotes(posts as PostRow[], c.env.DB),
+      // Reaction enrichment
+      enrichPostsWithReactions(posts as PostRow[], c.env.DB, currentUserId),
       // Vector embedding check for unprocessed posts
       (async () => {
         const textPosts = (posts as PostRow[]).filter((p) => p.text);
@@ -4933,6 +4959,7 @@ app.get('/api/posts/trending', async (c) => {
         }
         await enrichPostsWithPolls(posts as PostRow[], c.env.DB, currentUserId);
         await enrichPostsWithQuotes(posts as PostRow[], c.env.DB);
+        await enrichPostsWithReactions(posts as PostRow[], c.env.DB, currentUserId);
         return c.json({ posts });
       }
     }
@@ -5080,6 +5107,7 @@ app.get('/api/posts/trending', async (c) => {
 
     await enrichPostsWithPolls(visiblePosts as PostRow[], c.env.DB, currentUserId);
     await enrichPostsWithQuotes(visiblePosts as PostRow[], c.env.DB);
+    await enrichPostsWithReactions(visiblePosts as PostRow[], c.env.DB, currentUserId);
 
     // Write to cache (non-cursor only)
     if (!cursor && c.env.CACHE) {
@@ -5868,6 +5896,7 @@ async function enrichRecommendedPosts(
   }
   await enrichPostsWithPolls(posts as PostRow[], c.env.DB, currentUserId);
   await enrichPostsWithQuotes(posts as PostRow[], c.env.DB);
+  await enrichPostsWithReactions(posts as PostRow[], c.env.DB, currentUserId);
   return posts;
 }
 
@@ -5964,6 +5993,7 @@ app.get('/api/posts/:id/similar', async (c) => {
 
     await enrichPostsWithPolls(posts as PostRow[], c.env.DB, currentUserId);
     await enrichPostsWithQuotes(posts as PostRow[], c.env.DB);
+    await enrichPostsWithReactions(posts as PostRow[], c.env.DB, currentUserId);
 
     return c.json({ posts });
   } catch (error: unknown) {
@@ -7195,6 +7225,7 @@ app.post('/api/posts/commit', requireAuth, async (c) => {
     }
 
     await enrichPostsWithQuotes([fullPost], c.env.DB);
+    await enrichPostsWithReactions([fullPost], c.env.DB, c.get('user')?.id);
 
     embedPost(
       c.env.DB,
@@ -7556,6 +7587,60 @@ app.post('/api/posts/:id/bookmark', requireAuth, async (c) => {
   }
 });
 
+// POST /api/posts/:id/reactions - toggle an emoji reaction on a post (protected)
+app.post('/api/posts/:id/reactions', requireAuth, async (c) => {
+  try {
+    await ensureReactionsTable(c.env.DB);
+    const postId = c.req.param('id');
+    const userId = c.get('user')?.id || '';
+    const { emoji } = (await c.req.json()) as { emoji?: string };
+
+    if (typeof emoji !== 'string' || emoji.trim().length === 0) {
+      return c.json({ error: 'Invalid emoji' }, 400);
+    }
+    const cleanEmoji = emoji.trim();
+    if (cleanEmoji.length > 32) {
+      return c.json({ error: 'Emoji too long' }, 400);
+    }
+
+    // Verify post exists
+    const post = (await c.env.DB.prepare("SELECT id FROM posts WHERE id = ? AND status = 'published'")
+      .bind(postId)
+      .first()) as { id: string } | null;
+
+    if (!post) {
+      return c.json({ error: 'Post not found' }, 404);
+    }
+
+    const existing = await c.env.DB.prepare('SELECT 1 FROM reactions WHERE post_id = ? AND user_id = ? AND emoji = ?')
+      .bind(postId, userId, cleanEmoji)
+      .first();
+
+    if (existing) {
+      await c.env.DB.prepare('DELETE FROM reactions WHERE post_id = ? AND user_id = ? AND emoji = ?')
+        .bind(postId, userId, cleanEmoji)
+        .run();
+    } else {
+      await c.env.DB.prepare('INSERT INTO reactions (post_id, user_id, emoji) VALUES (?, ?, ?)')
+        .bind(postId, userId, cleanEmoji)
+        .run();
+    }
+
+    const postRow = { id: postId } as PostRow;
+    await enrichPostsWithReactions([postRow], c.env.DB, userId);
+
+    return c.json({
+      emoji: cleanEmoji,
+      reacted: !existing,
+      reactions: postRow.reactions || [],
+    });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Reaction toggle error:', error);
+    return c.json({ error: 'Failed to toggle reaction', details: err.message }, 500);
+  }
+});
+
 // GET /api/bookmarks - get bookmarked posts for current user (protected)
 app.get('/api/bookmarks', requireAuth, async (c) => {
   try {
@@ -7606,6 +7691,7 @@ app.get('/api/bookmarks', requireAuth, async (c) => {
     });
 
     await enrichPostsWithQuotes(posts as PostRow[], c.env.DB);
+    await enrichPostsWithReactions(posts as PostRow[], c.env.DB, userId);
 
     const nextCursor = posts.length === limit ? posts[posts.length - 1].created_at : null;
 
@@ -7905,12 +7991,15 @@ app.get('/api/posts/:id/replies', async (c) => {
 
     await enrichPostsWithPolls(replies as PostRow[], c.env.DB, currentUserId);
     await enrichPostsWithQuotes(replies as PostRow[], c.env.DB);
+    await enrichPostsWithReactions(replies as PostRow[], c.env.DB, currentUserId);
 
     // Add poll data
     await enrichPostsWithPolls([parentPost as PostRow], c.env.DB, currentUserId);
     await enrichPostsWithQuotes([parentPost as PostRow], c.env.DB);
+    await enrichPostsWithReactions([parentPost as PostRow], c.env.DB, currentUserId);
     await enrichPostsWithPolls(replies as PostRow[], c.env.DB, currentUserId);
     await enrichPostsWithQuotes(replies as PostRow[], c.env.DB);
+    await enrichPostsWithReactions(replies as PostRow[], c.env.DB, currentUserId);
 
     // Trigger vector embedding for unprocessed posts in background
     const allPosts = [parentPost as Record<string, unknown>, ...(replies as Array<Record<string, unknown>>)];
@@ -8046,8 +8135,10 @@ app.get('/api/posts/:id/thread', async (c) => {
 
     await enrichPostsWithPolls([rootPost as PostRow], c.env.DB, currentUserId);
     await enrichPostsWithQuotes([rootPost as PostRow], c.env.DB);
+    await enrichPostsWithReactions([rootPost as PostRow], c.env.DB, currentUserId);
     await enrichPostsWithPolls(replies as PostRow[], c.env.DB, currentUserId);
     await enrichPostsWithQuotes(replies as PostRow[], c.env.DB);
+    await enrichPostsWithReactions(replies as PostRow[], c.env.DB, currentUserId);
 
     const allPosts2 = [rootPost as Record<string, unknown>, ...(replies as Array<Record<string, unknown>>)];
     const toEmbed2 = allPosts2.filter((p) => p.text);
@@ -8631,6 +8722,7 @@ app.get('/api/search', async (c) => {
       .all();
 
     await enrichPostsWithQuotes((posts.results || []) as PostRow[], c.env.DB);
+    await enrichPostsWithReactions((posts.results || []) as PostRow[], c.env.DB, c.get('user')?.id);
 
     // Also fetch matching users for posts search (type=posts)
     if (type === 'posts') {
@@ -9086,6 +9178,7 @@ app.get('/api/posts/:id', async (c) => {
     }
 
     await enrichPostsWithQuotes([post as PostRow], c.env.DB);
+    await enrichPostsWithReactions([post as PostRow], c.env.DB, c.get('user')?.id);
 
     return c.json(post);
   } catch (error: unknown) {
@@ -9419,6 +9512,51 @@ async function enrichPostsWithQuotes(posts: PostRow[], db: D1Database): Promise<
     const link = links.find((r) => r.id === post.id);
     post.quoted_post_id = link?.quoted_post_id ?? null;
     post.quoted_post = link ? quotedMap.get(link.quoted_post_id) || null : null;
+  }
+}
+
+async function enrichPostsWithReactions(
+  posts: PostRow[],
+  db: D1Database,
+  currentUserId?: string | null,
+): Promise<void> {
+  if (posts.length === 0) return;
+
+  const postIds = posts.map((p) => p.id);
+  const placeholders = postIds.map(() => '?').join(',');
+
+  const summaryResult = await db
+    .prepare(
+      `SELECT post_id, emoji, COUNT(*) AS count FROM reactions
+       WHERE post_id IN (${placeholders})
+       GROUP BY post_id, emoji`,
+    )
+    .bind(...postIds)
+    .all<{ post_id: string; emoji: string; count: number }>();
+
+  const mine = new Set<string>();
+  if (currentUserId) {
+    const mineResult = await db
+      .prepare(`SELECT post_id, emoji FROM reactions WHERE user_id = ? AND post_id IN (${placeholders})`)
+      .bind(currentUserId, ...postIds)
+      .all<{ post_id: string; emoji: string }>();
+    for (const r of mineResult.results || []) {
+      mine.add(`${r.post_id}:${r.emoji}`);
+    }
+  }
+
+  const grouped = new Map<string, Array<{ emoji: string; count: number; reacted: boolean }>>();
+  for (const row of summaryResult.results || []) {
+    if (!grouped.has(row.post_id)) grouped.set(row.post_id, []);
+    grouped.get(row.post_id)!.push({
+      emoji: row.emoji,
+      count: row.count,
+      reacted: mine.has(`${row.post_id}:${row.emoji}`),
+    });
+  }
+
+  for (const post of posts) {
+    post.reactions = grouped.get(post.id) || [];
   }
 }
 
@@ -11750,9 +11888,11 @@ app.post('/api/test/reset', async (c) => {
   for (const db of clears) {
     await ensureNsfwScansTable(db);
     await ensurePendingEmbedsTable(db);
+    await ensureReactionsTable(db);
     await db.batch([
       db.prepare('DELETE FROM notifications'),
       db.prepare('DELETE FROM reports'),
+      db.prepare('DELETE FROM reactions'),
       db.prepare('DELETE FROM freshs'),
       db.prepare('DELETE FROM follows'),
       db.prepare('DELETE FROM posts'),

@@ -11,6 +11,7 @@ import {
   Save,
   Send,
   Share2,
+  SmilePlus,
   StickyNote,
   Upload,
   X,
@@ -29,7 +30,8 @@ export type IconName =
   | 'drafts'
   | 'close'
   | 'copy'
-  | 'send';
+  | 'send'
+  | 'smile-plus';
 
 const ICON_NODES: Record<IconName, IconNode> = {
   fresh: Leaf,
@@ -45,6 +47,7 @@ const ICON_NODES: Record<IconName, IconNode> = {
   close: X,
   copy: Copy,
   send: Send,
+  'smile-plus': SmilePlus,
 };
 
 export function icon(name: IconName, attrs: Record<string, string> = {}): SVGElement {

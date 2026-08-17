@@ -6,7 +6,7 @@ import { registerModal } from '../lib/modal-state.js';
 import { openPostModal } from '../lib/post-modal.js';
 import { useSandboxBridge } from '../lib/sandbox-bridge.js';
 import { getShowNsfw } from '../lib/settings.js';
-import { PostCardMode, PostCardProps, QuotedPost } from '../types/post.js';
+import { PostCardMode, type PostCardProps, type QuotedPost, type ReactionSummary } from '../types/post.js';
 import { createAudioPlayer } from './AudioPlayer.js';
 import { createImagePreview } from './ImagePreview.js';
 import { createPostActions } from './PostActions.js';
@@ -33,6 +33,7 @@ export class PostCard {
   private bookmarkCount: number;
   private replyCount: number;
   private impressions: number;
+  private reactions: ReactionSummary[];
   private impressionTracked: boolean = false;
   private postStageElement?: HTMLElement;
   private sandboxBridge?: ReturnType<typeof useSandboxBridge>;
@@ -64,6 +65,7 @@ export class PostCard {
     this.bookmarkCount = props.post.bookmark_count;
     this.replyCount = props.post.reply_count || 0;
     this.impressions = props.post.impressions || 0;
+    this.reactions = props.post.reactions || [];
     this.element = this.createElement();
     this.setupEventListeners();
   }
@@ -345,12 +347,14 @@ export class PostCard {
         impressions: this.impressions,
         isFreshed: this.isFreshed,
         isBookmarked: this.isBookmarked,
+        reactions: this.reactions,
         depth: this.props.depth ?? this.props.post.depth,
         onFreshToggle: () => this.handleFreshToggle(),
         onBookmarkToggle: () => this.handleBookmarkToggle(),
         onReplyToggle: () => this.handleReplyToggle(),
         onShare: () => this.handleShare(),
         onQuote: () => this.handleQuote(),
+        onReactionToggle: (emoji) => this.handleReactionToggle(emoji),
       });
       container.appendChild(actions);
     }
@@ -644,6 +648,73 @@ export class PostCard {
       console.error('Failed to toggle fresh:', error);
     } finally {
       this.freshLoading = false;
+    }
+
+    this.updateActions();
+  }
+
+  private async handleReactionToggle(emoji: string): Promise<void> {
+    if (!this.props.currentUser) {
+      showSignInPrompt(
+        'reaction',
+        () => {
+          window.history.pushState({}, '', '/login');
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        },
+        () => {
+          window.history.pushState({}, '', '/register');
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        },
+      );
+      return;
+    }
+
+    const previous = this.reactions;
+    const idx = previous.findIndex((r) => r.emoji === emoji);
+    const optimistic = previous.map((r) => ({ ...r }));
+    if (idx >= 0) {
+      const r = optimistic[idx];
+      if (r.reacted) {
+        r.count -= 1;
+        r.reacted = false;
+        if (r.count <= 0) optimistic.splice(idx, 1);
+      } else {
+        r.count += 1;
+        r.reacted = true;
+      }
+    } else {
+      optimistic.push({ emoji, count: 1, reacted: true });
+    }
+    this.reactions = optimistic;
+    this.updateActions();
+
+    try {
+      const response = await fetch(`/api/posts/${this.props.post.id}/reactions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ emoji }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to toggle reaction');
+      }
+
+      const result = (await response.json()) as {
+        emoji: string;
+        reacted: boolean;
+        reactions: ReactionSummary[];
+      };
+      this.reactions = result.reactions;
+
+      window.dispatchEvent(
+        new CustomEvent('postUpdated', {
+          detail: { postId: this.props.post.id, reactions: result.reactions },
+        }),
+      );
+    } catch (error) {
+      this.reactions = previous;
+      console.error('Failed to toggle reaction:', error);
     }
 
     this.updateActions();
@@ -1053,12 +1124,14 @@ export class PostCard {
         impressions: this.impressions,
         isFreshed: this.isFreshed,
         isBookmarked: this.isBookmarked,
+        reactions: this.reactions,
         depth: this.props.depth ?? this.props.post.depth,
         onFreshToggle: () => this.handleFreshToggle(),
         onBookmarkToggle: () => this.handleBookmarkToggle(),
         onReplyToggle: () => this.handleReplyToggle(),
         onShare: () => this.handleShare(),
         onQuote: () => this.handleQuote(),
+        onReactionToggle: (emoji) => this.handleReactionToggle(emoji),
       });
       actionsContainer.replaceWith(newActions);
     }
@@ -1087,6 +1160,9 @@ export class PostCard {
     }
     if (post.is_bookmarked !== undefined) {
       this.isBookmarked = post.is_bookmarked;
+    }
+    if (post.reactions !== undefined) {
+      this.reactions = post.reactions;
     }
     this.props.post = { ...this.props.post, ...post };
     this.updateActions();
