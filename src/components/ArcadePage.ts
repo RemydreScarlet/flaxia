@@ -184,7 +184,7 @@ export class ArcadePage {
       backBtn.style.cssText = `
         background: none;
         border: none;
-        font-size: 1.2rem;
+        font-size: 0.85rem;
         cursor: pointer;
         color: var(--text-primary);
         padding: 0.15rem 0.35rem;
@@ -215,16 +215,7 @@ export class ArcadePage {
       white-space: nowrap;
     `;
 
-    const subtitle = document.createElement('span');
-    subtitle.textContent = t('arcade.subtitle');
-    subtitle.style.cssText = `
-      font-size: 0.75rem;
-      white-space: nowrap;
-      color: var(--text-muted);
-    `;
-
     titleGroup.appendChild(title);
-    titleGroup.appendChild(subtitle);
     header.appendChild(titleGroup);
 
     // Spacer to push upload/tutorial buttons to the right

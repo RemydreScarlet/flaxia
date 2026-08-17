@@ -375,9 +375,8 @@
   "post_stage.flash_load_error": "Failed to load Flash content",
   "post_stage.dos_load_error": "Failed to load DOS content",
 
-  "arcade.title": "🕹️ Shot Arcade",
+  "arcade.title": "🕹️ Flaxia Arcade",
   "arcade.back_home": "← Back to Home",
-  "arcade.subtitle": "Play web as Shorts!",
   "arcade.loading": "Loading games...",
   "arcade.no_games_title": "No games yet",
   "arcade.no_games_subtitle": "Upload SWF, ZIP, or DOS files to share games!",

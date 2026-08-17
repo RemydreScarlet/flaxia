@@ -633,15 +633,6 @@ h1 {
   .arcade-header h1 {
     font-size: 0.9rem;
   }
-
-  .arcade-header span {
-    font-size: 0.65rem;
-  }
-
-  .arcade-back-btn {
-    font-size: 1rem;
-    padding: 0.1rem 0.25rem;
-  }
 }
 
 /* LeftNav Styles */
