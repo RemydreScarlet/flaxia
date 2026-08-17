@@ -31,7 +31,6 @@ export class ThreadPage {
   constructor(props: ThreadPageProps) {
     this.props = props;
     this.element = this.createElement();
-    this.setupSwipeDetection();
     this.setupPostUpdatedListener();
     this.loadThread();
   }
@@ -258,11 +257,6 @@ export class ThreadPage {
     return container;
   }
 
-  private setupSwipeDetection(): void {
-    // Mobile left nav gestures are disabled. Navigation is opened only by the explicit menu button.
-    return;
-  }
-
   private addResponsiveStyles(container: HTMLElement): void {
     const style = document.createElement('style');
     style.textContent = `
@@ -273,9 +267,6 @@ export class ThreadPage {
       }
       
       @media (max-width: 768px) {
-        .left-nav-open-button {
-          top: 30%;
-        }
         .thread-page .main-container {
           flex-direction: column;
           max-width: 100%;

@@ -409,7 +409,6 @@ document.addEventListener('DOMContentLoaded', async () => {
           leftNav.setUnreadCount(unreadNotificationCount);
         }
       });
-      updateLeftNavOpenBadge(unreadNotificationCount);
 
       if (capacitorBadge) {
         capacitorBadge(unreadNotificationCount);
@@ -636,7 +635,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Mobile left nav overlay management
     let leftNavOverlay: HTMLElement | null = null;
-    let leftNavOpenButton: HTMLButtonElement | null = null;
 
     const createLeftNavOverlay = (): HTMLElement => {
       const overlay = document.createElement('div');
@@ -646,31 +644,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
       document.body.appendChild(overlay);
       return overlay;
-    };
-
-    const createLeftNavOpenButton = (leftNavElement: HTMLElement): HTMLButtonElement => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'left-nav-open-button';
-      button.setAttribute('aria-label', 'Open navigation');
-      button.innerHTML = '→<span class="left-nav-open-badge"></span>';
-      button.addEventListener('click', () => {
-        openLeftNav(leftNavElement);
-      });
-      document.body.appendChild(button);
-      return button;
-    };
-
-    const updateLeftNavOpenBadge = (count: number): void => {
-      if (!leftNavOpenButton) return;
-      const badge = leftNavOpenButton.querySelector('.left-nav-open-badge') as HTMLElement;
-      if (!badge) return;
-      if (count > 0) {
-        badge.textContent = count >= 99 ? '99+' : String(count);
-        badge.style.display = '';
-      } else {
-        badge.style.display = 'none';
-      }
     };
 
     let leftNavWasOpen = false;
@@ -710,13 +683,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     let currentResizeHandler: (() => void) | null = null;
     let currentKeydownHandler: ((e: KeyboardEvent) => void) | null = null;
     let currentModalChangeHandler: ((e: Event) => void) | null = null;
+    let currentOpenLeftNavHandler: (() => void) | null = null;
+    let currentEdgeTouchStartHandler: ((e: TouchEvent) => void) | null = null;
+    let currentEdgeTouchMoveHandler: ((e: TouchEvent) => void) | null = null;
+    let currentEdgeTouchEndHandler: (() => void) | null = null;
 
     const setupMobileLeftNav = (leftNavElement: HTMLElement): void => {
-      // Clean up existing button and event listeners
-      if (leftNavOpenButton) {
-        leftNavOpenButton.remove();
-        leftNavOpenButton = null;
-      }
+      // Clean up existing event listeners
       if (currentResizeHandler) {
         window.removeEventListener('resize', currentResizeHandler);
         currentResizeHandler = null;
@@ -729,17 +702,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         window.removeEventListener('modalchange', currentModalChangeHandler);
         currentModalChangeHandler = null;
       }
-
-      // Always create the button (CSS shows/hides via media query)
-      leftNavOpenButton = createLeftNavOpenButton(leftNavElement);
-
-      // Sync button visibility with current notification count
-      updateLeftNavOpenBadge(unreadNotificationCount);
+      if (currentOpenLeftNavHandler) {
+        document.removeEventListener('openLeftNav', currentOpenLeftNavHandler);
+        currentOpenLeftNavHandler = null;
+      }
+      if (currentEdgeTouchStartHandler) {
+        document.removeEventListener('touchstart', currentEdgeTouchStartHandler);
+        currentEdgeTouchStartHandler = null;
+      }
+      if (currentEdgeTouchMoveHandler) {
+        document.removeEventListener('touchmove', currentEdgeTouchMoveHandler);
+        currentEdgeTouchMoveHandler = null;
+      }
+      if (currentEdgeTouchEndHandler) {
+        document.removeEventListener('touchend', currentEdgeTouchEndHandler);
+        document.removeEventListener('touchcancel', currentEdgeTouchEndHandler);
+        currentEdgeTouchEndHandler = null;
+      }
 
       // Listen for openLeftNav events from timeline
-      document.addEventListener('openLeftNav', () => {
+      currentOpenLeftNavHandler = () => {
         openLeftNav(leftNavElement);
-      });
+      };
+      document.addEventListener('openLeftNav', currentOpenLeftNavHandler);
 
       // Handle escape key to close
       currentKeydownHandler = (e: KeyboardEvent) => {
@@ -760,13 +745,45 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Close mobile nav when modal opens
       currentModalChangeHandler = (e: Event) => {
         if (window.innerWidth > 768) return;
-        const { open } = (e as CustomEvent<{ open: boolean }>).detail;
         closeLeftNav();
-        if (leftNavOpenButton) {
-          leftNavOpenButton.style.display = open ? 'none' : '';
-        }
       };
       window.addEventListener('modalchange', currentModalChangeHandler);
+
+      // Edge swipe detection to open the mobile left nav (swipe right from the left edge)
+      let swipeStartX = 0;
+      let swipeStartY = 0;
+      let isEdgeSwipeTracking = false;
+
+      currentEdgeTouchStartHandler = (e: TouchEvent) => {
+        if (window.innerWidth > 768 || leftNavWasOpen) return;
+        const touch = e.touches[0];
+        if (!touch || touch.clientX > 24) return;
+        isEdgeSwipeTracking = true;
+        swipeStartX = touch.clientX;
+        swipeStartY = touch.clientY;
+      };
+
+      currentEdgeTouchMoveHandler = (e: TouchEvent) => {
+        if (!isEdgeSwipeTracking) return;
+        const touch = e.touches[0];
+        if (!touch) return;
+        const dx = touch.clientX - swipeStartX;
+        const dy = touch.clientY - swipeStartY;
+        if (dx > 70 && Math.abs(dx) > Math.abs(dy)) {
+          e.preventDefault();
+          isEdgeSwipeTracking = false;
+          openLeftNav(leftNavElement);
+        }
+      };
+
+      currentEdgeTouchEndHandler = () => {
+        isEdgeSwipeTracking = false;
+      };
+
+      document.addEventListener('touchstart', currentEdgeTouchStartHandler, { passive: true });
+      document.addEventListener('touchmove', currentEdgeTouchMoveHandler, { passive: false });
+      document.addEventListener('touchend', currentEdgeTouchEndHandler);
+      document.addEventListener('touchcancel', currentEdgeTouchEndHandler);
     };
 
     // Auth guard - redirect to login if not authenticated (only for protected routes)
@@ -1299,10 +1316,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       try {
         // Handle auth pages (full screen, no nav)
         if (view === 'login') {
-          if (leftNavOpenButton) {
-            leftNavOpenButton.remove();
-            leftNavOpenButton = null;
-          }
           if (leftNavOverlay) {
             leftNavOverlay.remove();
             leftNavOverlay = null;
@@ -1325,10 +1338,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         if (view === 'register') {
-          if (leftNavOpenButton) {
-            leftNavOpenButton.remove();
-            leftNavOpenButton = null;
-          }
           if (leftNavOverlay) {
             leftNavOverlay.remove();
             leftNavOverlay = null;
@@ -1352,10 +1361,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Handle legal pages (public, no auth required, no layout)
         if (view === 'terms' || view === 'privacy' || view === 'about') {
-          if (leftNavOpenButton) {
-            leftNavOpenButton.remove();
-            leftNavOpenButton = null;
-          }
           if (leftNavOverlay) {
             leftNavOverlay.remove();
             leftNavOverlay = null;
@@ -1376,10 +1381,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Handle docs blog (public, no auth required, no layout)
         if (view === 'docs') {
-          if (leftNavOpenButton) {
-            leftNavOpenButton.remove();
-            leftNavOpenButton = null;
-          }
           if (leftNavOverlay) {
             leftNavOverlay.remove();
             leftNavOverlay = null;
@@ -2108,7 +2109,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                   ln.setUnreadCount(0);
                 }
               });
-              updateLeftNavOpenBadge(0);
               if (capacitorBadge) {
                 await capacitorBadge(0);
               }

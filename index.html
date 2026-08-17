@@ -161,14 +161,6 @@
       width: 350px; flex-shrink: 0; padding: 1rem;
       position: sticky; top: 0; height: 100vh; overflow-y: auto;
     }
-    .left-nav-open-button {
-      position: fixed; left: 0; top: 50%; transform: translateY(-50%);
-      width: 24px; height: 88px; font-size: 1.35rem; font-weight: bold;
-      color: #fff; background: rgba(34,197,94,0.25);
-      border: none; border-radius: 0 14px 14px 0; z-index: 1080;
-      cursor: pointer; transition: background .2s, transform .2s; display: none;
-    }
-    .left-nav-open-button:hover { background: rgba(34,197,94,0.45); }
     .nav-logo { margin-bottom: 2rem; }
     .nav-items {
       display: flex; flex-direction: column; gap: .25rem; margin-bottom: 2rem;
@@ -228,7 +220,6 @@
         opacity: 0; visibility: hidden; transition: opacity .3s, visibility .3s;
       }
       .left-nav-overlay--visible { opacity: 1; visibility: visible; }
-      .left-nav-open-button { display: block; }
       .main-content { padding-bottom: 1rem; }
       .main-container { flex-direction: column; }
     }

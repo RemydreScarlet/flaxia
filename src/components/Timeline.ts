@@ -31,7 +31,6 @@ export class Timeline {
 
   // Store bound event handlers for proper cleanup
   private boundHandleProfileUpdate: () => void;
-  private boundHandleResize: () => void;
 
   constructor(props: TimelineProps) {
     this.props = props;
@@ -51,7 +50,6 @@ export class Timeline {
 
     // Initialize bound event handlers for proper cleanup
     this.boundHandleProfileUpdate = this.handleProfileUpdate.bind(this);
-    this.boundHandleResize = this.updateSwipeHint.bind(this);
 
     this.infiniteScroll = createInfiniteScroll({
       onLoadMore: () => this.loadMorePosts(),
@@ -284,25 +282,6 @@ export class Timeline {
     // Listen for post updates (e.g. fresh/like toggles from other views)
     this.postUpdatedHandler = createPostUpdatedHandler(this.postCards);
     window.addEventListener('postUpdated', this.postUpdatedHandler);
-
-    // Setup swipe detection for mobile left nav
-    this.setupSwipeDetection();
-  }
-
-  private setupSwipeDetection(): void {
-    // Mobile left nav gestures are disabled. Navigation is opened only by the explicit menu button.
-    return;
-  }
-
-  private updateSwipeHint(): void {
-    const hint = document.querySelector('.left-nav-swipe-hint') as HTMLElement;
-    if (hint) {
-      if (window.innerWidth <= 768) {
-        hint.style.display = 'block';
-      } else {
-        hint.style.display = 'none';
-      }
-    }
   }
 
   private handleNewPost(post: Post): void {
@@ -737,7 +716,6 @@ export class Timeline {
     if (this.postUpdatedHandler) {
       window.removeEventListener('postUpdated', this.postUpdatedHandler);
     }
-    window.removeEventListener('resize', this.boundHandleResize);
 
     if (this.composer) {
       this.composer.destroy();
