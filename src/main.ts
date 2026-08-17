@@ -1792,8 +1792,8 @@ document.addEventListener('DOMContentLoaded', async () => {
               currentUser,
               initialGameId: currentPostId || undefined,
               onBack: () => {
-                console.log('Arcade back button clicked');
-                window.history.back();
+                window.history.pushState({}, '', '/home');
+                navigateTo('timeline');
               },
             });
           }

@@ -376,6 +376,7 @@
   "post_stage.dos_load_error": "Failed to load DOS content",
 
   "arcade.title": "🕹️ Shot Arcade",
+  "arcade.back_home": "← Back to Home",
   "arcade.subtitle": "Play web as Shorts!",
   "arcade.loading": "Loading games...",
   "arcade.no_games_title": "No games yet",

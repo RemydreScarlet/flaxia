@@ -376,6 +376,7 @@
   "post_stage.dos_load_error": "DOSコンテンツの読み込みに失敗しました",
 
   "arcade.title": "🕹️ Shot Arcade",
+  "arcade.back_home": "← ホームに戻る",
   "arcade.subtitle": "Shortsでゲームプレイ！",
   "arcade.loading": "ゲームを読み込み中...",
   "arcade.no_games_title": "まだゲームがありません",

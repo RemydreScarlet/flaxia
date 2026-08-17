@@ -179,8 +179,8 @@ export class ArcadePage {
     if (this.props.onBack) {
       const backBtn = document.createElement('button');
       backBtn.className = 'arcade-back-btn';
-      backBtn.textContent = '←';
-      backBtn.title = t('common.back');
+      backBtn.textContent = t('arcade.back_home');
+      backBtn.title = t('arcade.back_home');
       backBtn.style.cssText = `
         background: none;
         border: none;
