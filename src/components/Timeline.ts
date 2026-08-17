@@ -79,13 +79,16 @@ export class Timeline {
 
     container.appendChild(timelineHeader);
 
-    // Post composer directly below the header (only for logged-in users)
+    // Post composer directly below the header (only for logged-in users);
+    // guests see an Arcade promo card instead
     if (this.props.currentUser) {
       this.composer = createPostComposer({
         onPostCreated: (post) => this.handleNewPost(post as unknown as Post),
         currentUser: this.props.currentUser,
       });
       container.appendChild(this.composer.getElement());
+    } else {
+      container.appendChild(this.createArcadePromo());
     }
 
     // Hashtag input (hidden by default)
@@ -157,6 +160,34 @@ export class Timeline {
     container.appendChild(reloadBtn);
 
     return container;
+  }
+
+  private createArcadePromo(): HTMLElement {
+    const promo = document.createElement('div');
+    promo.className = 'timeline-promo';
+
+    const title = document.createElement('div');
+    title.className = 'timeline-promo-title';
+    title.textContent = t('timeline.promo_title');
+
+    const desc = document.createElement('p');
+    desc.className = 'timeline-promo-desc';
+    desc.textContent = t('timeline.promo_desc');
+
+    const arcadeBtn = document.createElement('button');
+    arcadeBtn.type = 'button';
+    arcadeBtn.className = 'timeline-promo-arcade-btn';
+    arcadeBtn.textContent = t('timeline.promo_arcade_btn');
+    arcadeBtn.addEventListener('click', () => {
+      window.history.pushState({}, '', '/arcade');
+      window.dispatchEvent(new CustomEvent('spaNavigate', { detail: { view: 'arcade' } }));
+    });
+
+    promo.appendChild(title);
+    promo.appendChild(desc);
+    promo.appendChild(arcadeBtn);
+
+    return promo;
   }
 
   private createHashtagInput(): HTMLElement {

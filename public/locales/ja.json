@@ -648,6 +648,9 @@
   "timeline.hashtag_placeholder": "ハッシュタグを入力...",
   "timeline.search": "検索",
   "timeline.loading_ad": "広告を読み込み中...",
+  "timeline.promo_title": "Flaxiaへようこそ！",
+  "timeline.promo_desc": "Flaxiaはテキストだけでなく、25MB以内なら何でも投稿できます。もちろんHTMLでできたゲームも！ゲームはArcadeから遊べます。",
+  "timeline.promo_arcade_btn": "🕹️ Arcadeで遊ぶ",
 
   "explore.tag_title": "# {tag}",
   "explore.tag_count": "{count}件",

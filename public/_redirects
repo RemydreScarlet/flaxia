@@ -10,4 +10,4 @@
 /robots.txt /robots.txt 200
 /sandbox/* /sandbox/index.html 200
 /whitepaper /docs/whitepaper 308
-/ /arcade 301
+/ /home 301

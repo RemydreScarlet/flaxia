@@ -648,6 +648,9 @@
   "timeline.hashtag_placeholder": "Enter hashtag...",
   "timeline.search": "Search",
   "timeline.loading_ad": "Loading ad...",
+  "timeline.promo_title": "Welcome to Flaxia!",
+  "timeline.promo_desc": "Flaxia lets you post not just text, but anything up to 25MB. Even games made with HTML! Play games on Arcade.",
+  "timeline.promo_arcade_btn": "🕹️ Play on Arcade",
 
   "explore.tag_title": "# {tag}",
   "explore.tag_count": "{count} posts",
