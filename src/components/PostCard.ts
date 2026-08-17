@@ -7,6 +7,8 @@ import { openPostModal } from '../lib/post-modal.js';
 import { useSandboxBridge } from '../lib/sandbox-bridge.js';
 import { getShowNsfw } from '../lib/settings.js';
 import { PostCardMode, PostCardProps, QuotedPost } from '../types/post.js';
+import { createAudioPlayer } from './AudioPlayer.js';
+import { createImagePreview } from './ImagePreview.js';
 import { createPostActions } from './PostActions.js';
 import { createPostHeader } from './PostHeader.js';
 import { createPostStage, updatePostStage } from './PostStage.js';
@@ -14,6 +16,7 @@ import { createPostText } from './PostText.js';
 import { createReplyComposer, ReplyComposer } from './ReplyComposer.js';
 import { createShareModal } from './ShareModal.js';
 import { showSignInPrompt } from './SignInPrompt.js';
+import { createVideoPlayer } from './VideoPlayer.js';
 
 // How many 100ms attempts to make before giving up on attaching the sandbox
 // bridge. The iframe is created synchronously once a post starts executing, so
@@ -347,6 +350,7 @@ export class PostCard {
         onBookmarkToggle: () => this.handleBookmarkToggle(),
         onReplyToggle: () => this.handleReplyToggle(),
         onShare: () => this.handleShare(),
+        onQuote: () => this.handleQuote(),
       });
       container.appendChild(actions);
     }
@@ -865,7 +869,99 @@ export class PostCard {
     body.textContent = quoted.text || '';
     card.appendChild(body);
 
+    const attachment = this.createQuotedPostAttachment(quoted);
+    if (attachment) card.appendChild(attachment);
+
     return card;
+  }
+
+  private createQuotedPostAttachment(quoted: QuotedPost): HTMLElement | null {
+    if (!quoted.gif_key && !quoted.payload_key && !quoted.swf_key && !quoted.thumbnail_key) {
+      return null;
+    }
+
+    const wrap = document.createElement('div');
+    wrap.className = 'quoted-post-attachment';
+    wrap.style.cssText = `
+      margin-top: 0.5rem;
+      border-radius: 0.5rem;
+      overflow: hidden;
+      position: relative;
+    `;
+
+    // Clicking the attachment still navigates to the quoted thread via the
+    // card's click handler (stopPropagation is left to the media players).
+    const gifKey = quoted.gif_key || '';
+    if (gifKey.startsWith('video/')) {
+      wrap.appendChild(createVideoPlayer({ gifKey, postId: quoted.id }));
+      return wrap;
+    }
+    if (gifKey.startsWith('audio/')) {
+      wrap.appendChild(createAudioPlayer({ gifKey: gifKey, postId: quoted.id }));
+      return wrap;
+    }
+    if (gifKey) {
+      wrap.appendChild(createImagePreview({ gifKey, postId: quoted.id }));
+      return wrap;
+    }
+
+    const isExecutable =
+      (!!quoted.payload_key && quoted.payload_key.startsWith('zip/')) ||
+      (!!quoted.payload_key && quoted.payload_key.startsWith('html/')) ||
+      (!!quoted.payload_key && quoted.payload_key.startsWith('dos/')) ||
+      (!!quoted.swf_key && quoted.swf_key.startsWith('swf/'));
+
+    if (quoted.thumbnail_key) {
+      wrap.appendChild(
+        createImagePreview({
+          gifKey: quoted.thumbnail_key,
+          postId: quoted.id,
+          isThumbnail: true,
+        }),
+      );
+      if (isExecutable) {
+        const badge = document.createElement('div');
+        badge.className = 'quoted-post-attachment-badge';
+        badge.style.cssText = `
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          transform: translate(-50%, -50%);
+          background: rgba(0, 0, 0, 0.7);
+          color: #fff;
+          padding: 6px 14px;
+          border-radius: 20px;
+          font-size: 0.85rem;
+          font-weight: 600;
+          pointer-events: none;
+        `;
+        if (quoted.payload_key?.startsWith('dos/')) badge.textContent = t('post_stage.play_dos');
+        else if (quoted.swf_key?.startsWith('swf/')) badge.textContent = t('post_stage.play_flash');
+        else badge.textContent = t('post_stage.run_zip');
+        wrap.appendChild(badge);
+      }
+      return wrap;
+    }
+
+    if (isExecutable) {
+      const pill = document.createElement('div');
+      pill.style.cssText = `
+        padding: 0.75rem;
+        border-radius: 0.5rem;
+        background: var(--bg-secondary);
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        font-weight: 600;
+        text-align: center;
+      `;
+      if (quoted.payload_key?.startsWith('dos/')) pill.textContent = t('post_stage.click_play_dos');
+      else if (quoted.swf_key?.startsWith('swf/')) pill.textContent = t('post_stage.click_play_flash');
+      else pill.textContent = t('post_stage.click_to_run');
+      wrap.appendChild(pill);
+      return wrap;
+    }
+
+    return null;
   }
 
   private navigateToThread(postId: string): void {
@@ -903,6 +999,10 @@ export class PostCard {
       avatar_key: p.avatar_key,
       text: p.text,
       hashtags: p.hashtags,
+      gif_key: p.gif_key,
+      payload_key: p.payload_key,
+      swf_key: p.swf_key,
+      thumbnail_key: p.thumbnail_key,
       created_at: p.created_at,
     };
     openPostModal({
@@ -958,6 +1058,7 @@ export class PostCard {
         onBookmarkToggle: () => this.handleBookmarkToggle(),
         onReplyToggle: () => this.handleReplyToggle(),
         onShare: () => this.handleShare(),
+        onQuote: () => this.handleQuote(),
       });
       actionsContainer.replaceWith(newActions);
     }

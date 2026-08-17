@@ -9398,8 +9398,8 @@ async function enrichPostsWithQuotes(posts: PostRow[], db: D1Database): Promise<
     const result = await db
       .prepare(
         `SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, u.language as author_language,
-              p.text, p.hashtags, p.mentions, p.gif_key, p.payload_key AS payloadKey, p.swf_key AS swfKey,
-              p.thumbnail_key AS thumbnailKey, p.parent_id, p.root_id, COALESCE(p.depth, 0) AS depth,
+              p.text, p.hashtags, p.mentions, p.gif_key, p.payload_key, p.swf_key,
+              p.thumbnail_key, p.parent_id, p.root_id, COALESCE(p.depth, 0) AS depth,
               COALESCE(p.status, 'published') AS status, p.hidden, p.created_at
        FROM posts p
        LEFT JOIN users u ON p.user_id = u.id

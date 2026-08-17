@@ -136,6 +136,7 @@ export interface PostActionsProps {
   onBookmarkToggle: () => void;
   onReplyToggle: () => void;
   onShare?: () => void;
+  onQuote?: () => void;
 }
 
 export interface TimelineProps {

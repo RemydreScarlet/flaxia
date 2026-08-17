@@ -7,20 +7,40 @@ export function createPostActions(props: PostActionsProps): HTMLElement {
   const container = document.createElement('div');
   container.className = 'post-actions';
 
+  const leftGroup = document.createElement('div');
+  leftGroup.className = 'post-actions-left';
+
+  const rightGroup = document.createElement('div');
+  rightGroup.className = 'post-actions-right';
+
   // Fresh! button
-  const freshButton = createActionButton('fresh', formatCount(props.freshCount), props.isFreshed);
+  const freshButton = createActionButton('fresh', formatCount(props.freshCount), props.isFreshed, true);
   freshButton.addEventListener('click', props.onFreshToggle);
 
-  // Bookmark button
-  const bookmarkButton = createActionButton('bookmark', formatCount(props.bookmarkCount), props.isBookmarked);
-  bookmarkButton.addEventListener('click', props.onBookmarkToggle);
-
   // Reply button
-  const replyButton = createActionButton('reply', formatCount(props.replyCount), false);
+  const replyButton = createActionButton('reply', formatCount(props.replyCount), false, true);
   replyButton.addEventListener('click', props.onReplyToggle);
 
+  // Quote button (no count)
+  const quoteButton = createActionButton('quote', '', false, false);
+  quoteButton.addEventListener('click', () => {
+    if (props.onQuote) props.onQuote();
+  });
+
+  // Bookmark button (no count)
+  const bookmarkButton = createActionButton('bookmark', '', props.isBookmarked, false);
+  bookmarkButton.addEventListener('click', props.onBookmarkToggle);
+
+  // Share button (no count)
+  const shareButton = createActionButton('share', '', false, false);
+  shareButton.addEventListener('click', () => {
+    if (props.onShare) {
+      props.onShare();
+    }
+  });
+
   // Impressions button (display only, not clickable)
-  const impressionsButton = createActionButton('impressions', formatCount(props.impressions), false);
+  const impressionsButton = createActionButton('impressions', formatCount(props.impressions), false, true);
   impressionsButton.style.cursor = 'default';
   const impressionsIcon = impressionsButton.querySelector('.action-icon') as HTMLElement;
   if (impressionsIcon) {
@@ -28,30 +48,22 @@ export function createPostActions(props: PostActionsProps): HTMLElement {
     impressionsIcon.style.opacity = '0.5';
   }
 
-  // Share button
-  const shareButton = createActionButton('share', '0', false);
-  shareButton.addEventListener('click', () => {
-    if (props.onShare) {
-      props.onShare();
-    }
-  });
+  leftGroup.appendChild(freshButton);
+  leftGroup.appendChild(replyButton);
+  leftGroup.appendChild(quoteButton);
 
-  container.appendChild(freshButton);
-  container.appendChild(bookmarkButton);
-  if (replyButton) {
-    container.appendChild(replyButton);
-  }
-  container.appendChild(shareButton);
-  container.appendChild(impressionsButton);
+  // Right-aligned group: rightmost impressions, then share, then bookmark
+  rightGroup.appendChild(bookmarkButton);
+  rightGroup.appendChild(shareButton);
+  rightGroup.appendChild(impressionsButton);
+
+  container.appendChild(leftGroup);
+  container.appendChild(rightGroup);
 
   return container;
 }
 
-function createActionButton(
-  type: 'fresh' | 'bookmark' | 'reply' | 'share' | 'impressions',
-  count: string,
-  isActive: boolean,
-): HTMLElement {
+function createActionButton(type: ActionButtonType, count: string, isActive: boolean, showCount: boolean): HTMLElement {
   const button = document.createElement('button');
   button.className = `action-button action-button--${type}`;
   button.setAttribute('aria-label', t('post_actions.aria_label', { type }));
@@ -71,8 +83,8 @@ function createActionButton(
 
   button.appendChild(iconEl);
 
-  // Add count for fresh and reply buttons only (not for share)
-  if (type !== 'share') {
+  // Add count for fresh, reply and impressions buttons only
+  if (showCount) {
     const countSpan = document.createElement('span');
     countSpan.className = 'action-count';
     countSpan.textContent = count;
@@ -88,7 +100,9 @@ function createActionButton(
   return button;
 }
 
-function getIconNameForType(type: 'fresh' | 'bookmark' | 'reply' | 'share' | 'impressions'): IconName {
+type ActionButtonType = 'fresh' | 'bookmark' | 'reply' | 'share' | 'impressions' | 'quote';
+
+function getIconNameForType(type: ActionButtonType): IconName {
   switch (type) {
     case 'fresh':
       return 'fresh';
@@ -100,6 +114,8 @@ function getIconNameForType(type: 'fresh' | 'bookmark' | 'reply' | 'share' | 'im
       return 'share';
     case 'impressions':
       return 'impressions';
+    case 'quote':
+      return 'quote';
     default:
       return 'share';
   }

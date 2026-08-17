@@ -1895,9 +1895,21 @@ h1 {
 
 .post-actions {
   display: flex;
+  justify-content: space-between;
   gap: 0.25rem 1rem;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.post-actions-left,
+.post-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem 1rem;
+}
+
+.post-actions-right {
+  margin-left: auto;
 }
 
 .action-button {

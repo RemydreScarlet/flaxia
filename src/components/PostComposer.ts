@@ -15,6 +15,9 @@ import { attachIcons, icon } from '../lib/icons.js';
 import { registerModal } from '../lib/modal-state.js';
 import { showToast } from '../lib/toast.js';
 import { detectZipType } from '../lib/zip-type.js';
+import { createAudioPlayer } from './AudioPlayer.js';
+import { createImagePreview } from './ImagePreview.js';
+import { createVideoPlayer } from './VideoPlayer.js';
 
 export class PostComposer {
   private element: HTMLElement;
@@ -268,9 +271,79 @@ export class PostComposer {
 
     body.appendChild(nameRow);
     body.appendChild(text);
+
+    const attachment = this.createQuotedAttachment(quoted);
+    if (attachment) body.appendChild(attachment);
+
     section.appendChild(removeBtn);
     section.appendChild(body);
     section.style.display = 'block';
+  }
+
+  private createQuotedAttachment(quoted: QuotedPost): HTMLElement | null {
+    if (!quoted.gif_key && !quoted.payload_key && !quoted.swf_key && !quoted.thumbnail_key) {
+      return null;
+    }
+
+    const wrap = document.createElement('div');
+    wrap.className = 'quoted-post-attachment';
+    wrap.style.cssText = `
+      margin-top: 0.5rem;
+      border-radius: 0.5rem;
+      overflow: hidden;
+      position: relative;
+    `;
+
+    const gifKey = quoted.gif_key || '';
+    if (gifKey.startsWith('video/')) {
+      wrap.appendChild(createVideoPlayer({ gifKey, postId: quoted.id }));
+      return wrap;
+    }
+    if (gifKey.startsWith('audio/')) {
+      wrap.appendChild(createAudioPlayer({ gifKey: gifKey, postId: quoted.id }));
+      return wrap;
+    }
+    if (gifKey) {
+      wrap.appendChild(createImagePreview({ gifKey, postId: quoted.id }));
+      return wrap;
+    }
+
+    if (quoted.thumbnail_key) {
+      wrap.appendChild(
+        createImagePreview({
+          gifKey: quoted.thumbnail_key,
+          postId: quoted.id,
+          isThumbnail: true,
+        }),
+      );
+      return wrap;
+    }
+
+    const isExecutable =
+      (!!quoted.payload_key && quoted.payload_key.startsWith('zip/')) ||
+      (!!quoted.payload_key && quoted.payload_key.startsWith('html/')) ||
+      (!!quoted.payload_key && quoted.payload_key.startsWith('dos/')) ||
+      (!!quoted.swf_key && quoted.swf_key.startsWith('swf/'));
+
+    if (isExecutable) {
+      const pill = document.createElement('div');
+      pill.style.cssText = `
+        padding: 0.75rem;
+        border-radius: 0.5rem;
+        background: var(--bg-secondary);
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        font-weight: 600;
+        text-align: center;
+      `;
+      if (quoted.payload_key?.startsWith('dos/')) pill.textContent = t('post_stage.click_play_dos');
+      else if (quoted.swf_key?.startsWith('swf/')) pill.textContent = t('post_stage.click_play_flash');
+      else pill.textContent = t('post_stage.click_to_run');
+      wrap.appendChild(pill);
+      return wrap;
+    }
+
+    return null;
   }
 
   private setupEventListeners(): void {
