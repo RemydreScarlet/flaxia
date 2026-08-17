@@ -68,6 +68,10 @@ export class ArcadePage {
   private initialGameId: string | undefined;
   private tutorialEl: HTMLElement | null = null;
   private isFullscreen: boolean = false;
+
+  // Set when the browser refused real fullscreen but we still applied the
+  // same immersive overlay so the game remains playable (e.g. iOS Safari).
+  private fakeFullscreenActive: boolean = false;
   private loadingEl: HTMLElement | null = null;
   private preloadedIds = new Set<string>();
 
@@ -2220,18 +2224,92 @@ export class ArcadePage {
     const viewport = this.gameContainer.querySelector('.arcade-viewport') as HTMLElement;
     if (!viewport) return;
 
-    if (document.fullscreenElement) {
-      document
-        .exitFullscreen()
-        .then(() => this.focusGameIframe(viewport))
-        .catch(() => {});
-    } else if (viewport.requestFullscreen) {
-      viewport
-        .requestFullscreen()
-        .then(() => this.focusGameIframe(viewport))
-        .catch(() => {
-          // Fullscreen not supported (e.g. iOS Safari)
-        });
+    // Real or fake fullscreen is active -> exit back to the normal arcade UI.
+    if (document.fullscreenElement || this.isFullscreen) {
+      if (document.fullscreenElement) {
+        document
+          .exitFullscreen()
+          .then(() => this.focusGameIframe(viewport))
+          .catch(() => {});
+      } else {
+        this.fakeFullscreenActive = false;
+        this.isFullscreen = false;
+        this.applyFullscreenStyle(false);
+        this.focusGameIframe(viewport);
+      }
+      return;
+    }
+
+    const requestFullscreen =
+      viewport.requestFullscreen?.bind(viewport) ??
+      (viewport as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> }).webkitRequestFullscreen?.bind(
+        viewport,
+      );
+
+    if (!requestFullscreen) {
+      this.enterFakeFullscreen(viewport);
+      return;
+    }
+
+    requestFullscreen()
+      .then(() => this.focusGameIframe(viewport))
+      .catch(() => this.enterFakeFullscreen(viewport));
+  }
+
+  private enterFakeFullscreen(viewport: HTMLElement): void {
+    this.fakeFullscreenActive = true;
+    this.isFullscreen = true;
+    this.applyFullscreenStyle(true);
+    this.focusGameIframe(viewport);
+
+    const game = this.games[this.currentIndex];
+    if (game) {
+      this.pushEvent({
+        postId: game.postId,
+        eventType: 'fullscreen',
+        dwellMs: Math.round(performance.now() - this.gameEntryTime),
+        didSkip: 0,
+        isFullscreen: 1,
+        gameType: game.type,
+      });
+    }
+  }
+
+  private applyFullscreenStyle(fullscreen: boolean): void {
+    // Hide the surrounding layout (left nav / right panel) like real fullscreen would.
+    const mainContainer = this.element.closest('.main-container') as HTMLElement | null;
+    if (mainContainer) {
+      const leftNav = mainContainer.querySelector(':scope > .left-nav') as HTMLElement | null;
+      if (leftNav) leftNav.style.display = fullscreen ? 'none' : '';
+      const rightPanel = mainContainer.querySelector(':scope > .right-panel') as HTMLElement | null;
+      if (rightPanel) rightPanel.style.display = fullscreen ? 'none' : '';
+    }
+
+    const header = this.element.querySelector('.arcade-header') as HTMLElement | null;
+    if (header) header.style.display = fullscreen ? 'none' : '';
+
+    const navUp = this.element.querySelector('.arcade-nav-up') as HTMLElement | null;
+    if (navUp) navUp.style.display = fullscreen ? 'none' : '';
+
+    const navDown = this.element.querySelector('.arcade-nav-down') as HTMLElement | null;
+    if (navDown) navDown.style.display = fullscreen ? 'none' : '';
+
+    const viewport = this.gameContainer.querySelector('.arcade-viewport') as HTMLElement | null;
+    const infoOverlay = viewport?.querySelector('.arcade-game-info') as HTMLElement | null;
+    if (infoOverlay) infoOverlay.style.display = fullscreen ? 'none' : '';
+
+    // Hide floating action buttons except the fullscreen button so the
+    // player can always toggle back out of the immersive overlay.
+    if (this.floatingActions) {
+      const buttons = this.floatingActions.children;
+      for (let i = 0; i < buttons.length; i++) {
+        const btn = buttons[i] as HTMLElement;
+        if (btn.dataset.tutorial === 'fullscreen') {
+          btn.style.display = '';
+        } else {
+          btn.style.display = fullscreen ? 'none' : '';
+        }
+      }
     }
   }
 
@@ -2241,6 +2319,9 @@ export class ArcadePage {
       (document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement
     );
     if (isFullscreen === this.isFullscreen) return;
+    // While the fake overlay is active, ignore unrelated fullscreen changes
+    // so we don't accidentally leave the immersive state.
+    if (this.fakeFullscreenActive) return;
     this.isFullscreen = isFullscreen;
 
     if (isFullscreen) {
@@ -2260,25 +2341,8 @@ export class ArcadePage {
     const viewport = this.gameContainer.querySelector('.arcade-viewport') as HTMLElement;
     if (!viewport) return;
 
+    this.applyFullscreenStyle(isFullscreen);
     this.focusGameIframe(viewport);
-
-    const infoOverlay = viewport.querySelector('.arcade-game-info') as HTMLElement;
-    if (infoOverlay) {
-      infoOverlay.style.display = isFullscreen ? 'none' : '';
-    }
-
-    // Hide floating actions except fullscreen button
-    if (this.floatingActions) {
-      const buttons = this.floatingActions.children;
-      for (let i = 0; i < buttons.length; i++) {
-        const btn = buttons[i] as HTMLElement;
-        if (btn.dataset.tutorial === 'fullscreen') {
-          btn.style.display = '';
-        } else {
-          btn.style.display = isFullscreen ? 'none' : '';
-        }
-      }
-    }
   }
 
   public getElement(): HTMLElement {
