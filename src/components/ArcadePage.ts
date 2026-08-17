@@ -760,7 +760,7 @@ export class ArcadePage {
       bottom: 0;
       display: flex;
       flex-direction: column;
-      background: #fff;
+      background: var(--bg-primary);
       transform: translateY(100%);
       opacity: 0;
       transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.4s ease;
@@ -1186,7 +1186,7 @@ export class ArcadePage {
       repliesHeader.className = 'replies-header';
       repliesHeader.textContent = `${t('thread.replies_header', { count: formatCount(data.replies.length) })}`;
       repliesHeader.style.cssText = `
-        color: #64748b;
+        color: var(--text-muted);
         font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         font-size: 0.9rem;
         margin: 0 1rem 0.5rem 1rem;

@@ -601,11 +601,11 @@ export class Timeline {
             position: relative;
             width: 100%;
             aspect-ratio: 16 / 9;
-            background: #f0f0f0;
+            background: var(--bg-tertiary);
             display: flex;
             align-items: center;
             justify-content: center;
-            color: #666;
+            color: var(--text-muted);
             font-size: 14px;
           `;
           placeholder.innerHTML = t('timeline.loading_ad');

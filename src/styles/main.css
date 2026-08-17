@@ -1,13 +1,33 @@
 :root {
+  color-scheme: light;
   --bg-primary: #ffffff;
   --bg-secondary: #f0fdf4;
   --bg-input: #f1f5f9;
+  --bg-tertiary: #f0f0f0;
+  --bg-hover: rgba(0, 0, 0, 0.04);
   --border: #e2e8f0;
   --text-primary: #0f172a;
   --text-muted: #64748b;
   --accent: #22c55e;
   --accent-dark: #16a34a;
   --danger: #ef4444;
+  --link: #3b82f6;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-input: #1e293b;
+  --bg-tertiary: #1f2937;
+  --bg-hover: rgba(255, 255, 255, 0.06);
+  --border: #334155;
+  --text-primary: #f1f5f9;
+  --text-muted: #94a3b8;
+  --accent: #22c55e;
+  --accent-dark: #16a34a;
+  --danger: #ef4444;
+  --link: #60a5fa;
 }
 
 * {
@@ -45,7 +65,7 @@ body {
   flex-shrink: 0;
   padding: 1rem;
   border-right: 1px solid var(--border);
-  background: white;
+  background: var(--bg-primary);
   position: sticky;
   top: 0;
   height: 100vh;
@@ -2468,17 +2488,17 @@ h1 {
   gap: 0.5rem;
   margin-bottom: 1rem;
   padding: 0.75rem;
-  background: var(--surface);
-  border: 1px solid #334155;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
   border-radius: 0.25rem;
 }
 
 .hashtag-input-field {
   flex: 1;
   padding: 0.5rem 0.75rem;
-  background: var(--background);
-  border: 1px solid #334155;
-  color: var(--text);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
   font-family: "Noto Sans", monospace, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 0.875rem;
   border-radius: 0.25rem;
@@ -2486,7 +2506,7 @@ h1 {
 
 .hashtag-input-field:focus {
   outline: none;
-  border-color: var(--primary);
+  border-color: var(--accent);
 }
 
 .hashtag-input-field::placeholder {
@@ -2495,8 +2515,8 @@ h1 {
 
 .hashtag-search-btn {
   padding: 0.5rem 1rem;
-  background: var(--primary);
-  color: var(--background);
+  background: var(--accent);
+  color: #000;
   border: none;
   border-radius: 0.25rem;
   cursor: pointer;
@@ -2507,11 +2527,11 @@ h1 {
 }
 
 .hashtag-search-btn:hover {
-  background: #16a34a;
+  background: var(--accent-dark);
 }
 
 .hashtag-search-btn:disabled {
-  background: #475569;
+  background: var(--text-muted);
   cursor: not-allowed;
 }
 
@@ -2528,8 +2548,8 @@ h1 {
 }
 
 .ad-banner {
-  background: var(--surface);
-  border: 1px solid #334155;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
   margin: 1rem 0;
   padding: 1rem;
   text-align: center;
@@ -2568,8 +2588,8 @@ h1 {
 .load-more-btn {
   padding: 0.75rem 2rem;
   background: transparent;
-  color: var(--text);
-  border: 1px solid #334155;
+  color: var(--text-primary);
+  border: 1px solid var(--border);
   border-radius: 0.25rem;
   cursor: pointer;
   font-family: "Noto Sans", monospace, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -2579,13 +2599,13 @@ h1 {
 }
 
 .load-more-btn:hover:not(:disabled) {
-  background: #334155;
-  border-color: var(--text);
+  background: var(--bg-tertiary);
+  border-color: var(--text-muted);
 }
 
 .load-more-btn:disabled {
   color: var(--text-muted);
-  border-color: #334155;
+  border-color: var(--border);
   cursor: not-allowed;
 }
 
@@ -2605,8 +2625,8 @@ h1 {
 }
 
 .fullscreen-modal {
-  background: var(--surface);
-  border: 1px solid #334155;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
   border-radius: 0.5rem;
   padding: 2rem;
   max-width: 400px;
@@ -2615,7 +2635,7 @@ h1 {
 }
 
 .fullscreen-message {
-  color: var(--text);
+  color: var(--text-primary);
   font-family: "Noto Sans", monospace, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 0.875rem;
   margin-bottom: 1.5rem;
@@ -2641,28 +2661,28 @@ h1 {
 }
 
 .fullscreen-allow {
-  background: var(--primary);
-  color: var(--background);
+  background: var(--accent);
+  color: #000;
 }
 
 .fullscreen-allow:hover {
-  background: #16a34a;
+  background: var(--accent-dark);
 }
 
 .fullscreen-deny {
   background: transparent;
-  color: var(--text);
-  border: 1px solid #334155;
+  color: var(--text-primary);
+  border: 1px solid var(--border);
 }
 
 .fullscreen-deny:hover {
-  background: #334155;
-  border-color: var(--text);
+  background: var(--bg-tertiary);
+  border-color: var(--text-muted);
 }
 
 .score-toast {
-  background: var(--surface);
-  border: 1px solid var(--primary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--accent);
   border-radius: 0.25rem;
   padding: 0.75rem 1rem;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
@@ -2684,7 +2704,7 @@ h1 {
 }
 
 .score-value {
-  color: var(--primary);
+  color: var(--accent);
   font-family: "Noto Sans", monospace, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 0.875rem;
   font-weight: 600;
@@ -2879,7 +2899,7 @@ html {
   left: 0;
   right: 0;
   bottom: 0;
-  background: #ffffff;
+  background: var(--bg-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2889,7 +2909,7 @@ html {
 
 .initial-loader-content {
   text-align: center;
-  color: #64748b;
+  color: var(--text-muted);
   font-family: monospace;
   contain: layout style paint;
 }
@@ -2897,8 +2917,8 @@ html {
 .initial-loader-spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid #e2e8f0;
-  border-top: 3px solid #22c55e;
+  border: 3px solid var(--border);
+  border-top: 3px solid var(--accent);
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin: 0 auto 16px;
@@ -3079,14 +3099,14 @@ html {
 
 /* Mention Links */
 .mention-link {
-  color: #3b82f6;
+  color: var(--link);
   text-decoration: none;
   font-weight: 600;
 }
 
 .mention-link:hover {
   text-decoration: underline;
-  color: #2563eb;
+  color: var(--link);
 }
 
 /* Math Elements */

@@ -216,8 +216,8 @@ function mountAdStage(ad: Ad, placeholder: HTMLElement): void {
       position: relative;
       width: 100%;
       height: 250px;
-      background: #f8f9fa;
-      border: 1px solid #e9ecef;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
       border-radius: 8px;
       display: flex;
       align-items: center;
@@ -419,8 +419,8 @@ export function createAdCard(ad: Ad): HTMLElement {
       position: relative;
       width: 100%;
       height: 250px;
-      background: #f8f9fa;
-      border: 1px solid #e9ecef;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
       border-radius: 8px;
       display: flex;
       align-items: center;
@@ -434,7 +434,7 @@ export function createAdCard(ad: Ad): HTMLElement {
       width: 100%;
       aspect-ratio: ${aspectRatio};
       overflow: hidden;
-      background: #f0f0f0;
+      background: var(--bg-tertiary);
     `;
   }
 

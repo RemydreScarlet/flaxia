@@ -41,11 +41,11 @@ export class ReplyComposer {
     const container = document.createElement('div');
     container.className = 'reply-composer';
     container.style.cssText = `
-      border: 1px solid #e2e8f0;
+      border: 1px solid var(--border);
       border-radius: 0;
       padding: 1rem;
       margin-top: 0.75rem;
-      background: #ffffff;
+      background: var(--bg-primary);
       font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     `;
 
@@ -555,13 +555,13 @@ export class ReplyComposer {
     this.submitButton.textContent = this.isSubmitting ? t('reply_composer.replying') : t('reply_composer.reply');
 
     if (this.submitButton.disabled) {
-      this.submitButton.style.background = '#e2e8f0';
-      this.submitButton.style.borderColor = '#e2e8f0';
-      this.submitButton.style.color = '#64748b';
+      this.submitButton.style.background = 'var(--border)';
+      this.submitButton.style.borderColor = 'var(--border)';
+      this.submitButton.style.color = 'var(--text-muted)';
       this.submitButton.style.cursor = 'not-allowed';
     } else {
-      this.submitButton.style.background = '#22c55e';
-      this.submitButton.style.borderColor = '#22c55e';
+      this.submitButton.style.background = 'var(--accent)';
+      this.submitButton.style.borderColor = 'var(--accent)';
       this.submitButton.style.color = '#000';
       this.submitButton.style.cursor = 'pointer';
     }

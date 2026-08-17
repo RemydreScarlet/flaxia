@@ -128,6 +128,7 @@ export function renderHtmlShell(content: string, options: HtmlShellOptions): str
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(title)}</title>
   <meta name="description" content="${escapeHtml(description)}">
+  <meta name="theme-color" content="#ffffff">
 
   <meta property="og:title" content="${escapeHtml(title)}">
   <meta property="og:description" content="${escapeHtml(description)}">
@@ -147,6 +148,24 @@ export function renderHtmlShell(content: string, options: HtmlShellOptions): str
   ${additionalHead ? `\n  ${additionalHead}` : ''}
   ${spaHeadTags || '<script type="module" src="/src/main.ts"></script>'}
 
+  <script>
+    (function () {
+      var theme;
+      var meta;
+      try {
+        theme = localStorage.getItem('flaxia_theme');
+        if (theme === 'system' || theme === null) {
+          theme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        if (theme === 'dark' || theme === 'light') {
+          document.documentElement.dataset.theme = theme;
+          meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.content = theme === 'dark' ? '#0f172a' : '#ffffff';
+        }
+      } catch (_e) {}
+    })();
+  </script>
+
   <link rel="preconnect" href="https://flaxia.app">
   <link rel="dns-prefetch" href="/api">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -157,15 +176,34 @@ export function renderHtmlShell(content: string, options: HtmlShellOptions): str
 
   <style>
     :root {
+      color-scheme: light;
       --bg-primary:    #ffffff;
       --bg-secondary:  #f0fdf4;
       --bg-input:      #f1f5f9;
+      --bg-tertiary:   #f0f0f0;
+      --bg-hover:      rgba(0, 0, 0, 0.04);
       --border:        #e2e8f0;
       --text-primary:  #0f172a;
       --text-muted:    #64748b;
       --accent:        #22c55e;
       --accent-dark:   #16a34a;
       --danger:        #ef4444;
+      --link:          #3b82f6;
+    }
+    :root[data-theme='dark'] {
+      color-scheme: dark;
+      --bg-primary:    #0f172a;
+      --bg-secondary:  #1e293b;
+      --bg-input:      #1e293b;
+      --bg-tertiary:   #1f2937;
+      --bg-hover:      rgba(255, 255, 255, 0.06);
+      --border:        #334155;
+      --text-primary:  #f1f5f9;
+      --text-muted:    #94a3b8;
+      --accent:        #22c55e;
+      --accent-dark:   #16a34a;
+      --danger:        #ef4444;
+      --link:          #60a5fa;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -189,7 +227,7 @@ export function renderHtmlShell(content: string, options: HtmlShellOptions): str
     }
     .left-nav {
       width: 240px; flex-shrink: 0; padding: 1rem;
-      border-right: 1px solid var(--border); background: white;
+      border-right: 1px solid var(--border); background: var(--bg-primary);
       position: sticky; top: 0; height: 100vh; overflow-y: auto;
     }
     .main-content {
@@ -221,7 +259,7 @@ export function renderHtmlShell(content: string, options: HtmlShellOptions): str
     }
     .ssr-logo:hover { text-decoration: underline; }
     .ssr-post {
-      background: white;
+      background: var(--bg-primary);
       border-radius: 12px;
       padding: 16px;
       margin-bottom: 12px;
@@ -293,7 +331,7 @@ export function renderHtmlShell(content: string, options: HtmlShellOptions): str
     .ssr-profile-header {
       text-align: center;
       padding: 32px 16px;
-      background: white;
+      background: var(--bg-primary);
       border-radius: 12px;
       box-shadow: 0 1px 3px rgba(0,0,0,0.08);
       margin-bottom: 16px;

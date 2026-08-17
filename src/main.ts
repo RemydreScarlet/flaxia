@@ -13,6 +13,7 @@ import { Timeline } from './components/Timeline.js';
 import { getMe } from './lib/auth-cache.js';
 import { initI18n } from './lib/i18n.js';
 import { initPerformanceMonitoring } from './lib/performance.js';
+import { initTheme } from './lib/theme.js';
 
 interface PageComponent {
   getElement(): HTMLElement;
@@ -23,6 +24,9 @@ console.log('Flaxia initialized');
 
 // Initialize performance monitoring
 initPerformanceMonitoring();
+
+// Initialize theme (keeps system theme in sync during SPA navigation)
+initTheme();
 
 // Start i18n loading early (parallelizes the network fetch with script parsing/css loading)
 initI18n();

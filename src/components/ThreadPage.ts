@@ -86,7 +86,7 @@ export class ThreadPage {
     const container = document.createElement('div');
     container.className = 'thread-page';
     container.style.cssText = `
-      background: #ffffff;
+      background: var(--bg-primary);
       min-height: 100vh;
       width: 100%;
       font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -159,7 +159,7 @@ export class ThreadPage {
     this.leftNav.getElement().style.cssText = `
       flex-shrink: 0;
       padding: 1rem;
-      border-right: 1px solid #e2e8f0;
+      border-right: 1px solid var(--border);
     `;
 
     // Create main content area
@@ -177,8 +177,8 @@ export class ThreadPage {
       position: sticky;
       top: 0;
       z-index: 10;
-      background: #ffffff;
-      border-bottom: 1px solid #e2e8f0;
+      background: var(--bg-primary);
+      border-bottom: 1px solid var(--border);
       margin-bottom: 1rem;
     `;
 
@@ -209,7 +209,7 @@ export class ThreadPage {
     const title = document.createElement('h1');
     title.textContent = t('thread.title');
     title.style.cssText = `
-      color: #0f172a;
+      color: var(--text-primary);
       font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       font-size: 1.25rem;
       margin: 0;
@@ -234,7 +234,7 @@ export class ThreadPage {
     loading.className = 'thread-loading';
     loading.textContent = t('thread.loading');
     loading.style.cssText = `
-      color: #64748b;
+      color: var(--text-muted);
       font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       text-align: center;
       padding: 4rem 2rem;
@@ -286,13 +286,13 @@ export class ThreadPage {
           left: 0;
           width: 280px;
           height: 100vh;
-          border-right: 1px solid #e2e8f0;
+          border-right: 1px solid var(--border);
           border-top: none;
           padding: 1rem;
           z-index: 1100;
           transform: translateX(-100%);
           transition: transform 0.3s ease;
-          background: #ffffff;
+          background: var(--bg-primary);
           overflow-y: auto;
           -webkit-overflow-scrolling: touch;
         }
@@ -431,7 +431,7 @@ export class ThreadPage {
       repliesHeader.id = 'thread-replies-header';
       repliesHeader.textContent = t('thread.replies_header', { count: formatCount(data.replies.length) });
       repliesHeader.style.cssText = `
-        color: #64748b;
+        color: var(--text-muted);
         font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         font-size: 1rem;
         margin: 0 0 1rem 0;
@@ -484,7 +484,7 @@ export class ThreadPage {
         const noReplies = document.createElement('p');
         noReplies.textContent = t('thread.no_replies');
         noReplies.style.cssText = `
-          color: #64748b;
+          color: var(--text-muted);
           font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
           text-align: center;
           padding: 2rem;
@@ -538,7 +538,7 @@ export class ThreadPage {
       if (!repliesHeader) {
         repliesHeader = document.createElement('h2');
         repliesHeader.style.cssText = `
-          color: #64748b;
+          color: var(--text-muted);
           font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
           font-size: 1rem;
           margin: 0 0 1rem 0;

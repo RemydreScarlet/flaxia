@@ -23,18 +23,58 @@
 
   <meta name="google-adsense-account" content="ca-pub-8703789531673358">
   
+  <meta name="theme-color" content="#ffffff">
+  
+  <!-- Theme boot: apply theme before first paint to avoid FOUC -->
+  <script>
+    (function () {
+      var theme;
+      var meta;
+      try {
+        theme = localStorage.getItem('flaxia_theme');
+        if (theme === 'system' || theme === null) {
+          theme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        if (theme === 'dark' || theme === 'light') {
+          document.documentElement.dataset.theme = theme;
+          meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.content = theme === 'dark' ? '#0f172a' : '#ffffff';
+        }
+      } catch (_e) {}
+    })();
+  </script>
+  
   <!-- Critical CSS inline -->
   <style>
     :root {
+      color-scheme: light;
       --bg-primary:    #ffffff;
       --bg-secondary:  #f0fdf4;
       --bg-input:      #f1f5f9;
+      --bg-tertiary:   #f0f0f0;
+      --bg-hover:      rgba(0, 0, 0, 0.04);
       --border:        #e2e8f0;
       --text-primary:  #0f172a;
       --text-muted:    #64748b;
       --accent:        #22c55e;
       --accent-dark:   #16a34a;
       --danger:        #ef4444;
+      --link:          #3b82f6;
+    }
+    :root[data-theme='dark'] {
+      color-scheme: dark;
+      --bg-primary:    #0f172a;
+      --bg-secondary:  #1e293b;
+      --bg-input:      #1e293b;
+      --bg-tertiary:   #1f2937;
+      --bg-hover:      rgba(255, 255, 255, 0.06);
+      --border:        #334155;
+      --text-primary:  #f1f5f9;
+      --text-muted:    #94a3b8;
+      --accent:        #22c55e;
+      --accent-dark:   #16a34a;
+      --danger:        #ef4444;
+      --link:          #60a5fa;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -110,7 +150,7 @@
     }
     .left-nav {
       width: 240px; flex-shrink: 0; padding: 1rem;
-      border-right: 1px solid var(--border); background: white;
+      border-right: 1px solid var(--border); background: var(--bg-primary);
       position: sticky; top: 0; height: 100vh; overflow-y: auto;
     }
     .main-content {

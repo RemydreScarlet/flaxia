@@ -164,8 +164,8 @@ export async function executeFlash(
       margin-top: 0;
       padding: 4px 8px;
       font-size: 12px;
-      border: 1px solid #ccc;
-      background: #f0f0f0;
+      border: 1px solid var(--border);
+      background: var(--bg-tertiary);
       cursor: pointer;
       border-radius: 4px;
       align-self: center;
@@ -276,7 +276,7 @@ export async function executeFlash(
         height: 100%;
         padding: 20px;
         text-align: center;
-        color: #666;
+        color: var(--text-muted);
       ">
         <div style="font-size: 48px; margin-bottom: 16px;">⚡</div>
         <div style="font-weight: bold; margin-bottom: 8px;">${t('flash_player.error_heading')}</div>

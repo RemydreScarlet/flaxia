@@ -163,8 +163,8 @@ function createWvfsIframe(
     margin-top: 8px;
     padding: 4px 8px;
     font-size: 12px;
-    border: 1px solid #ccc;
-    background: #f0f0f0;
+    border: 1px solid var(--border);
+    background: var(--bg-tertiary);
     cursor: pointer;
     border-radius: 4px;
     align-self: center;

@@ -676,25 +676,25 @@ export class ConversationView {
     const modal = document.createElement('div');
     modal.style.cssText = `
       width: 90%; max-width: 800px; height: 80vh;
-      background: #fff; border-radius: 12px; overflow: hidden;
+      background: var(--bg-primary); border-radius: 12px; overflow: hidden;
       position: relative; display: flex; flex-direction: column;
     `;
 
     const header = document.createElement('div');
     header.style.cssText = `
       display: flex; align-items: center; justify-content: space-between;
-      padding: 8px 16px; background: #f5f5f5;
+      padding: 8px 16px; background: var(--bg-tertiary);
     `;
 
     const title = document.createElement('span');
-    title.style.cssText = 'font-weight: 600; font-size: 14px; color: #333;';
+    title.style.cssText = 'font-weight: 600; font-size: 14px; color: var(--text-primary);';
     title.textContent = t('messages.open_zip');
 
     const closeBtn = document.createElement('button');
     closeBtn.textContent = '✕';
     closeBtn.style.cssText = `
       background: none; border: none; font-size: 18px; cursor: pointer;
-      color: #666; padding: 4px 8px;
+      color: var(--text-muted); padding: 4px 8px;
     `;
     closeBtn.addEventListener('click', () => {
       destroy();
@@ -704,7 +704,7 @@ export class ConversationView {
     header.appendChild(closeBtn);
 
     const content = document.createElement('div');
-    content.style.cssText = 'flex: 1; position: relative; background: #fff;';
+    content.style.cssText = 'flex: 1; position: relative; background: var(--bg-primary);';
 
     modal.appendChild(header);
     modal.appendChild(content);
@@ -725,7 +725,9 @@ export class ConversationView {
     executeZipAuto(msg.id, content).catch((err) => {
       console.error('ZIP execution failed:', err);
       content.innerHTML =
-        '<div style="padding: 40px; text-align: center; color: #666;">' + t('post_stage.zip_load_error') + '</div>';
+        '<div style="padding: 40px; text-align: center; color: var(--text-muted);">' +
+        t('post_stage.zip_load_error') +
+        '</div>';
     });
   }
 
@@ -741,25 +743,25 @@ export class ConversationView {
     const modal = document.createElement('div');
     modal.style.cssText = `
       width: 90%; max-width: 800px; height: 80vh;
-      background: #fff; border-radius: 12px; overflow: hidden;
+      background: var(--bg-primary); border-radius: 12px; overflow: hidden;
       position: relative; display: flex; flex-direction: column;
     `;
 
     const header = document.createElement('div');
     header.style.cssText = `
       display: flex; align-items: center; justify-content: space-between;
-      padding: 8px 16px; background: #f5f5f5;
+      padding: 8px 16px; background: var(--bg-tertiary);
     `;
 
     const title = document.createElement('span');
-    title.style.cssText = 'font-weight: 600; font-size: 14px; color: #333;';
+    title.style.cssText = 'font-weight: 600; font-size: 14px; color: var(--text-primary);';
     title.textContent = t('messages.play_flash');
 
     const closeBtn = document.createElement('button');
     closeBtn.textContent = '✕';
     closeBtn.style.cssText = `
       background: none; border: none; font-size: 18px; cursor: pointer;
-      color: #666; padding: 4px 8px;
+      color: var(--text-muted); padding: 4px 8px;
     `;
     closeBtn.addEventListener('click', () => {
       destroy();
@@ -791,7 +793,9 @@ export class ConversationView {
     executeFlash(msg.id, content).catch((err) => {
       console.error('Flash execution failed:', err);
       content.innerHTML =
-        '<div style="padding: 40px; text-align: center; color: #999;">' + t('post_stage.flash_load_error') + '</div>';
+        '<div style="padding: 40px; text-align: center; color: var(--text-muted);">' +
+        t('post_stage.flash_load_error') +
+        '</div>';
     });
   }
 

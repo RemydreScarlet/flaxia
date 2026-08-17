@@ -2,6 +2,7 @@ import { clearMeCache } from '../lib/auth-cache';
 import { createConfirmDialog } from '../lib/confirm-dialog.js';
 import { getLocale, setLocale, t } from '../lib/i18n.js';
 import { getReplyStyle, getShowNsfw, ReplyStyle, setReplyStyle, setShowNsfw } from '../lib/settings.js';
+import { getTheme, setTheme, Theme } from '../lib/theme.js';
 
 interface SettingsPageProps {
   currentUser?: {
@@ -504,6 +505,83 @@ export function createSettingsPage({ currentUser }: SettingsPageProps) {
     displayMessage.style.color = 'var(--success, #10b981)';
   });
 
+  // Theme selector
+  const themeTitle = document.createElement('div');
+  themeTitle.style.cssText = `
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+    margin-top: 0.5rem;
+    margin-bottom: 0.5rem;
+  `;
+  themeTitle.textContent = t('settings.theme');
+
+  const currentTheme = getTheme();
+  const themeRadioGroup = document.createElement('div');
+  themeRadioGroup.style.cssText = `
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  `;
+
+  const themes: { value: Theme; labelKey: string; descKey: string }[] = [
+    { value: 'light', labelKey: 'settings.theme_light', descKey: 'settings.theme_light_desc' },
+    { value: 'dark', labelKey: 'settings.theme_dark', descKey: 'settings.theme_dark_desc' },
+    { value: 'system', labelKey: 'settings.theme_system', descKey: 'settings.theme_system_desc' },
+  ];
+
+  themes.forEach((st) => {
+    const label = document.createElement('label');
+    label.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: border-color 0.2s;
+      ${currentTheme === st.value ? 'border-color: var(--accent); background: var(--bg-secondary);' : ''}
+    `;
+
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = 'theme';
+    radio.value = st.value;
+    radio.checked = currentTheme === st.value;
+    radio.style.cssText = 'accent-color: var(--accent);';
+
+    const textDiv = document.createElement('div');
+    textDiv.style.cssText = 'display: flex; flex-direction: column;';
+
+    const nameSpan = document.createElement('span');
+    nameSpan.style.cssText = 'font-weight: 600; color: var(--text-primary); font-size: 0.9375rem;';
+    nameSpan.textContent = t(st.labelKey);
+
+    const descSpan = document.createElement('span');
+    descSpan.style.cssText = 'color: var(--text-muted); font-size: 0.8125rem;';
+    descSpan.textContent = t(st.descKey);
+
+    textDiv.appendChild(nameSpan);
+    textDiv.appendChild(descSpan);
+    label.appendChild(radio);
+    label.appendChild(textDiv);
+    themeRadioGroup.appendChild(label);
+
+    radio.addEventListener('change', () => {
+      setTheme(st.value);
+      themeRadioGroup.querySelectorAll('label').forEach((l) => {
+        l.style.borderColor = 'var(--border)';
+        l.style.background = 'none';
+      });
+      label.style.borderColor = 'var(--accent)';
+      label.style.background = 'var(--bg-secondary)';
+      displayMessage.textContent = t('settings.display_saved');
+      displayMessage.style.color = 'var(--success, #10b981)';
+    });
+  });
+
   const displayMessage = document.createElement('div');
   displayMessage.style.cssText = `
     margin-top: 0.5rem;
@@ -514,6 +592,8 @@ export function createSettingsPage({ currentUser }: SettingsPageProps) {
   displaySection.appendChild(displayTitle);
   displaySection.appendChild(radioGroup);
   displaySection.appendChild(nsfwLabel);
+  displaySection.appendChild(themeTitle);
+  displaySection.appendChild(themeRadioGroup);
   displaySection.appendChild(displayMessage);
 
   container.appendChild(displaySection);

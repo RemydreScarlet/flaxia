@@ -436,7 +436,9 @@ async function updateStageContent(container: HTMLElement, props: PostStageProps)
       executeDos(props.post.id, container).catch((error: Error) => {
         console.error('Failed to execute DOS:', error);
         container.innerHTML =
-          '<div style="padding: 20px; text-align: center; color: #666;">' + t('post_stage.dos_load_error') + '</div>';
+          '<div style="padding: 20px; text-align: center; color: var(--text-muted);">' +
+          t('post_stage.dos_load_error') +
+          '</div>';
       });
     } else if (
       props.post.payload_key &&
@@ -446,14 +448,18 @@ async function updateStageContent(container: HTMLElement, props: PostStageProps)
       executeZipAuto(props.post.id, container).catch((error: Error) => {
         console.error('Failed to execute ZIP:', error);
         container.innerHTML =
-          '<div style="padding: 20px; text-align: center; color: #666;">' + t('post_stage.zip_load_error') + '</div>';
+          '<div style="padding: 20px; text-align: center; color: var(--text-muted);">' +
+          t('post_stage.zip_load_error') +
+          '</div>';
       });
     } else if (props.post.swf_key && props.post.swf_key.startsWith('swf/')) {
       // Execute Flash/SWF content using Ruffle
       executeFlash(props.post.id, container).catch((error) => {
         console.error('Failed to execute SWF:', error);
         container.innerHTML =
-          '<div style="padding: 20px; text-align: center; color: #666;">' + t('post_stage.flash_load_error') + '</div>';
+          '<div style="padding: 20px; text-align: center; color: var(--text-muted);">' +
+          t('post_stage.flash_load_error') +
+          '</div>';
       });
     } else {
       // For non-ZIP files, use the old sandbox frame
