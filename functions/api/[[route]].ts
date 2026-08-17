@@ -240,35 +240,145 @@ function getCrowdClient(c: Context<{ Bindings: Bindings; Variables: Variables }>
 const embeddingPosts = new Set<string>();
 let lastEmbedTime = 0;
 const EMBED_RATE_LIMIT_MS = 10_000;
-async function embedPost(
+const PENDING_EMBED_MAX_ATTEMPTS = 5;
+
+// Persist a post for later vector-embed submission. Used instead of silently
+// dropping when the crowd pipeline is rate-limited, unconfigured, or failed, so
+// no post is ever lost from the recommendation candidate pool.
+async function enqueuePendingEmbed(
+  db: D1Database | undefined,
+  postId: string,
+  text: string,
+  attempts = 0,
+  error?: string,
+): Promise<void> {
+  if (!db) return;
+  try {
+    await db
+      .prepare(
+        `INSERT INTO pending_embeddings (post_id, text, attempts, last_error)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(post_id) DO UPDATE SET
+           attempts = excluded.attempts,
+           last_error = excluded.last_error`,
+      )
+      .bind(postId, text, attempts, error ?? null)
+      .run();
+  } catch (e) {
+    console.error(`Failed to enqueue pending embed for post ${postId}:`, e);
+  }
+}
+
+// Submit a single vector-embed task to the crowd orchestrator. Sets the shared
+// throttle timestamp on success so real-time traffic stays gentle on the queue.
+async function submitEmbedTask(
   orchestratorUrl: string,
   apiKey: string,
   baseUrl: string,
   postId: string,
   text: string,
-): Promise<void> {
-  const now = Date.now();
-  if (now - lastEmbedTime < EMBED_RATE_LIMIT_MS) return;
-  lastEmbedTime = now;
+): Promise<boolean> {
+  const normalizedUrl = orchestratorUrl.replace(/\/+$/, '');
+  if (!normalizedUrl || !apiKey) return false;
 
-  if (embeddingPosts.has(postId)) return;
-  embeddingPosts.add(postId);
+  const client = new FlaxiaClient({ baseUrl: `${normalizedUrl}/crowd`, apiKey });
+  const callbackUrl = `${baseUrl || 'https://flaxia.app'}/api/crowd/webhook?type=vector-embed&postId=${postId}`;
   try {
-    const normalizedUrl = orchestratorUrl.replace(/\/+$/, '');
-    if (!normalizedUrl || !apiKey) return;
-
-    const client = new FlaxiaClient({ baseUrl: `${normalizedUrl}/crowd`, apiKey });
-
-    const callbackUrl = `${baseUrl || 'https://flaxia.app'}/api/crowd/webhook?type=vector-embed&postId=${postId}`;
     await client.submit({
       workload: 'vector-embed',
       payload: { text },
       callbackUrl,
       timeoutMs: 600000,
     } as never);
+    lastEmbedTime = Date.now();
     console.log(`Embedding task submitted for post ${postId}`);
+    return true;
   } catch (err) {
     console.error(`Embedding submission failed for post ${postId}:`, err);
+    return false;
+  }
+}
+
+// Drain the pending_embeddings outbox. `respectThrottle` keeps the 10s ceiling
+// for real-time traffic; the admin backfill may pass false to make progress on
+// a large backlog. Failed submissions are kept (attempts++) instead of dropped.
+async function drainPendingEmbeds(
+  db: D1Database,
+  orchestratorUrl: string,
+  apiKey: string,
+  baseUrl: string,
+  opts: { maxBatch?: number; delayMs?: number; respectThrottle?: boolean } = {},
+): Promise<{ submitted: number; remaining: number }> {
+  const { maxBatch = 10, delayMs = 0, respectThrottle = true } = opts;
+  if (!orchestratorUrl || !apiKey) {
+    const { total } = (await db
+      .prepare('SELECT COUNT(*) as total FROM pending_embeddings')
+      .first<{ total: number }>()) || { total: 0 };
+    return { submitted: 0, remaining: total };
+  }
+
+  const rows = await db
+    .prepare(
+      `SELECT post_id, text, attempts FROM pending_embeddings
+       WHERE attempts < ?
+       ORDER BY created_at ASC
+       LIMIT ?`,
+    )
+    .bind(PENDING_EMBED_MAX_ATTEMPTS, maxBatch)
+    .all<{ post_id: string; text: string; attempts: number }>();
+
+  let submitted = 0;
+  for (const row of rows.results || []) {
+    if (embeddingPosts.has(row.post_id)) continue;
+    if (respectThrottle && Date.now() - lastEmbedTime < EMBED_RATE_LIMIT_MS) break;
+
+    const ok = await submitEmbedTask(orchestratorUrl, apiKey, baseUrl, row.post_id, row.text);
+    if (ok) {
+      await db.prepare('DELETE FROM pending_embeddings WHERE post_id = ?').bind(row.post_id).run();
+      submitted++;
+    } else {
+      await enqueuePendingEmbed(db, row.post_id, row.text, row.attempts + 1, 'submission failed');
+    }
+    if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
+  }
+
+  const { total } = (await db
+    .prepare('SELECT COUNT(*) as total FROM pending_embeddings')
+    .first<{ total: number }>()) || { total: 0 };
+  return { submitted, remaining: total };
+}
+
+async function embedPost(
+  db: D1Database | undefined,
+  orchestratorUrl: string,
+  apiKey: string,
+  baseUrl: string,
+  postId: string,
+  text: string,
+): Promise<void> {
+  if (embeddingPosts.has(postId)) return;
+  embeddingPosts.add(postId);
+  try {
+    if (!orchestratorUrl || !apiKey) {
+      // Crowd not configured: persist so a later backfill can pick it up.
+      await enqueuePendingEmbed(db, postId, text);
+      return;
+    }
+
+    // Best-effort drain of any backlog first (respects the rate limit).
+    if (db) {
+      await drainPendingEmbeds(db, orchestratorUrl, apiKey, baseUrl).catch((e) =>
+        console.error('Pending embed drain failed:', e),
+      );
+    }
+
+    // Submit the new post; if rate-limited or failed, enqueue instead of dropping.
+    if (Date.now() - lastEmbedTime < EMBED_RATE_LIMIT_MS) {
+      await enqueuePendingEmbed(db, postId, text);
+      return;
+    }
+    const ok = await submitEmbedTask(orchestratorUrl, apiKey, baseUrl, postId, text);
+    if (!ok) await enqueuePendingEmbed(db, postId, text, 1, 'submission failed');
   } finally {
     embeddingPosts.delete(postId);
   }
@@ -283,12 +393,28 @@ const NSFW_RATE_LIMIT_MS = 10_000;
 
 const NSFW_SCAN_SCHEMA = `post_id TEXT PRIMARY KEY, task_id TEXT, status TEXT NOT NULL DEFAULT 'submitted' CHECK(status IN ('submitted', 'done', 'failed')), created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), scanned_at TEXT`;
 
+const PENDING_EMBEDS_SCHEMA = `post_id TEXT PRIMARY KEY, text TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), last_error TEXT`;
+
 async function ensureNsfwScansTable(db: D1Database): Promise<void> {
   try {
     await db.prepare(`CREATE TABLE IF NOT EXISTS post_nsfw_scans (${NSFW_SCAN_SCHEMA})`).run();
     await db.prepare('CREATE INDEX IF NOT EXISTS idx_nsfw_scans_status ON post_nsfw_scans(status, created_at)').run();
   } catch (e) {
     console.error('Failed to ensure post_nsfw_scans table:', e);
+  }
+}
+
+// The test dev server provisions its DB_TEST binding without migrations, so
+// ensure the outbox table exists before touching it there (mirrors
+// ensureNsfwScansTable).
+async function ensurePendingEmbedsTable(db: D1Database): Promise<void> {
+  try {
+    await db.prepare(`CREATE TABLE IF NOT EXISTS pending_embeddings (${PENDING_EMBEDS_SCHEMA})`).run();
+    await db
+      .prepare('CREATE INDEX IF NOT EXISTS idx_pending_embeddings_created ON pending_embeddings(created_at)')
+      .run();
+  } catch (e) {
+    console.error('Failed to ensure pending_embeddings table:', e);
   }
 }
 
@@ -4702,8 +4828,8 @@ app.get('/api/posts', async (c) => {
         const embeddedIds = new Set((embeddedResult.success ? embeddedResult.results : []).map((r) => r.post_id));
         for (const p of textPosts) {
           if (!embeddedIds.has(p.id)) {
-            embedPost(c.env.CROWD_ORCHESTRATOR_URL, c.env.CROWD_API_KEY, c.env.BASE_URL, p.id, p.text).catch((e) =>
-              console.error('Background embed failed:', e),
+            embedPost(c.env.DB, c.env.CROWD_ORCHESTRATOR_URL, c.env.CROWD_API_KEY, c.env.BASE_URL, p.id, p.text).catch(
+              (e) => console.error('Background embed failed:', e),
             );
           }
         }
@@ -7016,9 +7142,14 @@ app.post('/api/posts/commit', requireAuth, async (c) => {
       }
     }
 
-    embedPost(c.env.CROWD_ORCHESTRATOR_URL, c.env.CROWD_API_KEY, c.env.BASE_URL, fullPost.id, fullPost.text).catch(
-      (e) => console.error('Background embed failed:', e),
-    );
+    embedPost(
+      c.env.DB,
+      c.env.CROWD_ORCHESTRATOR_URL,
+      c.env.CROWD_API_KEY,
+      c.env.BASE_URL,
+      fullPost.id,
+      fullPost.text,
+    ).catch((e) => console.error('Background embed failed:', e));
 
     submitDetectNsfw(
       c.env.DB,
@@ -7735,6 +7866,7 @@ app.get('/api/posts/:id/replies', async (c) => {
       for (const p of toEmbed) {
         if (!existingIds.has(p.id as string)) {
           embedPost(
+            c.env.DB,
             c.env.CROWD_ORCHESTRATOR_URL,
             c.env.CROWD_API_KEY,
             c.env.BASE_URL,
@@ -7868,6 +8000,7 @@ app.get('/api/posts/:id/thread', async (c) => {
       for (const p of toEmbed2) {
         if (!existingIds2.has(p.id as string)) {
           embedPost(
+            c.env.DB,
             c.env.CROWD_ORCHESTRATOR_URL,
             c.env.CROWD_API_KEY,
             c.env.BASE_URL,
@@ -9809,6 +9942,73 @@ app.post('/api/admin/backfill-nsfw', requireAuth, requireAdmin, async (c) => {
   }
 });
 
+// POST /api/admin/backfill-embeddings - enqueue vector-embed tasks for existing
+// posts that have no embedding yet, then drain as much of the backlog as the
+// request budget allows. Idempotent: posts are skipped if already embedded or
+// already queued.
+app.post('/api/admin/backfill-embeddings', requireAuth, requireAdmin, async (c) => {
+  try {
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500);
+    }
+
+    const url = new URL(c.req.url);
+    const limit = Math.min(parseInt(url.searchParams.get('limit') || '100', 10), 500);
+    const drain = url.searchParams.get('drain') !== 'false';
+
+    const candidates = (await c.env.DB.prepare(`
+      SELECT p.id, p.text
+      FROM posts p
+      LEFT JOIN post_embeddings e ON p.id = e.post_id
+      WHERE p.status = 'published'
+        AND p.hidden = 0
+        AND p.parent_id IS NULL
+        AND p.text IS NOT NULL
+        AND p.text != ''
+        AND e.post_id IS NULL
+        AND p.id NOT IN (SELECT post_id FROM pending_embeddings)
+      ORDER BY p.created_at DESC
+      LIMIT ?
+    `)
+      .bind(limit)
+      .all()) as { results: Array<{ id: string; text: string }> };
+
+    let enqueued = 0;
+    for (const post of candidates.results) {
+      await enqueuePendingEmbed(c.env.DB, post.id, post.text);
+      enqueued++;
+    }
+
+    const submitted = 0;
+    const remaining = enqueued;
+    const execCtx = (c as any).executionCtx;
+    if (drain && execCtx?.waitUntil) {
+      // Let the response return immediately; keep draining in the background.
+      execCtx.waitUntil(
+        (async () => {
+          const result = await drainPendingEmbeds(
+            c.env.DB,
+            c.env.CROWD_ORCHESTRATOR_URL,
+            c.env.CROWD_API_KEY,
+            c.env.BASE_URL,
+            { maxBatch: enqueued || 50, delayMs: 50, respectThrottle: false },
+          ).catch((e) => {
+            console.error('Backfill embed drain failed:', e);
+            return { submitted: 0, remaining: enqueued };
+          });
+          console.log(`Backfill embed drain done: submitted=${result.submitted} remaining=${result.remaining}`);
+        })(),
+      );
+    }
+
+    return c.json({ success: true, enqueued, submitted, remaining });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Backfill embeddings error:', error);
+    return c.json({ error: 'Failed to backfill embeddings', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
 // GET /api/notifications - fetch notifications (protected)
 app.get('/api/notifications', requireAuth, async (c) => {
   try {
@@ -11435,6 +11635,7 @@ app.post('/api/test/reset', async (c) => {
 
   for (const db of clears) {
     await ensureNsfwScansTable(db);
+    await ensurePendingEmbedsTable(db);
     await db.batch([
       db.prepare('DELETE FROM notifications'),
       db.prepare('DELETE FROM reports'),
@@ -11443,6 +11644,7 @@ app.post('/api/test/reset', async (c) => {
       db.prepare('DELETE FROM posts'),
       db.prepare('DELETE FROM users'),
       db.prepare('DELETE FROM post_nsfw_scans'),
+      db.prepare('DELETE FROM pending_embeddings'),
     ]);
   }
   return c.json({ ok: true });

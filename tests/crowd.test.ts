@@ -406,3 +406,52 @@ describe('POST /api/admin/backfill-nsfw', () => {
     assert.equal(typeof data.submitted, 'number');
   });
 });
+
+describe('POST /api/admin/backfill-embeddings', () => {
+  it('forbids non-admin users', async () => {
+    const cookie = await loginUnique();
+    const res = await fetch(`${BASE_URL}/api/admin/backfill-embeddings`, {
+      method: 'POST',
+      headers: { Cookie: cookie },
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it('enqueues text posts that have no embedding', async () => {
+    // The admin username is fixed in ADMIN_USERNAMES, so reset users first to
+    // avoid collisions with stale rows in the persistent local test DB.
+    await resetDb();
+    const creds = {
+      email: 'admin@test.com',
+      password: 'password123',
+      username: 'remydrescarlet',
+      display_name: 'Admin',
+    };
+    let res = await fetch(`${BASE_URL}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(creds),
+    });
+    if (res.status !== 201) {
+      res = await fetch(`${BASE_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: creds.email, password: creds.password }),
+      });
+    }
+    const cookie = res.headers.get('set-cookie') ?? '';
+    assert.ok(cookie, 'expected admin session cookie');
+
+    // A text post has no embedding in the test DB, so it must be picked up.
+    await createTextPost(cookie, 'embed me for the recommended feed');
+
+    const backfill = await fetch(`${BASE_URL}/api/admin/backfill-embeddings?drain=false`, {
+      method: 'POST',
+      headers: { Cookie: cookie },
+    });
+    assert.equal(backfill.status, 200);
+    const data = (await backfill.json()) as { success: boolean; enqueued: number };
+    assert.equal(data.success, true);
+    assert.ok(data.enqueued >= 1, `expected at least one post enqueued, got ${data.enqueued}`);
+  });
+});
