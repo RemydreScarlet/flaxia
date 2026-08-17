@@ -1,6 +1,7 @@
 import { AttachPreviewHandle, checkImageSizeLimit, renderFilePreview } from '../lib/file-preview.js';
 import { formatCount } from '../lib/format.js';
 import { t } from '../lib/i18n.js';
+import { attachIcons } from '../lib/icons.js';
 import { showToast } from '../lib/toast.js';
 import { Post } from '../types/post.js';
 import { showSignInPrompt } from './SignInPrompt.js';
@@ -61,7 +62,7 @@ export class ReplyComposer {
         </div>
         <div class="reply-composer-file-dropzone" style="display: none;">
           <div class="dropzone-content">
-            <span class="dropzone-icon">📎</span>
+            <span class="dropzone-icon" data-icon="attach"></span>
             <span class="dropzone-text">${t('reply_composer.file_hint')}</span>
           </div>
         </div>
@@ -75,9 +76,8 @@ export class ReplyComposer {
               color: #94a3b8;
               cursor: pointer;
               padding: 0.25rem;
-              font-size: 1rem;
             ">
-              📎
+              <span class="action-icon" data-icon="attach"></span>
             </button>
             <span class="reply-composer-char-count" style="color: #94a3b8; font-size: 0.75rem;">0/200</span>
           </div>
@@ -114,14 +114,15 @@ export class ReplyComposer {
               border: none;
               color: #64748b;
               cursor: pointer;
-              font-size: 0.875rem;
               padding: 0.25rem;
               border-radius: 0.25rem;
-            ">✕</button>
+            "><span class="action-icon" data-icon="close"></span></button>
           </div>
         </div>
       </div>
     `;
+
+    attachIcons(container);
 
     // Cache element references
     this.textarea = container.querySelector('.reply-composer-textarea')!;

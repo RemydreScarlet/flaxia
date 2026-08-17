@@ -207,6 +207,94 @@ describe('POST /api/posts/commit — validation', () => {
   });
 });
 
+describe('POST /api/posts/commit — quotes', () => {
+  beforeEach(resetDb);
+
+  async function createPublishedPost(cookie: string, text: string): Promise<string> {
+    const postId = crypto.randomUUID();
+    const res = await fetch(`${BASE_URL}/api/posts/commit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ postId, text, hashtags: [] }),
+    });
+    assert.equal(res.status, 200);
+    return postId;
+  }
+
+  it('rejects a quote pointing at a non-existent post → 404', async () => {
+    const { cookie } = await seedUserAndLogin('1');
+    const res = await fetch(`${BASE_URL}/api/posts/commit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ postId: crypto.randomUUID(), text: 'quote', quotedPostId: crypto.randomUUID() }),
+    });
+    assert.equal(res.status, 404);
+  });
+
+  it('accepts a quote with empty text and embeds the quoted post → 201', async () => {
+    const user1 = await seedUserAndLogin('1');
+    const user2 = await seedUserAndLogin('2');
+    const targetId = await createPublishedPost(user2.cookie, 'Original post by user2');
+
+    const res = await fetch(`${BASE_URL}/api/posts/commit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: user1.cookie },
+      body: JSON.stringify({ postId: crypto.randomUUID(), text: '', quotedPostId: targetId }),
+    });
+    assert.equal(res.status, 200);
+
+    const data = await res.json();
+    assert.equal(data.post.quoted_post_id, targetId);
+    assert.equal(data.post.quoted_post?.id, targetId);
+    assert.equal(data.post.quoted_post?.text, 'Original post by user2');
+  });
+
+  it('creates a quote notification for the quoted post author', async () => {
+    const user1 = await seedUserAndLogin('1');
+    const user2 = await seedUserAndLogin('2');
+    const targetId = await createPublishedPost(user2.cookie, 'Post to be quoted');
+    const quotingPostId = crypto.randomUUID();
+
+    const res = await fetch(`${BASE_URL}/api/posts/commit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: user1.cookie },
+      body: JSON.stringify({ postId: quotingPostId, text: 'nice quote', quotedPostId: targetId }),
+    });
+    assert.equal(res.status, 200);
+
+    const notifRes = await fetch(`${BASE_URL}/api/notifications`, {
+      headers: { Cookie: user2.cookie },
+    });
+    assert.equal(notifRes.status, 200);
+    const data = await notifRes.json();
+    const quoteNotif = (data.notifications as Array<Record<string, unknown>>).find((n) => n.type === 'quote');
+    assert.ok(quoteNotif, 'expected a quote notification for the quoted author');
+    assert.equal(quoteNotif.post_id, quotingPostId);
+  });
+
+  it('does not create a quote notification when quoting your own post', async () => {
+    const { cookie } = await seedUserAndLogin('1');
+    const targetId = await createPublishedPost(cookie, 'My own post');
+
+    const res = await fetch(`${BASE_URL}/api/posts/commit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ postId: crypto.randomUUID(), text: 'self quote', quotedPostId: targetId }),
+    });
+    assert.equal(res.status, 200);
+
+    const notifRes = await fetch(`${BASE_URL}/api/notifications`, {
+      headers: { Cookie: cookie },
+    });
+    const data = await notifRes.json();
+    const quoteNotif = (data.notifications as Array<Record<string, unknown>>).find((n) => n.type === 'quote');
+    // self-quotes must never notify the author
+    const freshNotif = (data.notifications as Array<Record<string, unknown>>).find((n) => n.type === 'fresh');
+    assert.equal(quoteNotif, undefined);
+    assert.equal(freshNotif, undefined);
+  });
+});
+
 describe('GET /api/posts', () => {
   beforeEach(resetDb);
 

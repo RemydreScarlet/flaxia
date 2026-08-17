@@ -1,11 +1,13 @@
 import { createPostComposer, PostComposer } from '../components/PostComposer.js';
-import type { Post } from '../types/post.js';
+import type { Post, QuotedPost } from '../types/post.js';
 import { t } from './i18n.js';
+import { icon } from './icons.js';
 import { registerModal } from './modal-state.js';
 
 export function openPostModal(opts: {
   currentUser: { username: string; id?: string; display_name?: string; avatar_key?: string } | null | undefined;
   onPostCreated: (post: Post) => void;
+  quotedPost?: QuotedPost | null;
 }): void {
   const unregister = registerModal();
   const overlay = document.createElement('div');
@@ -16,7 +18,7 @@ export function openPostModal(opts: {
 
   const closeBtn = document.createElement('button');
   closeBtn.className = 'post-modal-close';
-  closeBtn.textContent = '✕';
+  closeBtn.appendChild(icon('close'));
   closeBtn.addEventListener('click', () => {
     unregister();
     destroy();
@@ -33,6 +35,7 @@ export function openPostModal(opts: {
     },
     currentUser: opts.currentUser,
     onDraftSaved: () => refreshDrafts?.(),
+    quotedPost: opts.quotedPost ?? null,
   });
   dialog.appendChild(modalComposer.getElement());
 
@@ -217,7 +220,7 @@ function createDraftsPanel(composer: PostComposer): { panel: HTMLElement; refres
 
       const delBtn = document.createElement('button');
       delBtn.className = 'post-modal-draft-del';
-      delBtn.textContent = '✕';
+      delBtn.appendChild(icon('close'));
       delBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         composer.deleteDraft(draft.id);

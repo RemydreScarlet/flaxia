@@ -1,5 +1,6 @@
 import { formatCount } from '../lib/format.js';
 import { t } from '../lib/i18n.js';
+import { type IconName, icon } from '../lib/icons.js';
 import { PostActionsProps } from '../types/post.js';
 
 export function createPostActions(props: PostActionsProps): HTMLElement {
@@ -63,12 +64,12 @@ function createActionButton(
     }
   }
 
-  // Create icon (using text for now, will replace with Lucide icons)
-  const icon = document.createElement('span');
-  icon.className = 'action-icon';
-  icon.textContent = getIconForType(type);
+  // Create icon (universal Lucide icon, not OS-dependent emoji)
+  const iconEl = document.createElement('span');
+  iconEl.className = 'action-icon';
+  iconEl.appendChild(icon(getIconNameForType(type)));
 
-  button.appendChild(icon);
+  button.appendChild(iconEl);
 
   // Add count for fresh and reply buttons only (not for share)
   if (type !== 'share') {
@@ -87,19 +88,19 @@ function createActionButton(
   return button;
 }
 
-function getIconForType(type: 'fresh' | 'bookmark' | 'reply' | 'share' | 'impressions'): string {
+function getIconNameForType(type: 'fresh' | 'bookmark' | 'reply' | 'share' | 'impressions'): IconName {
   switch (type) {
     case 'fresh':
-      return '🍃'; // Leaf emoji for Fresh!
+      return 'fresh';
     case 'bookmark':
-      return '🔖'; // Bookmark emoji
+      return 'bookmark';
     case 'reply':
-      return '💬'; // Message emoji for Reply
+      return 'reply';
     case 'share':
-      return '🔗'; // Link emoji for Share
+      return 'share';
     case 'impressions':
-      return '👀'; // Eye emoji for Impressions
+      return 'impressions';
     default:
-      return '';
+      return 'share';
   }
 }

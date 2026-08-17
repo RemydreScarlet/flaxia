@@ -101,6 +101,8 @@ type PostRow = {
   author_language?: string | null;
   actor_id: string | null;
   created_at: string;
+  quoted_post_id?: string | null;
+  quoted_post?: Record<string, unknown> | null;
   is_freshed?: boolean;
   is_bookmarked?: boolean;
   poll?: {
@@ -4681,6 +4683,7 @@ app.get('/api/posts', async (c) => {
           });
         }
         await enrichPostsWithPolls(posts as PostRow[], c.env.DB, currentUserId);
+        await enrichPostsWithQuotes(posts as PostRow[], c.env.DB);
         return c.json({ posts });
       }
     }
@@ -4814,6 +4817,8 @@ app.get('/api/posts', async (c) => {
       })(),
       // Poll enrichment
       enrichPostsWithPolls(posts as PostRow[], c.env.DB, currentUserId),
+      // Quote enrichment
+      enrichPostsWithQuotes(posts as PostRow[], c.env.DB),
       // Vector embedding check for unprocessed posts
       (async () => {
         const textPosts = (posts as PostRow[]).filter((p) => p.text);
@@ -4927,6 +4932,7 @@ app.get('/api/posts/trending', async (c) => {
           });
         }
         await enrichPostsWithPolls(posts as PostRow[], c.env.DB, currentUserId);
+        await enrichPostsWithQuotes(posts as PostRow[], c.env.DB);
         return c.json({ posts });
       }
     }
@@ -5073,6 +5079,7 @@ app.get('/api/posts/trending', async (c) => {
     }
 
     await enrichPostsWithPolls(visiblePosts as PostRow[], c.env.DB, currentUserId);
+    await enrichPostsWithQuotes(visiblePosts as PostRow[], c.env.DB);
 
     // Write to cache (non-cursor only)
     if (!cursor && c.env.CACHE) {
@@ -5860,6 +5867,7 @@ async function enrichRecommendedPosts(
     });
   }
   await enrichPostsWithPolls(posts as PostRow[], c.env.DB, currentUserId);
+  await enrichPostsWithQuotes(posts as PostRow[], c.env.DB);
   return posts;
 }
 
@@ -5955,6 +5963,7 @@ app.get('/api/posts/:id/similar', async (c) => {
     }
 
     await enrichPostsWithPolls(posts as PostRow[], c.env.DB, currentUserId);
+    await enrichPostsWithQuotes(posts as PostRow[], c.env.DB);
 
     return c.json({ posts });
   } catch (error: unknown) {
@@ -6882,6 +6891,7 @@ app.post('/api/posts/commit', requireAuth, async (c) => {
     let pollData: any;
     let zipKey: string | undefined;
     let thumbnailKey: string | undefined;
+    let quotedPostId: string | undefined;
 
     if (contentType?.includes('multipart/form-data')) {
       const formData = await c.req.formData();
@@ -6890,6 +6900,7 @@ app.post('/api/posts/commit', requireAuth, async (c) => {
       gifKey = (formData.get('gifKey') as string) || undefined;
       swfKey = (formData.get('swfKey') as string) || undefined;
       zipKey = (formData.get('payloadKey') as string) || undefined;
+      quotedPostId = (formData.get('quotedPostId') as string) || undefined;
       const pollStr = formData.get('poll') as string;
       pollData = pollStr ? JSON.parse(pollStr) : undefined;
 
@@ -6924,13 +6935,16 @@ app.post('/api/posts/commit', requireAuth, async (c) => {
       pollData = body.poll;
       zipKey = body.zipKey;
       thumbnailKey = body.thumbnailKey;
+      quotedPostId = body.quotedPostId;
     }
     const payloadKey = zipKey;
     const userId = c.get('user')?.id || '';
     const username = c.get('user')?.username || 'anonymous';
 
-    // Validate text
-    if (!text || text.length < 1 || text.length > 200) {
+    // Validate text (empty allowed only for quotes)
+    const hasQuote = Boolean(quotedPostId);
+    if (!text) text = '';
+    if (text.length > 200 || (!hasQuote && text.length < 1)) {
       return c.json({ error: 'Text must be 1-200 characters' }, 422);
     }
 
@@ -6976,9 +6990,22 @@ app.post('/api/posts/commit', requireAuth, async (c) => {
       return c.json({ error: 'Database not available' }, 500);
     }
 
+    // Validate quoted post reference if provided
+    let quotedPostAuthorId: string | null = null;
+    if (quotedPostId) {
+      const quoted = (await c.env.DB.prepare('SELECT id, user_id, status FROM posts WHERE id = ?')
+        .bind(quotedPostId)
+        .first()) as { id: string; user_id: string; status: string } | null;
+
+      if (!quoted || quoted.status !== 'published') {
+        return c.json({ error: 'Quoted post not found' }, 404);
+      }
+      quotedPostAuthorId = quoted.user_id;
+    }
+
     const result = await c.env.DB.prepare(`
-      INSERT INTO posts (id, user_id, username, text, hashtags, mentions, payload_key, gif_key, swf_key, thumbnail_key, engagement_hotness, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1.0, 'published')
+      INSERT INTO posts (id, user_id, username, text, hashtags, mentions, payload_key, gif_key, swf_key, thumbnail_key, quoted_post_id, engagement_hotness, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1.0, 'published')
       ON CONFLICT(id) DO UPDATE SET
         text = excluded.text,
         hashtags = excluded.hashtags,
@@ -6987,6 +7014,7 @@ app.post('/api/posts/commit', requireAuth, async (c) => {
         gif_key = COALESCE(excluded.gif_key, posts.gif_key),
         swf_key = COALESCE(excluded.swf_key, posts.swf_key),
         thumbnail_key = COALESCE(excluded.thumbnail_key, posts.thumbnail_key),
+        quoted_post_id = COALESCE(excluded.quoted_post_id, posts.quoted_post_id),
         status = 'published'
     `)
       .bind(
@@ -7000,6 +7028,7 @@ app.post('/api/posts/commit', requireAuth, async (c) => {
         gifKey || null,
         swfKey || null,
         thumbnailKey || null,
+        quotedPostId || null,
       )
       .run();
 
@@ -7066,6 +7095,29 @@ app.post('/api/posts/commit', requireAuth, async (c) => {
       } catch (e) {
         // Don't fail the post creation if mention notifications fail
         console.error('Failed to create mention notifications:', e);
+      }
+    }
+
+    // Create quote notification for the quoted post's author (skip self-quotes)
+    if (quotedPostAuthorId && quotedPostAuthorId !== userId) {
+      try {
+        await c.env.DB.prepare(
+          'INSERT INTO notifications (id, user_id, type, post_id, actor_id) VALUES (?, ?, ?, ?, ?)',
+        )
+          .bind(nanoid(), quotedPostAuthorId, 'quote', postId, userId)
+          .run();
+        const actor = c.get('user');
+        await sendPushToAll(
+          c.env,
+          quotedPostAuthorId,
+          'quote',
+          actor?.username,
+          actor?.display_name,
+          text || '',
+          postId,
+        );
+      } catch (e) {
+        console.error('Failed to create quote notification:', e);
       }
     }
 
@@ -7141,6 +7193,8 @@ app.post('/api/posts/commit', requireAuth, async (c) => {
         console.error('Failed to enrich post with poll:', e);
       }
     }
+
+    await enrichPostsWithQuotes([fullPost], c.env.DB);
 
     embedPost(
       c.env.DB,
@@ -7551,6 +7605,8 @@ app.get('/api/bookmarks', requireAuth, async (c) => {
       post.is_bookmarked = true;
     });
 
+    await enrichPostsWithQuotes(posts as PostRow[], c.env.DB);
+
     const nextCursor = posts.length === limit ? posts[posts.length - 1].created_at : null;
 
     return c.json({ posts, nextCursor });
@@ -7848,10 +7904,13 @@ app.get('/api/posts/:id/replies', async (c) => {
     const _nextCursor = replies.length === limit ? replies[replies.length - 1].created_at : null;
 
     await enrichPostsWithPolls(replies as PostRow[], c.env.DB, currentUserId);
+    await enrichPostsWithQuotes(replies as PostRow[], c.env.DB);
 
     // Add poll data
     await enrichPostsWithPolls([parentPost as PostRow], c.env.DB, currentUserId);
+    await enrichPostsWithQuotes([parentPost as PostRow], c.env.DB);
     await enrichPostsWithPolls(replies as PostRow[], c.env.DB, currentUserId);
+    await enrichPostsWithQuotes(replies as PostRow[], c.env.DB);
 
     // Trigger vector embedding for unprocessed posts in background
     const allPosts = [parentPost as Record<string, unknown>, ...(replies as Array<Record<string, unknown>>)];
@@ -7986,7 +8045,9 @@ app.get('/api/posts/:id/thread', async (c) => {
     }
 
     await enrichPostsWithPolls([rootPost as PostRow], c.env.DB, currentUserId);
+    await enrichPostsWithQuotes([rootPost as PostRow], c.env.DB);
     await enrichPostsWithPolls(replies as PostRow[], c.env.DB, currentUserId);
+    await enrichPostsWithQuotes(replies as PostRow[], c.env.DB);
 
     const allPosts2 = [rootPost as Record<string, unknown>, ...(replies as Array<Record<string, unknown>>)];
     const toEmbed2 = allPosts2.filter((p) => p.text);
@@ -8569,6 +8630,8 @@ app.get('/api/search', async (c) => {
       .bind(...params, limit)
       .all();
 
+    await enrichPostsWithQuotes((posts.results || []) as PostRow[], c.env.DB);
+
     // Also fetch matching users for posts search (type=posts)
     if (type === 'posts') {
       const users = await c.env.DB.prepare(`
@@ -9022,6 +9085,8 @@ app.get('/api/posts/:id', async (c) => {
       };
     }
 
+    await enrichPostsWithQuotes([post as PostRow], c.env.DB);
+
     return c.json(post);
   } catch (error: unknown) {
     const err = error as { message?: string };
@@ -9305,6 +9370,55 @@ async function enrichPostsWithPolls(posts: PostRow[], db: D1Database, currentUse
         expired,
       };
     }
+  }
+}
+
+/**
+ * Batch-fetch quoted posts referenced by the given posts and attach them as
+ * `quoted_post`. Only embeds 1 level deep (never recurses) to avoid infinite
+ * nesting. Deleted/hidden/absent quoted posts are set to null so the client can
+ * render a "post unavailable" placeholder.
+ */
+async function enrichPostsWithQuotes(posts: PostRow[], db: D1Database): Promise<void> {
+  if (posts.length === 0) return;
+
+  const postIds = posts.map((p) => p.id);
+  const idPlaceholders = postIds.map(() => '?').join(',');
+  const linksResult = await db
+    .prepare(`SELECT id, quoted_post_id FROM posts WHERE id IN (${idPlaceholders}) AND quoted_post_id IS NOT NULL`)
+    .bind(...postIds)
+    .all<{ id: string; quoted_post_id: string }>();
+
+  const links = linksResult.results || [];
+  const quotedIds = [...new Set(links.map((r) => r.quoted_post_id))];
+  const quotedMap = new Map<string, Record<string, unknown>>();
+
+  if (quotedIds.length > 0) {
+    const placeholders = quotedIds.map(() => '?').join(',');
+    const result = await db
+      .prepare(
+        `SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, u.language as author_language,
+              p.text, p.hashtags, p.mentions, p.gif_key, p.payload_key AS payloadKey, p.swf_key AS swfKey,
+              p.thumbnail_key AS thumbnailKey, p.parent_id, p.root_id, COALESCE(p.depth, 0) AS depth,
+              COALESCE(p.status, 'published') AS status, p.hidden, p.created_at
+       FROM posts p
+       LEFT JOIN users u ON p.user_id = u.id
+       WHERE p.id IN (${placeholders})`,
+      )
+      .bind(...quotedIds)
+      .all<Record<string, unknown>>();
+
+    for (const quoted of result.results || []) {
+      if (quoted.status === 'published' && !quoted.hidden) {
+        quotedMap.set(quoted.id as string, quoted);
+      }
+    }
+  }
+
+  for (const post of posts) {
+    const link = links.find((r) => r.id === post.id);
+    post.quoted_post_id = link?.quoted_post_id ?? null;
+    post.quoted_post = link ? quotedMap.get(link.quoted_post_id) || null : null;
   }
 }
 

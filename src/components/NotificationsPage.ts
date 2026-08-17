@@ -14,7 +14,8 @@ export interface Notification {
     | 'ap_announce'
     | 'reply'
     | 'mention'
-    | 'poll_ended';
+    | 'poll_ended'
+    | 'quote';
   post_id: string | null;
   post_text_preview: string | null;
   actor?: {
@@ -179,6 +180,9 @@ export class NotificationsPage {
       case 'reply':
         icon.textContent = '💬';
         break;
+      case 'quote':
+        icon.textContent = '🔁';
+        break;
       case 'mention':
         icon.textContent = '📢';
         break;
@@ -296,6 +300,14 @@ export class NotificationsPage {
           mainText.appendChild(document.createTextNode(' '));
           appendMuted(`(${notification.actor.display_name})`);
           mainText.appendChild(document.createTextNode(t('notifications.mentioned_you', { actor: '' })));
+        }
+        break;
+      case 'quote':
+        if (notification.actor) {
+          appendStrong(`@${notification.actor.username}`);
+          mainText.appendChild(document.createTextNode(' '));
+          appendMuted(`(${notification.actor.display_name})`);
+          mainText.appendChild(document.createTextNode(t('notifications.quoted_your_post', { actor: '' })));
         }
         break;
       case 'ap_follow':

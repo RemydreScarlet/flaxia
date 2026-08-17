@@ -1928,6 +1928,16 @@ h1 {
 
 .action-icon {
   font-size: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.action-icon svg {
+  width: 1.2em;
+  height: 1.2em;
+  display: block;
+  flex-shrink: 0;
 }
 
 .action-count {
@@ -5861,4 +5871,73 @@ html {
 
 .group-call-btn:hover {
   background: var(--bg-secondary);
+}
+
+/* Quoted post card (shown inside a post that quotes another post) */
+.quoted-post-card {
+  margin: 0 0 1rem 0;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  background: var(--bg-secondary, rgba(0, 0, 0, 0.02));
+}
+
+.quoted-post-card:hover {
+  border-color: var(--text-muted);
+}
+
+.quoted-post-card .quoted-post-author {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.25rem;
+}
+
+.quoted-post-card .quoted-post-text {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Quote preview inside the composer */
+.composer-quoted-post {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+  background: var(--bg-secondary, rgba(0, 0, 0, 0.02));
+}
+
+.composer-quoted-post .quoted-post-body {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.composer-quoted-post .quoted-post-text {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.quoted-post-remove {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 0.25rem;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.quoted-post-remove:hover {
+  color: var(--danger, #ef4444);
 }

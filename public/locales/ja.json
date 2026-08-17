@@ -82,6 +82,7 @@
   "post.delete_title": "この投稿を削除しますか？",
   "post.delete_message": "この操作は取り消せません。",
   "post.deleted": "投稿を削除しました",
+  "post.quote_unavailable": "この投稿は利用できません。",
   "post.delete_failed": "投稿の削除に失敗しました",
   "post.recommended": "おすすめ",
   "post.no_recommended": "おすすめはまだありません",
@@ -170,6 +171,7 @@
   "composer.error_thumbnail_type": "サムネイルは .jpg, .jpeg, .png, .gif のいずれかである必要があります",
   "composer.save_draft": "下書きを保存",
   "composer.list_drafts": "下書き一覧",
+  "composer.attach_button": "ファイルを添付",
   "composer.no_drafts": "保存された下書きはありません",
   "composer.draft_saved": "下書きを保存しました",
   "composer.draft_updated": "下書きを更新しました",
@@ -219,6 +221,7 @@
   "notifications.boosted_your_post": "{actor} があなたの投稿をブーストしました",
   "notifications.replied_to_you": "{actor} が返信しました",
   "notifications.mentioned_you": "{actor} がメンションしました",
+  "notifications.quoted_your_post": "{actor} があなたのポストを引用しました",
   "notifications.your_post_reported": "あなたの投稿が複数回報告されました",
 
   "time.just_now": "just now",
@@ -284,6 +287,7 @@
   "settings.password_network_error": "ネットワークエラー",
 
   "share.title": "シェア",
+  "share.quote": "引用",
   "share.native": "デバイスでシェア",
   "share.copy_link": "リンクをコピー",
   "share.share_to": "シェア先",

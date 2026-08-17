@@ -13,6 +13,24 @@ export type ReportCategory =
 
 export type NotificationType = 'fresh' | 'reported' | 'warned' | 'hidden';
 
+export interface QuotedPost {
+  id: string;
+  user_id: string;
+  username: string;
+  display_name?: string | null;
+  avatar_key?: string | null;
+  text: string;
+  hashtags: string;
+  mentions?: string;
+  gif_key?: string | null;
+  payload_key?: string | null;
+  swf_key?: string | null;
+  thumbnail_key?: string | null;
+  parent_id?: string | null;
+  root_id?: string | null;
+  created_at: string;
+}
+
 export interface Post {
   id: string;
   user_id: string;
@@ -38,6 +56,8 @@ export interface Post {
   created_at: string;
   edited_at?: string;
   author_language?: string;
+  quoted_post_id?: string;
+  quoted_post?: QuotedPost | null;
   is_freshed?: boolean; // Whether current user has freshed this post
   is_bookmarked?: boolean; // Whether current user has bookmarked this post
   poll?: {

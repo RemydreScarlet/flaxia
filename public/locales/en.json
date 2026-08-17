@@ -82,6 +82,7 @@
   "post.delete_title": "Delete this post?",
   "post.delete_message": "This cannot be undone.",
   "post.deleted": "Post deleted",
+  "post.quote_unavailable": "This post is unavailable.",
   "post.delete_failed": "Failed to delete post",
   "post.recommended": "Recommended",
   "post.no_recommended": "No recommendations yet",
@@ -170,6 +171,7 @@
   "composer.error_thumbnail_type": "Thumbnail must be .jpg, .jpeg, .png, or .gif",
   "composer.save_draft": "Save draft",
   "composer.list_drafts": "Drafts",
+  "composer.attach_button": "Attach file",
   "composer.no_drafts": "No saved drafts",
   "composer.draft_saved": "Draft saved",
   "composer.draft_updated": "Draft updated",
@@ -219,6 +221,7 @@
   "notifications.boosted_your_post": "{actor} boosted your post",
   "notifications.replied_to_you": "{actor} replied to you",
   "notifications.mentioned_you": "{actor} mentioned you",
+  "notifications.quoted_your_post": "{actor} quoted your post",
   "notifications.your_post_reported": "Your post has been reported multiple times",
 
   "time.just_now": "just now",
@@ -284,6 +287,7 @@
   "settings.password_network_error": "Network error",
 
   "share.title": "Share",
+  "share.quote": "Quote",
   "share.native": "Share via device",
   "share.copy_link": "Copy link",
   "share.share_to": "Share to",

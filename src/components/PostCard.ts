@@ -3,9 +3,10 @@ import { getLocale, t } from '../lib/i18n.js';
 import { impressionTracker } from '../lib/impression-tracker.js';
 import { loadLinkPreview } from '../lib/link-preview.js';
 import { registerModal } from '../lib/modal-state.js';
+import { openPostModal } from '../lib/post-modal.js';
 import { useSandboxBridge } from '../lib/sandbox-bridge.js';
 import { getShowNsfw } from '../lib/settings.js';
-import { PostCardMode, PostCardProps } from '../types/post.js';
+import { PostCardMode, PostCardProps, QuotedPost } from '../types/post.js';
 import { createPostActions } from './PostActions.js';
 import { createPostHeader } from './PostHeader.js';
 import { createPostStage, updatePostStage } from './PostStage.js';
@@ -308,6 +309,12 @@ export class PostCard {
     previewContainer.style.cssText = 'overflow: hidden;';
     container.appendChild(previewContainer);
     loadLinkPreview(this.props.post.text, previewContainer);
+
+    // Quoted post card
+    if (this.props.post.quoted_post_id) {
+      const quotedCard = this.createQuotedPostCard(this.props.post.quoted_post ?? null);
+      if (quotedCard) container.appendChild(quotedCard);
+    }
 
     // Post stage (16:9 container for GIF/iframe/thumbnail) - only show if has attachments
     if (
@@ -760,6 +767,115 @@ export class PostCard {
     );
   }
 
+  private createQuotedPostCard(quoted: QuotedPost | null): HTMLElement {
+    const card = document.createElement('div');
+    card.className = 'quoted-post-card';
+    card.style.cssText = `
+      margin: 0 0 1rem 0;
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      padding: 0.75rem;
+      cursor: ${this.props.disableNavigation ? 'default' : 'pointer'};
+      background: var(--bg-secondary, rgba(0,0,0,0.02));
+    `;
+
+    if (!quoted) {
+      const unavailable = document.createElement('div');
+      unavailable.className = 'quoted-post-unavailable';
+      unavailable.style.cssText = `
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        font-style: italic;
+      `;
+      unavailable.textContent = t('post.quote_unavailable');
+      card.appendChild(unavailable);
+      return card;
+    }
+
+    card.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.navigateToThread(quoted.id);
+    });
+
+    const nameRow = document.createElement('div');
+    nameRow.className = 'quoted-post-author';
+    nameRow.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      margin-bottom: 0.25rem;
+    `;
+
+    const avatar = document.createElement('span');
+    avatar.className = 'quoted-post-avatar';
+    avatar.style.cssText = `
+      width: 1.25rem;
+      height: 1.25rem;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #fff;
+      background: var(--accent);
+      flex-shrink: 0;
+      overflow: hidden;
+    `;
+    if (quoted.avatar_key) {
+      avatar.style.backgroundImage = `url(/api/images/${quoted.avatar_key})`;
+      avatar.style.backgroundSize = 'cover';
+      avatar.style.backgroundPosition = 'center';
+      avatar.textContent = '';
+    } else {
+      avatar.textContent = (quoted.display_name || quoted.username || '?').charAt(0).toUpperCase();
+    }
+
+    const name = document.createElement('span');
+    name.className = 'quoted-post-name';
+    name.style.cssText = `
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    `;
+    name.textContent = quoted.display_name || quoted.username || '';
+
+    const username = document.createElement('span');
+    username.className = 'quoted-post-username';
+    username.style.cssText = `
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    `;
+    username.textContent = quoted.username ? `@${quoted.username}` : '';
+
+    nameRow.appendChild(avatar);
+    nameRow.appendChild(name);
+    nameRow.appendChild(username);
+    card.appendChild(nameRow);
+
+    const body = document.createElement('div');
+    body.className = 'quoted-post-text';
+    body.style.cssText = `
+      font-size: 0.9rem;
+      line-height: 1.5;
+      color: var(--text-primary);
+      white-space: pre-wrap;
+      word-break: break-word;
+    `;
+    body.textContent = quoted.text || '';
+    card.appendChild(body);
+
+    return card;
+  }
+
+  private navigateToThread(postId: string): void {
+    if (this.props.disableNavigation) return;
+    const threadUrl = `/thread/${postId}`;
+    window.history.pushState({ postId }, '', threadUrl);
+    window.dispatchEvent(new CustomEvent('spaNavigate', { detail: { view: 'thread', postId } }));
+    this.element.dispatchEvent(new CustomEvent('navigateToThread', { detail: { postId } }));
+  }
+
   public handleReplyTogglePublic(): void {
     this.handleReplyToggle();
   }
@@ -773,6 +889,26 @@ export class PostCard {
         display_name: this.props.post.display_name,
       },
       onClose: () => {},
+      onQuote: () => this.handleQuote(),
+    });
+  }
+
+  private handleQuote(): void {
+    const p = this.props.post;
+    const quotedPost: QuotedPost = {
+      id: p.id,
+      user_id: p.user_id,
+      username: p.username,
+      display_name: p.display_name,
+      avatar_key: p.avatar_key,
+      text: p.text,
+      hashtags: p.hashtags,
+      created_at: p.created_at,
+    };
+    openPostModal({
+      currentUser: this.props.currentUser,
+      onPostCreated: (post) => this.navigateToThread(post.id),
+      quotedPost,
     });
   }
 

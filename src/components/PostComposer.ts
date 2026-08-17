@@ -1,15 +1,17 @@
-import type { Post } from '../types/post.js';
+import type { Post, QuotedPost } from '../types/post.js';
 
 export interface PostComposerProps {
   onPostCreated?: (post: Post) => void;
   currentUser?: { username: string; display_name?: string; avatar_key?: string } | null;
   onDraftSaved?: () => void;
+  quotedPost?: QuotedPost | null;
 }
 
 import { getMimeType } from '../lib/file-extensions.js';
 import { AttachPreviewHandle, checkImageSizeLimit, renderFilePreview } from '../lib/file-preview.js';
 import { formatCount } from '../lib/format.js';
 import { t } from '../lib/i18n.js';
+import { attachIcons, icon } from '../lib/icons.js';
 import { registerModal } from '../lib/modal-state.js';
 import { showToast } from '../lib/toast.js';
 import { detectZipType } from '../lib/zip-type.js';
@@ -69,23 +71,24 @@ export class PostComposer {
         </div>
         <div class="composer-file-dropzone" style="display: none;">
           <div class="dropzone-content">
-            <span class="dropzone-icon">📎</span>
+            <span class="dropzone-icon" data-icon="attach"></span>
             <span class="dropzone-text">${t('composer.file_hint')}</span>
           </div>
         </div>
+        <div class="composer-quoted-post" style="display: none;"></div>
         <div class="composer-divider"></div>
         <div class="composer-footer">
           <div class="composer-actions">
             <input type="file" class="composer-file-input" accept=".js,.wasm,.html,.gif,.png,.jpg,.jpeg,.mp3,.wav,.ogg,.m4a,.webm,.mp4,.mov,.zip,.swf,.jsdos" />
-            <button class="composer-file-button" type="button">
-              📎
+            <button class="composer-file-button" type="button" title="${t('composer.attach_button')}">
+              <span class="action-icon" data-icon="attach"></span>
             </button>
             <button class="composer-poll-button" type="button" title="${t('poll.toggle_button')}">
-              📊
+              <span class="action-icon" data-icon="poll"></span>
             </button>
             <span class="composer-char-count">${t('composer.char_count', { current: 0, max: 200 })}</span>
-            <button class="composer-save-draft" type="button" title="${t('composer.save_draft')}">💾</button>
-            <button class="composer-list-drafts" type="button" title="${t('composer.list_drafts')}">📝</button>
+            <button class="composer-save-draft" type="button" title="${t('composer.save_draft')}"><span class="action-icon" data-icon="save"></span></button>
+            <button class="composer-list-drafts" type="button" title="${t('composer.list_drafts')}"><span class="action-icon" data-icon="drafts"></span></button>
           </div>
           <button class="composer-submit" type="button" disabled>
             ${t('composer.post_button')}
@@ -111,7 +114,7 @@ export class PostComposer {
         <div class="composer-file-preview" style="display: none;">
           <div class="file-info">
             <span class="file-name"></span>
-            <button class="file-remove" type="button">✕</button>
+            <button class="file-remove" type="button"><span class="action-icon" data-icon="close"></span></button>
           </div>
         </div>
         <div class="composer-thumbnail-section" style="display: none;">
@@ -127,11 +130,13 @@ export class PostComposer {
           </div>
           <div class="thumbnail-preview" style="display: none;">
             <img class="thumbnail-image" />
-            <button class="thumbnail-remove" type="button">✕</button>
+            <button class="thumbnail-remove" type="button"><span class="action-icon" data-icon="close"></span></button>
           </div>
         </div>
       </div>
     `;
+
+    attachIcons(container);
 
     // Cache element references
     this.textarea = container.querySelector('.composer-textarea')!;
@@ -220,7 +225,52 @@ export class PostComposer {
       }
     }
 
+    this.renderQuotedPost();
+
     return container;
+  }
+
+  private renderQuotedPost(): void {
+    const section = this.element.querySelector('.composer-quoted-post') as HTMLElement;
+    const quoted = this.props.quotedPost;
+    if (!section || !quoted) return;
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'quoted-post-remove';
+    removeBtn.appendChild(icon('close'));
+    removeBtn.addEventListener('click', () => {
+      this.props = { ...this.props, quotedPost: null };
+      section.style.display = 'none';
+      this.updateSubmitButton();
+    });
+
+    const body = document.createElement('div');
+    body.className = 'quoted-post-body';
+    body.addEventListener('click', () => {
+      window.location.hash = `/thread/${quoted.id}`;
+    });
+
+    const nameRow = document.createElement('div');
+    nameRow.className = 'quoted-post-author';
+    const avatar = document.createElement('span');
+    avatar.className = 'quoted-post-avatar';
+    avatar.textContent = (quoted.display_name || quoted.username || '?').charAt(0).toUpperCase();
+    const name = document.createElement('span');
+    name.className = 'quoted-post-name';
+    name.textContent = quoted.display_name || quoted.username || '';
+    nameRow.appendChild(avatar);
+    nameRow.appendChild(name);
+
+    const text = document.createElement('div');
+    text.className = 'quoted-post-text';
+    text.textContent = quoted.text || '';
+
+    body.appendChild(nameRow);
+    body.appendChild(text);
+    section.appendChild(removeBtn);
+    section.appendChild(body);
+    section.style.display = 'block';
   }
 
   private setupEventListeners(): void {
@@ -971,7 +1021,7 @@ export class PostComposer {
   }
 
   private updateSubmitButton(): void {
-    const hasContent = this.textarea.value.trim().length > 0;
+    const hasContent = this.textarea.value.trim().length > 0 || this.props.quotedPost != null;
     this.submitButton.disabled = !hasContent || this.isSubmitting;
     this.submitButton.textContent = this.isSubmitting ? t('composer.posting') : t('composer.post_button');
   }
@@ -1429,6 +1479,7 @@ export class PostComposer {
         if (swfKey) formData.append('swfKey', swfKey);
         formData.append('thumbnail', this.selectedThumbnail);
         if (poll) formData.append('poll', JSON.stringify(poll));
+        if (this.props.quotedPost?.id) formData.append('quotedPostId', this.props.quotedPost.id);
 
         const response = await fetch('/api/posts/commit', {
           method: 'POST',
@@ -1635,6 +1686,7 @@ export class PostComposer {
           text,
           hashtags,
           poll: poll || undefined,
+          quotedPostId: this.props.quotedPost?.id,
         }),
       });
 
