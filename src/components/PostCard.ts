@@ -972,7 +972,7 @@ export class PostCard {
       return wrap;
     }
     if (gifKey) {
-      wrap.appendChild(createImagePreview({ gifKey, postId: quoted.id }));
+      wrap.appendChild(createImagePreview({ gifKey, postId: quoted.id, ratio: '16:9' }));
       return wrap;
     }
 
@@ -988,6 +988,7 @@ export class PostCard {
           gifKey: quoted.thumbnail_key,
           postId: quoted.id,
           isThumbnail: true,
+          ratio: '16:9',
         }),
       );
       if (isExecutable) {

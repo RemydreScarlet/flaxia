@@ -123,6 +123,8 @@ export interface GifPreviewProps {
   postId: string;
   isThumbnail?: boolean;
   src?: string;
+  // Force the preview into a 16:9 box, center-cropping the image to fill it.
+  ratio?: '16:9';
 }
 
 export interface SandboxFrameProps {

@@ -29,6 +29,81 @@ export function createImagePreview(props: GifPreviewProps): HTMLElement {
     createImageOverlay(imageUrl, props.postId);
   };
 
+  // Forced 16:9 preview: fix the box ratio and center-crop the image into it.
+  if (props.ratio === '16:9') {
+    container.style.cssText = `
+      position: relative;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      display: block;
+      background: var(--bg-input);
+      ${props.isThumbnail ? '' : 'border-radius: 8px;'}
+    `;
+
+    img.style.cssText = `
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center;
+      cursor: pointer;
+      display: block;
+      ${props.isThumbnail ? '' : 'border-radius: 8px;'}
+    `;
+
+    if (props.isThumbnail) {
+      img.src = imageUrl;
+      container.appendChild(img);
+      return container;
+    }
+
+    const placeholder = document.createElement('div');
+    placeholder.className = 'image-preview-loading';
+    placeholder.style.cssText = `
+      position: absolute;
+      inset: 0;
+      background: var(--bg-input);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      font-family: monospace;
+      font-size: 0.875rem;
+    `;
+    placeholder.textContent = t('common.loading');
+
+    img.onload = () => {
+      placeholder.style.display = 'none';
+    };
+    img.onerror = () => {
+      placeholder.style.display = 'none';
+      const fallback = document.createElement('div');
+      fallback.className = 'image-preview-error';
+      fallback.style.cssText = `
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--bg-secondary);
+        color: var(--text-muted);
+        font-size: 0.875rem;
+        text-align: center;
+        padding: 2rem;
+        border-radius: 8px;
+      `;
+      fallback.textContent = t('image_preview.load_failed');
+      container.appendChild(fallback);
+    };
+
+    img.src = imageUrl;
+    container.appendChild(placeholder);
+    container.appendChild(img);
+    return container;
+  }
+
   // Lay out the container as relative so the stage wraps the image's height.
   container.style.cssText = `
     position: relative;

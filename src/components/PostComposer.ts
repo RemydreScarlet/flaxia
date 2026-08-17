@@ -304,7 +304,7 @@ export class PostComposer {
       return wrap;
     }
     if (gifKey) {
-      wrap.appendChild(createImagePreview({ gifKey, postId: quoted.id }));
+      wrap.appendChild(createImagePreview({ gifKey, postId: quoted.id, ratio: '16:9' }));
       return wrap;
     }
 
@@ -314,6 +314,7 @@ export class PostComposer {
           gifKey: quoted.thumbnail_key,
           postId: quoted.id,
           isThumbnail: true,
+          ratio: '16:9',
         }),
       );
       return wrap;
