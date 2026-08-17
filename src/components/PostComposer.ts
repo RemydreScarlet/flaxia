@@ -225,13 +225,13 @@ export class PostComposer {
       }
     }
 
-    this.renderQuotedPost();
+    this.renderQuotedPost(container);
 
     return container;
   }
 
-  private renderQuotedPost(): void {
-    const section = this.element.querySelector('.composer-quoted-post') as HTMLElement;
+  private renderQuotedPost(container: HTMLElement): void {
+    const section = container.querySelector('.composer-quoted-post') as HTMLElement;
     const quoted = this.props.quotedPost;
     if (!section || !quoted) return;
 
