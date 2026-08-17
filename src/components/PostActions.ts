@@ -85,7 +85,11 @@ function createReactionsRow(reactions: ReactionSummary[], onToggle: (emoji: stri
 
   addButton.addEventListener('click', (e) => {
     e.stopPropagation();
-    openEmojiPicker(addButton, onToggle);
+    if (closeActivePicker !== null && activeAnchor === addButton) {
+      closeEmojiPicker();
+    } else {
+      openEmojiPicker(addButton, onToggle);
+    }
   });
 
   row.appendChild(addButton);
@@ -116,7 +120,16 @@ function createReactionChip(reaction: ReactionSummary, onToggle: (emoji: string)
   return chip;
 }
 
+let activeAnchor: HTMLElement | null = null;
+let closeActivePicker: (() => void) | null = null;
+
+function closeEmojiPicker(): void {
+  if (closeActivePicker) closeActivePicker();
+}
+
 function openEmojiPicker(anchor: HTMLElement, onPick: (emoji: string) => void): void {
+  closeEmojiPicker();
+
   let picker: HTMLElement | null = null;
   let cleanup: (() => void) | null = null;
 
@@ -125,12 +138,16 @@ function openEmojiPicker(anchor: HTMLElement, onPick: (emoji: string) => void): 
     picker = null;
     if (cleanup) cleanup();
     cleanup = null;
+    if (closeActivePicker === close) {
+      closeActivePicker = null;
+      activeAnchor = null;
+    }
   };
 
   void import('emoji-picker-element').then((mod) => {
-    if (!anchor.isConnected) return;
     const { Picker } = mod;
-    if (!Picker) return;
+    if (!Picker || !anchor.isConnected) return;
+    closeEmojiPicker();
 
     picker = new Picker({ dataSource: '/emoji-data.json', locale: document.documentElement.lang || undefined });
     picker.style.position = 'fixed';
@@ -155,19 +172,22 @@ function openEmojiPicker(anchor: HTMLElement, onPick: (emoji: string) => void): 
       if (e.key === 'Escape') close();
     };
     const onOutsideClick = (e: MouseEvent) => {
-      if (!picker || !anchor.isConnected) return;
-      if (!picker.contains(e.target as Node) && e.target !== anchor) close();
+      if (!picker) return;
+      if (!picker.contains(e.target as Node)) close();
     };
 
     picker.addEventListener('emoji-click', onEmojiClick);
     document.addEventListener('keydown', onKeydown);
-    setTimeout(() => document.addEventListener('click', onOutsideClick), 0);
+    document.addEventListener('click', onOutsideClick);
 
     cleanup = () => {
       picker?.removeEventListener('emoji-click', onEmojiClick);
       document.removeEventListener('keydown', onKeydown);
       document.removeEventListener('click', onOutsideClick);
     };
+
+    activeAnchor = anchor;
+    closeActivePicker = close;
   });
 }
 
