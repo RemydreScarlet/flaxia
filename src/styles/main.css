@@ -603,6 +603,20 @@ h1 {
     visibility: visible;
   }
 
+  /* Left-edge swipe catch zone. Sits above content/iframes so touch events are not
+     swallowed by embedded games, and lets the browser handle vertical scrolling.
+     Top is offset below the header row so it never blocks top-left back buttons. */
+  .left-nav-swipe-catch {
+    position: fixed;
+    left: 0;
+    top: 56px;
+    bottom: 0;
+    width: 28px;
+    z-index: 1050;
+    display: none;
+    touch-action: pan-y;
+  }
+
   .main-content {
     padding-bottom: 1rem;
   }

@@ -647,6 +647,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     let leftNavWasOpen = false;
+    let leftNavSwipeCatch: HTMLElement | null = null;
+    let isModalOpen = false;
+
+    const updateSwipeCatchVisibility = (): void => {
+      if (!leftNavSwipeCatch) return;
+      const shouldShow = window.innerWidth <= 768 && !leftNavWasOpen && !isModalOpen;
+      leftNavSwipeCatch.style.display = shouldShow ? 'block' : 'none';
+    };
 
     const openLeftNav = (leftNavElement: HTMLElement): void => {
       if (window.innerWidth > 768) return;
@@ -661,6 +669,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // Prevent body scroll
       document.body.style.overflow = 'hidden';
+
+      updateSwipeCatchVisibility();
     };
 
     const closeLeftNav = (): void => {
@@ -678,6 +688,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // Restore body scroll
       document.body.style.overflow = '';
+
+      updateSwipeCatchVisibility();
     };
 
     let currentResizeHandler: (() => void) | null = null;
@@ -707,17 +719,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         currentOpenLeftNavHandler = null;
       }
       if (currentEdgeTouchStartHandler) {
-        document.removeEventListener('touchstart', currentEdgeTouchStartHandler);
+        if (leftNavSwipeCatch) {
+          leftNavSwipeCatch.removeEventListener('touchstart', currentEdgeTouchStartHandler);
+        }
         currentEdgeTouchStartHandler = null;
       }
       if (currentEdgeTouchMoveHandler) {
-        document.removeEventListener('touchmove', currentEdgeTouchMoveHandler);
+        if (leftNavSwipeCatch) {
+          leftNavSwipeCatch.removeEventListener('touchmove', currentEdgeTouchMoveHandler);
+        }
         currentEdgeTouchMoveHandler = null;
       }
       if (currentEdgeTouchEndHandler) {
-        document.removeEventListener('touchend', currentEdgeTouchEndHandler);
-        document.removeEventListener('touchcancel', currentEdgeTouchEndHandler);
+        if (leftNavSwipeCatch) {
+          leftNavSwipeCatch.removeEventListener('touchend', currentEdgeTouchEndHandler);
+          leftNavSwipeCatch.removeEventListener('touchcancel', currentEdgeTouchEndHandler);
+        }
         currentEdgeTouchEndHandler = null;
+      }
+      if (leftNavSwipeCatch) {
+        leftNavSwipeCatch.remove();
+        leftNavSwipeCatch = null;
       }
 
       // Listen for openLeftNav events from timeline
@@ -739,17 +761,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (window.innerWidth > 768) {
           closeLeftNav();
         }
+        updateSwipeCatchVisibility();
       };
       window.addEventListener('resize', currentResizeHandler);
 
       // Close mobile nav when modal opens
       currentModalChangeHandler = (e: Event) => {
-        if (window.innerWidth > 768) return;
-        closeLeftNav();
+        isModalOpen = (e as CustomEvent<{ open: boolean }>).detail.open;
+        if (isModalOpen) {
+          closeLeftNav();
+        }
+        updateSwipeCatchVisibility();
       };
       window.addEventListener('modalchange', currentModalChangeHandler);
 
-      // Edge swipe detection to open the mobile left nav (swipe right from the left edge)
+      // Edge swipe detection to open the mobile left nav (swipe right from the left edge).
+      // The touch handlers live on a fixed left-edge strip instead of the document, because
+      // game iframes (e.g. arcade) swallow touch events before they reach the parent document.
+      if (!leftNavSwipeCatch) {
+        leftNavSwipeCatch = document.createElement('div');
+        leftNavSwipeCatch.className = 'left-nav-swipe-catch';
+        document.body.appendChild(leftNavSwipeCatch);
+      }
+
       let swipeStartX = 0;
       let swipeStartY = 0;
       let isEdgeSwipeTracking = false;
@@ -757,7 +791,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       currentEdgeTouchStartHandler = (e: TouchEvent) => {
         if (window.innerWidth > 768 || leftNavWasOpen) return;
         const touch = e.touches[0];
-        if (!touch || touch.clientX > 24) return;
+        if (!touch) return;
         isEdgeSwipeTracking = true;
         swipeStartX = touch.clientX;
         swipeStartY = touch.clientY;
@@ -769,7 +803,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!touch) return;
         const dx = touch.clientX - swipeStartX;
         const dy = touch.clientY - swipeStartY;
-        if (dx > 70 && Math.abs(dx) > Math.abs(dy)) {
+        if (dx > 60 && Math.abs(dx) > Math.abs(dy)) {
           e.preventDefault();
           isEdgeSwipeTracking = false;
           openLeftNav(leftNavElement);
@@ -780,10 +814,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         isEdgeSwipeTracking = false;
       };
 
-      document.addEventListener('touchstart', currentEdgeTouchStartHandler, { passive: true });
-      document.addEventListener('touchmove', currentEdgeTouchMoveHandler, { passive: false });
-      document.addEventListener('touchend', currentEdgeTouchEndHandler);
-      document.addEventListener('touchcancel', currentEdgeTouchEndHandler);
+      leftNavSwipeCatch.addEventListener('touchstart', currentEdgeTouchStartHandler, { passive: true });
+      leftNavSwipeCatch.addEventListener('touchmove', currentEdgeTouchMoveHandler, { passive: false });
+      leftNavSwipeCatch.addEventListener('touchend', currentEdgeTouchEndHandler);
+      leftNavSwipeCatch.addEventListener('touchcancel', currentEdgeTouchEndHandler);
+
+      updateSwipeCatchVisibility();
     };
 
     // Auth guard - redirect to login if not authenticated (only for protected routes)
