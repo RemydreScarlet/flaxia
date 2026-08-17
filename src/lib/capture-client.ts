@@ -137,7 +137,9 @@ export class ArcadeCaptureClient {
     ctx.font = 'bold 36px sans-serif';
     ctx.fillText(this.clipText(ctx, meta.title, width - 80, 36), 40, (headerH + pad) / 2);
 
-    // Photo
+    // Photo (bilinear/bicubic resampling so upscaling stays smooth)
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(img, pad, headerH + pad, photoWidth, photoHeight);
 
     // Footer

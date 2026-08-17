@@ -196,9 +196,7 @@ function createThumbnailWithOverlay(props: {
     display: block;
     opacity: 0;
     transition: opacity 0.3s ease;
-    image-rendering: -webkit-optimize-contrast;
     image-rendering: auto;
-    image-rendering: smooth;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     backface-visibility: hidden;
