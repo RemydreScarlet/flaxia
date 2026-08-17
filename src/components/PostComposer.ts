@@ -7,46 +7,12 @@ export interface PostComposerProps {
 }
 
 import { getMimeType } from '../lib/file-extensions.js';
+import { AttachPreviewHandle, checkImageSizeLimit, renderFilePreview } from '../lib/file-preview.js';
 import { formatCount } from '../lib/format.js';
 import { t } from '../lib/i18n.js';
 import { registerModal } from '../lib/modal-state.js';
 import { showToast } from '../lib/toast.js';
-
-async function detectZipType(file: File): Promise<'html5' | 'dos' | null> {
-  try {
-    const buffer = await file.arrayBuffer();
-    const view = new DataView(buffer);
-    let eocdOffset = buffer.byteLength - 22;
-    while (eocdOffset >= 0) {
-      if (view.getUint32(eocdOffset, true) === 0x06054b50) break;
-      eocdOffset--;
-    }
-    if (eocdOffset < 0) return null;
-    const cdOffset = view.getUint32(eocdOffset + 16, true);
-    const numEntries = view.getUint16(eocdOffset + 10, true);
-    let hasIndexHtml = false;
-    let hasExe = false;
-    let offset = cdOffset;
-    for (let i = 0; i < numEntries; i++) {
-      if (view.getUint32(offset, true) !== 0x02014b50) break;
-      const nameLen = view.getUint16(offset + 28, true);
-      const extraLen = view.getUint16(offset + 30, true);
-      const commentLen = view.getUint16(offset + 32, true);
-      let name = '';
-      for (let j = 0; j < nameLen; j++) name += String.fromCharCode(view.getUint8(offset + 46 + j));
-      const lower = name.toLowerCase();
-      const fileName = lower.split('/').pop() || '';
-      if (fileName === 'index.html' || fileName === 'index.htm') hasIndexHtml = true;
-      if (fileName.endsWith('.exe') || fileName.endsWith('.bat') || fileName.endsWith('.com')) hasExe = true;
-      offset += 46 + nameLen + extraLen + commentLen;
-    }
-    if (hasIndexHtml) return 'html5';
-    if (hasExe) return 'dos';
-    return null;
-  } catch {
-    return null;
-  }
-}
+import { detectZipType } from '../lib/zip-type.js';
 
 export class PostComposer {
   private element: HTMLElement;
@@ -59,6 +25,7 @@ export class PostComposer {
   private selectedFile: File | null = null;
   private selectedThumbnail: File | null = null;
   private zipType: 'html5' | 'dos' | null = null;
+  private previewHandle: AttachPreviewHandle | null = null;
   private isSubmitting = false;
   private dragCounter = 0;
   private errorDisplay!: HTMLElement;
@@ -744,7 +711,7 @@ export class PostComposer {
     this.errorDisplay.style.display = 'none';
   }
 
-  private handleFileSelection(file: File): void {
+  private async handleFileSelection(file: File): Promise<void> {
     this.clearError();
 
     const validation = this.validateFile(file);
@@ -753,7 +720,6 @@ export class PostComposer {
       showToast(validation.error!, true);
       return;
     }
-
     // Check if file is an accepted format (MIME type validation)
     const allowedTypes = [
       'image/gif',
@@ -793,6 +759,15 @@ export class PostComposer {
     if (!isValidType) {
       this.clearFileSelection();
       showToast(t('composer.error_unsupported_type'), true);
+      return;
+    }
+
+    // Reject oversized images before the browser decodes/previews them, so a
+    // huge image can't crash the tab in the composer or after posting.
+    const dimError = await checkImageSizeLimit(file);
+    if (dimError) {
+      this.clearFileSelection();
+      showToast(dimError, true);
       return;
     }
 
@@ -976,12 +951,16 @@ export class PostComposer {
     const preview = this.element.querySelector('.composer-file-preview')! as HTMLElement;
     const fileName = preview.querySelector('.file-name')!;
 
+    this.previewHandle?.destroy();
     fileName.textContent = `${file.name} (${this.formatFileSize(file.size)})`;
     preview.style.display = 'block';
+    this.previewHandle = renderFilePreview(file, preview, () => this.zipType);
   }
 
   private hideFilePreview(): void {
     const preview = this.element.querySelector('.composer-file-preview')! as HTMLElement;
+    this.previewHandle?.destroy();
+    this.previewHandle = null;
     preview.style.display = 'none';
   }
 

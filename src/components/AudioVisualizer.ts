@@ -108,11 +108,11 @@ export class AudioVisualizer {
       for (let i = 0; i < bufferLength; i++) {
         const barHeight = (dataArray[i] / 255) * rect.height * 0.8;
 
-        // Create gradient for each bar
+        // Create gradient for each bar (green accent, matching the video player)
         const gradient = ctx.createLinearGradient(0, rect.height - barHeight, 0, rect.height);
-        gradient.addColorStop(0, 'rgba(59, 130, 246, 0.8)'); // Blue
-        gradient.addColorStop(0.5, 'rgba(34, 211, 238, 0.9)'); // Cyan
-        gradient.addColorStop(1, 'rgba(147, 51, 234, 0.8)'); // Purple
+        gradient.addColorStop(0, 'rgba(34, 197, 94, 0.95)'); // Accent
+        gradient.addColorStop(0.5, 'rgba(74, 222, 128, 0.9)'); // Light green
+        gradient.addColorStop(1, 'rgba(22, 101, 52, 0.8)'); // Dark green
 
         ctx.fillStyle = gradient;
         ctx.fillRect(x, rect.height - barHeight, barWidth - 2, barHeight);

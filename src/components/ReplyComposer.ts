@@ -1,3 +1,4 @@
+import { AttachPreviewHandle, checkImageSizeLimit, renderFilePreview } from '../lib/file-preview.js';
 import { formatCount } from '../lib/format.js';
 import { t } from '../lib/i18n.js';
 import { showToast } from '../lib/toast.js';
@@ -23,6 +24,7 @@ export class ReplyComposer {
   private charCount!: HTMLSpanElement;
   private selectedFile: File | null = null;
   private isSubmitting = false;
+  private previewHandle: AttachPreviewHandle | null = null;
   private mentionDropdown!: HTMLElement;
   private mentionTimeout: ReturnType<typeof setTimeout> | null = null;
   private mentionQuery: string = '';
@@ -471,7 +473,7 @@ export class ReplyComposer {
     }
   }
 
-  private handleFileSelection(file: File): void {
+  private async handleFileSelection(file: File): Promise<void> {
     // Check file size (25MB limit)
     if (file.size > 25 * 1024 * 1024) {
       showToast(t('reply_composer.error_file_size'), true);
@@ -504,6 +506,14 @@ export class ReplyComposer {
       return;
     }
 
+    // Reject oversized images before the browser decodes/previews them.
+    const dimError = await checkImageSizeLimit(file);
+    if (dimError) {
+      showToast(dimError, true);
+      this.clearFileSelection();
+      return;
+    }
+
     this.selectedFile = file;
     this.showFilePreview(file);
     this.updateSubmitButton();
@@ -520,12 +530,16 @@ export class ReplyComposer {
     const preview = this.element.querySelector('.reply-composer-file-preview')! as HTMLElement;
     const fileName = preview.querySelector('.file-name')!;
 
+    this.previewHandle?.destroy();
     fileName.textContent = `${file.name} (${this.formatFileSize(file.size)})`;
     preview.style.display = 'block';
+    this.previewHandle = renderFilePreview(file, preview, () => null);
   }
 
   private hideFilePreview(): void {
     const preview = this.element.querySelector('.reply-composer-file-preview')! as HTMLElement;
+    this.previewHandle?.destroy();
+    this.previewHandle = null;
     preview.style.display = 'none';
   }
 

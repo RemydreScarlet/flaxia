@@ -22,6 +22,13 @@ export class Timeline {
   private infiniteScroll: ReturnType<typeof createInfiniteScroll>;
   private postUpdatedHandler?: (e: Event) => void;
 
+  // How far above the viewport a rendered card must sit before infinite
+  // scrolling removes it from the DOM, measured in viewport heights.
+  private static readonly PRUNE_ABOVE_VIEWPORTS = 2;
+  // Never prune when fewer than this many cards remain, so scrolling back up
+  // doesn't hit an empty gap.
+  private static readonly PRUNE_MIN_CARDS = 30;
+
   // Store bound event handlers for proper cleanup
   private boundHandleProfileUpdate: () => void;
   private boundHandleResize: () => void;
@@ -373,6 +380,7 @@ export class Timeline {
     this.state.ads = [];
     this.state.cursor = undefined;
     this.state.hasMore = true;
+    this.postCards.forEach((card) => void card.destroy());
     this.postCards.clear();
     this.renderPostList();
 
@@ -381,6 +389,48 @@ export class Timeline {
 
     // Load ads and posts in parallel
     Promise.all([this.loadInitialPosts(), this.loadAdConfig()]);
+  }
+
+  /**
+   * Keeps the timeline DOM bounded while the user scrolls infinitely. Cards
+   * that have scrolled more than PRUNE_ABOVE_VIEWPORTS above the viewport are
+   * fully destroyed (releasing their callbacks, audio contexts, and timers)
+   * and removed, leaving at least PRUNE_MIN_CARDS rendered.
+   */
+  private pruneOffscreenCards(): void {
+    const postList = this.element.querySelector('.post-list') as HTMLElement | null;
+    if (!postList) return;
+
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+    if (viewportHeight <= 0) return;
+    const pruneTop = -viewportHeight * Timeline.PRUNE_ABOVE_VIEWPORTS;
+
+    // Cards are stacked newest-first, so walking from the start removes the
+    // posts the user has already scrolled past.
+    const cardElements = Array.from(postList.querySelectorAll('.post-card')) as HTMLElement[];
+    for (let i = 0; i < cardElements.length; i++) {
+      if (cardElements.length - (i + 1) < Timeline.PRUNE_MIN_CARDS) break;
+      const cardElement = cardElements[i]!;
+      if (cardElement.getBoundingClientRect().bottom > pruneTop) break;
+
+      const postId = cardElement.dataset.postId;
+      if (postId) {
+        const card = this.postCards.get(postId);
+        if (card) {
+          card.destroy();
+          this.postCards.delete(postId);
+        }
+      }
+      cardElement.remove();
+    }
+
+    // Ad banners sit between cards and have no card instance to destroy.
+    postList.querySelectorAll('.ad-banner').forEach((ad) => {
+      const adElement = ad as HTMLElement;
+      if (adElement.getBoundingClientRect().bottom <= pruneTop) {
+        adElement.remove();
+      }
+    });
   }
 
   private async loadInitialPosts(): Promise<void> {
@@ -510,6 +560,7 @@ export class Timeline {
     });
 
     postList.appendChild(fragment);
+    this.pruneOffscreenCards();
   }
 
   private buildApiUrl(cursor?: string): string {
