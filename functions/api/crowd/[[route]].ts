@@ -85,6 +85,13 @@ export async function onRequest(context: {
           if (postId) {
             const { nsfw, tags } = resolveNsfwTags(detections);
             const applied = await applyNsfwTags(db, postId, tags);
+            await db
+              .prepare(
+                `INSERT INTO post_nsfw_scans (post_id, status, scanned_at) VALUES (?, 'done', ?)
+                 ON CONFLICT(post_id) DO UPDATE SET status = 'done', scanned_at = excluded.scanned_at`,
+              )
+              .bind(postId, new Date().toISOString())
+              .run();
             console.log(
               `NSFW webhook for post ${postId}: nsfw=${nsfw}, tags=${tags.join(',') || 'none'}, applied=${applied}`,
             );
@@ -131,6 +138,15 @@ export async function onRequest(context: {
         }
       } else if (status === 'failed') {
         console.log(`Task failed: taskId=${taskId}, type=${callbackType || 'unknown'}, error=${error || 'unknown'}`);
+        if (callbackType === 'nsfw') {
+          const postId = url.searchParams.get('postId');
+          if (postId) {
+            await db
+              .prepare('UPDATE post_nsfw_scans SET status = ?, scanned_at = ? WHERE post_id = ?')
+              .bind('failed', new Date().toISOString(), postId)
+              .run();
+          }
+        }
       }
 
       return new Response(JSON.stringify({ received: true }), {

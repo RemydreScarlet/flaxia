@@ -51,7 +51,14 @@ binding = "AP_DELIVERY_QUEUE"
 
 # Flaxia Crowd 分散コンピューティング
 # CROWD_API_KEY は本番環境では secret 推奨:
-#   npx wrangler secret put CROWD_API_KEY
+#   npx wrangler secret put CROWD_API_KEY  -- エンタープライズ or 適切なAPIキー
+#   npx wrangler pages secret put CROWD_API_KEY --project-name flaxia
+# ※ 未設定の間は NSFW 画像スクリーニング・embeddings の submit がスキップされる
+#    (submitDetectNsfw / embedPost が apiKey なしで早期 return)。
+#    CROWD_ORCHESTRATOR_URL は上記 [vars] の https://crowd.flaxia.app を使用。
+# スクリーニング進行状況は post_nsfw_scans テーブル (migration 0063) に記録。
+# 既存画像投稿の再スキャンは admin 専用 API:
+#   curl -X POST https://flaxia.app/api/admin/backfill-nsfw?limit=50  (要 admin セッション)
 
 # FCM (Firebase Cloud Messaging) — Capacitor モバイルアプリ向けプッシュ通知
 # Firebase Console → プロジェクトの設定 → サービスアカウント → 新しい秘密鍵を生成

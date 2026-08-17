@@ -1,6 +1,6 @@
 import assert from 'node:assert';
 import { describe, it } from 'node:test';
-import { BASE_URL } from './helpers/setup.ts';
+import { BASE_URL, resetDb } from './helpers/setup.ts';
 
 // Crowd integration tests.
 //
@@ -71,6 +71,13 @@ async function getPost(cookie: string, postId: string): Promise<{ hashtags: stri
   const data = (await res.json()) as { hashtags?: string };
   const parsed = typeof data.hashtags === 'string' ? JSON.parse(data.hashtags) : (data.hashtags ?? []);
   return { hashtags: Array.isArray(parsed) ? parsed : [] };
+}
+
+async function getNsfwScans(postId: string): Promise<Array<Record<string, string>>> {
+  const res = await fetch(`${BASE_URL}/api/test/nsfw-scans`);
+  assert.equal(res.status, 200);
+  const data = (await res.json()) as { scans: Array<Record<string, string>> };
+  return data.scans.filter((s) => s.post_id === postId);
 }
 
 describe('GET /api/crowd/* — asset proxy', () => {
@@ -213,6 +220,36 @@ describe('POST /api/crowd/webhook — nsfw', () => {
     assert.deepEqual((await getPost(cookie, postId)).hashtags, []);
   });
 
+  it('records the scan as done after a successful detection', async () => {
+    const cookie = await loginUnique();
+    const postId = await createTextPost(cookie);
+
+    await sendWebhook(
+      'nsfw',
+      {
+        taskId: 't-scan-done',
+        status: 'done',
+        result: { detections: [{ label: 'MALE_GENITALIA_EXPOSED', score: 0.9, box: [0, 0, 10, 10] }] },
+      },
+      { postId },
+    );
+
+    const scans = await getNsfwScans(postId);
+    assert.equal(scans.length, 1, 'expected one scan row');
+    assert.equal(scans[0].status, 'done');
+    assert.equal(scans[0].scanned_at && scans[0].scanned_at.length > 0, true, 'scanned_at should be set');
+  });
+
+  it('does not create a scan row for a task that failed without ever being submitted', async () => {
+    const cookie = await loginUnique();
+    const postId = await createTextPost(cookie);
+
+    await sendWebhook('nsfw', { taskId: 't-scan-failed', status: 'failed', error: 'boom' }, { postId });
+
+    const scans = await getNsfwScans(postId);
+    assert.equal(scans.length, 0, 'failed webhook without prior submit must not create a scan row');
+  });
+
   it('acks nsfw results for a nonexistent post without crashing', async () => {
     const res = await sendWebhook(
       'nsfw',
@@ -321,5 +358,51 @@ describe('POST /api/crowd/webhook — translation', () => {
     });
     assert.equal(res.status, 200);
     assert.deepEqual(await res.json(), { received: true });
+  });
+});
+
+describe('POST /api/admin/backfill-nsfw', () => {
+  it('forbids non-admin users', async () => {
+    const cookie = await loginUnique();
+    const res = await fetch(`${BASE_URL}/api/admin/backfill-nsfw`, {
+      method: 'POST',
+      headers: { Cookie: cookie },
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it('returns success even with no image candidates', async () => {
+    // The admin username is fixed in ADMIN_USERNAMES, so reset users first to
+    // avoid collisions with stale rows in the persistent local test DB.
+    await resetDb();
+    const creds = {
+      email: 'admin@test.com',
+      password: 'password123',
+      username: 'remydrescarlet',
+      display_name: 'Admin',
+    };
+    let res = await fetch(`${BASE_URL}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(creds),
+    });
+    if (res.status !== 201) {
+      res = await fetch(`${BASE_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: creds.email, password: creds.password }),
+      });
+    }
+    const cookie = res.headers.get('set-cookie') ?? '';
+    assert.ok(cookie, 'expected admin session cookie');
+
+    const backfill = await fetch(`${BASE_URL}/api/admin/backfill-nsfw`, {
+      method: 'POST',
+      headers: { Cookie: cookie },
+    });
+    assert.equal(backfill.status, 200);
+    const data = (await backfill.json()) as { success: boolean; submitted: number };
+    assert.equal(data.success, true);
+    assert.equal(typeof data.submitted, 'number');
   });
 });

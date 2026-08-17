@@ -274,8 +274,49 @@ async function embedPost(
 }
 
 const IMAGE_KEY_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
+const IMAGE_EXTENSION_LIKE = IMAGE_KEY_EXTENSIONS.map((ext) => `(lower(gif_key) LIKE '%${ext}')`).join(' OR ');
 
-function submitDetectNsfw(
+const nsfwScanPosts = new Set<string>();
+let lastNsfwSubmitTime = 0;
+const NSFW_RATE_LIMIT_MS = 10_000;
+
+const NSFW_SCAN_SCHEMA = `post_id TEXT PRIMARY KEY, task_id TEXT, status TEXT NOT NULL DEFAULT 'submitted' CHECK(status IN ('submitted', 'done', 'failed')), created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), scanned_at TEXT`;
+
+async function ensureNsfwScansTable(db: D1Database): Promise<void> {
+  try {
+    await db.prepare(`CREATE TABLE IF NOT EXISTS post_nsfw_scans (${NSFW_SCAN_SCHEMA})`).run();
+    await db.prepare('CREATE INDEX IF NOT EXISTS idx_nsfw_scans_status ON post_nsfw_scans(status, created_at)').run();
+  } catch (e) {
+    console.error('Failed to ensure post_nsfw_scans table:', e);
+  }
+}
+
+async function markNsfwScan(db: D1Database, postId: string, status: string, taskId?: string): Promise<void> {
+  try {
+    if (status === 'submitted') {
+      await db
+        .prepare('INSERT OR IGNORE INTO post_nsfw_scans (post_id, status) VALUES (?, ?)')
+        .bind(postId, status)
+        .run();
+    } else {
+      await db
+        .prepare('UPDATE post_nsfw_scans SET status = ?, scanned_at = ? WHERE post_id = ?')
+        .bind(status, new Date().toISOString(), postId)
+        .run();
+    }
+    if (taskId && status === 'submitted') {
+      await db.prepare('UPDATE post_nsfw_scans SET task_id = ? WHERE post_id = ?').bind(taskId, postId).run();
+    }
+  } catch (e) {
+    console.error(`Failed to record NSFW scan state for post ${postId}:`, e);
+  }
+}
+
+// Screens an image post/reply with the NudeNet crowd workload. Skips non-image
+// keys, already-scanned posts, and enforces a simple global rate limit to avoid
+// flooding the orchestrator when many posts commit back-to-back.
+async function submitDetectNsfw(
+  db: D1Database,
   orchestratorUrl: string,
   apiKey: string,
   baseUrl: string,
@@ -283,22 +324,45 @@ function submitDetectNsfw(
   gifKey: string | null,
 ): Promise<void> {
   const normalizedUrl = orchestratorUrl.replace(/\/+$/, '');
-  if (!normalizedUrl || !apiKey || !gifKey) return Promise.resolve();
+  if (!normalizedUrl || !apiKey || !gifKey) return;
 
   const lower = gifKey.toLowerCase();
-  if (!IMAGE_KEY_EXTENSIONS.some((ext) => lower.endsWith(ext))) return Promise.resolve();
+  if (!IMAGE_KEY_EXTENSIONS.some((ext) => lower.endsWith(ext))) return;
 
-  const client = new FlaxiaClient({ baseUrl: `${normalizedUrl}/crowd`, apiKey });
-  const callbackUrl = `${baseUrl || 'https://flaxia.app'}/api/crowd/webhook?type=nsfw&postId=${postId}`;
-  return client
-    .submit({
+  if (nsfwScanPosts.has(postId)) return;
+  nsfwScanPosts.add(postId);
+
+  const now = Date.now();
+  if (now - lastNsfwSubmitTime < NSFW_RATE_LIMIT_MS) {
+    nsfwScanPosts.delete(postId);
+    return;
+  }
+  lastNsfwSubmitTime = now;
+
+  try {
+    await ensureNsfwScansTable(db);
+
+    const existing = (await db
+      .prepare('SELECT status FROM post_nsfw_scans WHERE post_id = ?')
+      .bind(postId)
+      .first()) as { status: string } | null;
+    if (existing?.status === 'done') return;
+
+    const client = new FlaxiaClient({ baseUrl: `${normalizedUrl}/crowd`, apiKey });
+    const callbackUrl = `${baseUrl || 'https://flaxia.app'}/api/crowd/webhook?type=nsfw&postId=${postId}`;
+    const res = await client.submit({
       workload: 'nudenet',
       payload: { imageUrl: `${baseUrl || 'https://flaxia.app'}/api/images/${gifKey}` },
       callbackUrl,
       timeoutMs: 120000,
-    } as never)
-    .then(() => console.log(`NSFW detection task submitted for post ${postId}`))
-    .catch((err) => console.error(`NSFW detection submission failed for post ${postId}:`, err));
+    } as never);
+    await markNsfwScan(db, postId, 'submitted', res.taskId);
+    console.log(`NSFW detection task submitted for post ${postId} (task ${res.taskId})`);
+  } catch (err) {
+    console.error(`NSFW detection submission failed for post ${postId}:`, err);
+  } finally {
+    nsfwScanPosts.delete(postId);
+  }
 }
 
 // Magic byte detection to prevent MIME type spoofing
@@ -6941,7 +7005,14 @@ app.post('/api/posts/commit', requireAuth, async (c) => {
       (e) => console.error('Background embed failed:', e),
     );
 
-    submitDetectNsfw(c.env.CROWD_ORCHESTRATOR_URL, c.env.CROWD_API_KEY, c.env.BASE_URL, fullPost.id, fullPost.gif_key);
+    submitDetectNsfw(
+      c.env.DB,
+      c.env.CROWD_ORCHESTRATOR_URL,
+      c.env.CROWD_API_KEY,
+      c.env.BASE_URL,
+      fullPost.id,
+      fullPost.gif_key,
+    );
 
     // Pre-extract ZIP to R2 for WVFS persistent caching
     if (payloadKey && (payloadKey.endsWith('.zip') || payloadKey.endsWith('.jsdos'))) {
@@ -8224,7 +8295,7 @@ app.post('/api/posts/:id/replies/commit', requireAuth, async (c) => {
     }
 
     if (gifKey) {
-      submitDetectNsfw(c.env.CROWD_ORCHESTRATOR_URL, c.env.CROWD_API_KEY, c.env.BASE_URL, replyId, gifKey);
+      submitDetectNsfw(c.env.DB, c.env.CROWD_ORCHESTRATOR_URL, c.env.CROWD_API_KEY, c.env.BASE_URL, replyId, gifKey);
     }
 
     return c.json({ reply });
@@ -9674,6 +9745,52 @@ app.post('/api/admin/backfill-game-descriptions', requireAuth, requireAdmin, asy
     const err = error as { message?: string };
     console.error('Backfill game descriptions error:', error);
     return c.json({ error: 'Failed to backfill game descriptions', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
+// POST /api/admin/backfill-nsfw - submit NudeNet screening for existing image posts (admin only)
+app.post('/api/admin/backfill-nsfw', requireAuth, requireAdmin, async (c) => {
+  try {
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500);
+    }
+
+    const url = new URL(c.req.url);
+    const limit = Math.min(parseInt(url.searchParams.get('limit') || '50', 10), 500);
+
+    await ensureNsfwScansTable(c.env.DB);
+
+    const candidates = (await c.env.DB.prepare(`
+      SELECT id, gif_key
+      FROM posts
+      WHERE gif_key IS NOT NULL
+        AND status = 'published'
+        AND (${IMAGE_EXTENSION_LIKE})
+        AND id NOT IN (SELECT post_id FROM post_nsfw_scans)
+      ORDER BY created_at DESC
+      LIMIT ?
+    `)
+      .bind(limit)
+      .all()) as { results: Array<{ id: string; gif_key: string }> };
+
+    let submitted = 0;
+    for (const post of candidates.results) {
+      await submitDetectNsfw(
+        c.env.DB,
+        c.env.CROWD_ORCHESTRATOR_URL,
+        c.env.CROWD_API_KEY,
+        c.env.BASE_URL,
+        post.id,
+        post.gif_key,
+      );
+      submitted++;
+    }
+
+    return c.json({ success: true, submitted, remaining: candidates.results.length - submitted });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Backfill nsfw error:', error);
+    return c.json({ error: 'Failed to backfill nsfw screening', details: err.message || 'Unknown error' }, 500);
   }
 });
 
@@ -11282,17 +11399,25 @@ app.post('/api/test/reset', async (c) => {
     return c.json({ error: 'Forbidden' }, 403);
   }
 
-  // Use DB_TEST if available, otherwise fall back to DB
-  const db = c.env.DB_TEST || c.env.DB;
+  // Use DB_TEST if available, otherwise fall back to DB. Wranger pages dev
+  // exposes both, and the app routes write to env.DB, so clear both to keep the
+  // test DB authoritative.
+  const clears: D1Database[] = [];
+  if (c.env.DB_TEST) clears.push(c.env.DB_TEST);
+  if (c.env.DB) clears.push(c.env.DB);
 
-  await db.batch([
-    db.prepare('DELETE FROM notifications'),
-    db.prepare('DELETE FROM reports'),
-    db.prepare('DELETE FROM freshs'),
-    db.prepare('DELETE FROM follows'),
-    db.prepare('DELETE FROM posts'),
-    db.prepare('DELETE FROM users'),
-  ]);
+  for (const db of clears) {
+    await ensureNsfwScansTable(db);
+    await db.batch([
+      db.prepare('DELETE FROM notifications'),
+      db.prepare('DELETE FROM reports'),
+      db.prepare('DELETE FROM freshs'),
+      db.prepare('DELETE FROM follows'),
+      db.prepare('DELETE FROM posts'),
+      db.prepare('DELETE FROM users'),
+      db.prepare('DELETE FROM post_nsfw_scans'),
+    ]);
+  }
   return c.json({ ok: true });
 });
 
@@ -11318,6 +11443,21 @@ app.get('/api/test/game-plays', async (c) => {
     .bind(userId)
     .all<{ post_id: string; dwell_ms: number; is_fullscreen: number; game_type: string; source: string }>();
   return c.json({ plays: rows.results || [] });
+});
+
+// GET /api/test/nsfw-scans - inspect post_nsfw_scans rows for integration tests.
+// Gated like /api/test/reset: only reachable from the test dev server.
+app.get('/api/test/nsfw-scans', async (c) => {
+  const isTestEnvironment = c.env.BASE_URL === 'http://localhost:8788' || c.req.url.includes('localhost:8788');
+  if (!isTestEnvironment) {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+
+  const db = c.env.DB;
+  const rows = await db
+    .prepare(`SELECT post_id, task_id, status, created_at, scanned_at FROM post_nsfw_scans ORDER BY created_at DESC`)
+    .all<{ post_id: string; task_id: string; status: string; created_at: string; scanned_at: string }>();
+  return c.json({ scans: rows.results || [] });
 });
 
 // Get current topic - randomly selected Flash/HTML post
