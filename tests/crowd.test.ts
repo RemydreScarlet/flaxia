@@ -6,7 +6,7 @@ import { BASE_URL, resetDb } from './helpers/setup.ts';
 //
 // The Crowd feature (functions/api/crowd/[[route]].ts) has two surfaces:
 //   1. POST /api/crowd/webhook — callbacks from the crowd orchestrator
-//      (translation / nsfw / vector-embed workloads) that write to D1.
+//      (nsfw / vector-embed workloads) that write to D1.
 //   2. GET /api/crowd/* — immutable asset proxy for the @flaxia/node bundle.
 //
 // These tests run against the same dev server (port 8788) as the other suites.
@@ -327,35 +327,6 @@ describe('POST /api/crowd/webhook — vector-embed', () => {
       },
       { postId: 'whatever' },
     );
-    assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { received: true });
-  });
-});
-
-describe('POST /api/crowd/webhook — translation', () => {
-  it('acks translation results without crashing when no row exists', async () => {
-    const cookie = await loginUnique();
-    const postId = await createTextPost(cookie, 'crowd translate');
-
-    const res = await sendWebhook(
-      'translation',
-      {
-        taskId: 't-tr',
-        status: 'done',
-        result: { output: { translation_text: 'こんにちは、クラウド' } },
-      },
-      { postId, lang: 'ja' },
-    );
-    assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { received: true });
-  });
-
-  it('acks translation results with missing output', async () => {
-    const res = await sendWebhook('translation', {
-      taskId: 't-tr-empty',
-      status: 'done',
-      result: { output: null },
-    });
     assert.equal(res.status, 200);
     assert.deepEqual(await res.json(), { received: true });
   });

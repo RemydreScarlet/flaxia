@@ -1,5 +1,5 @@
 import { formatCount } from '../lib/format.js';
-import { getLocale, t } from '../lib/i18n.js';
+import { t } from '../lib/i18n.js';
 import { impressionTracker } from '../lib/impression-tracker.js';
 import { loadLinkPreview } from '../lib/link-preview.js';
 import { registerModal } from '../lib/modal-state.js';
@@ -44,8 +44,6 @@ export class PostCard {
   private menuDropdown?: HTMLElement;
   private freshLoading: boolean = false;
   private bookmarkLoading: boolean = false;
-  private translatedText: string | null = null;
-  private showingOriginal: boolean = true;
   private originalText: string;
   private isEditing: boolean = false;
   private editContainer: HTMLElement | null = null;
@@ -149,118 +147,6 @@ export class PostCard {
     `;
     textElement.textContent = displayText;
     this.postTextContainer.appendChild(textElement);
-
-    // Translate button
-    const currentLocale = getLocale();
-    const detectedLang = (text: string): string => {
-      const cjkRegex = /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/g;
-      const cjkCount = (text.match(cjkRegex) || []).length;
-      const totalChars = text.replace(/\s/g, '').length;
-      if (totalChars === 0) return 'en';
-      return cjkCount / totalChars > 0.2 ? 'ja' : 'en';
-    };
-    const postLang = detectedLang(this.props.post.text);
-    if (postLang !== currentLocale) {
-      const translateBar = document.createElement('div');
-      translateBar.style.cssText = 'margin-top: 0.5rem;';
-
-      const translateBtn = document.createElement('button');
-      translateBtn.className = 'translate-btn';
-      translateBtn.textContent = `Translate to ${currentLocale.toUpperCase()}`;
-      translateBtn.style.cssText = `
-        font-size: 0.8rem;
-        color: var(--accent);
-        background: none;
-        border: 1px solid var(--accent);
-        border-radius: 4px;
-        padding: 2px 8px;
-        cursor: pointer;
-      `;
-      translateBtn.addEventListener('click', async () => {
-        translateBtn.disabled = true;
-        translateBtn.textContent = 'Translating...';
-        const targetLocale = getLocale();
-        if (targetLocale === postLang) {
-          translateBtn.remove();
-          return;
-        }
-        console.log('[Translate] Source text:', this.props.post.text);
-        try {
-          const res = await fetch(`/api/posts/${this.props.post.id}/translate?target=${targetLocale}`, {
-            method: 'POST',
-          });
-          if (!res.ok) {
-            translateBtn.remove();
-            return;
-          }
-
-          const poll = async (): Promise<void> => {
-            const pollRes = await fetch(`/api/posts/${this.props.post.id}/translate?target=${targetLocale}`);
-            if (!pollRes.ok) {
-              translateBtn.remove();
-              return;
-            }
-            const data = (await pollRes.json()) as { status: string; translated_text?: string };
-            if (data.status === 'done' && data.translated_text) {
-              console.log('[Translate] Returned text:', data.translated_text);
-              this.translatedText = data.translated_text;
-              this.showingOriginal = false;
-              const currentTextEl = this.postTextContainer?.querySelector('.post-text');
-              if (currentTextEl) {
-                currentTextEl.textContent = data.translated_text;
-              }
-              translateBar.innerHTML = '';
-              const showOriginal = document.createElement('button');
-              showOriginal.textContent = 'Show original';
-              showOriginal.style.cssText = `
-                font-size: 0.8rem;
-                color: var(--accent);
-                background: none;
-                border: none;
-                padding: 2px 0;
-                cursor: pointer;
-                text-decoration: underline;
-              `;
-              showOriginal.addEventListener('click', () => {
-                const currentTextEl = this.postTextContainer?.querySelector('.post-text');
-                if (!currentTextEl) return;
-                if (this.showingOriginal) {
-                  currentTextEl.textContent = this.translatedText!;
-                  showOriginal.textContent = 'Show original';
-                } else {
-                  currentTextEl.textContent = this.originalText;
-                  showOriginal.textContent = 'Show translation';
-                }
-                this.showingOriginal = !this.showingOriginal;
-              });
-              translateBar.appendChild(showOriginal);
-            } else if (data.status === 'processing') {
-              setTimeout(poll, 2000);
-            } else {
-              translateBtn.remove();
-            }
-          };
-          setTimeout(poll, 2000);
-        } catch {
-          translateBtn.remove();
-        }
-      });
-
-      translateBar.appendChild(translateBtn);
-      this.postTextContainer.appendChild(translateBar);
-
-      // Listen for locale changes
-      const onLocaleChange = (e: Event) => {
-        const detail = (e as CustomEvent).detail;
-        if (detail.locale !== postLang) {
-          translateBtn.textContent = `Translate to ${detail.locale.toUpperCase()}`;
-          translateBar.style.display = '';
-        } else {
-          translateBar.style.display = 'none';
-        }
-      };
-      window.addEventListener('localechange', onLocaleChange);
-    }
 
     container.appendChild(this.postTextContainer);
 

@@ -59,27 +59,7 @@ export async function onRequest(context: {
         const resultObj = result as Record<string, unknown> | undefined;
         const output = resultObj?.output;
 
-        if (callbackType === 'translation') {
-          if (!output) {
-            return new Response(JSON.stringify({ received: true }), {
-              headers: { 'Content-Type': 'application/json' },
-            });
-          }
-          const postId = url.searchParams.get('postId');
-          const lang = url.searchParams.get('lang');
-          if (postId && lang) {
-            const translationText = Array.isArray(output)
-              ? (output[0] as Record<string, unknown> | undefined)?.translation_text
-              : (output as Record<string, unknown> | undefined)?.translation_text;
-            if (typeof translationText === 'string') {
-              await db
-                .prepare('UPDATE post_translations SET translated_text = ? WHERE post_id = ? AND language = ?')
-                .bind(translationText, postId, lang)
-                .run();
-              console.log(`Translation webhook done for post ${postId} → ${lang}`);
-            }
-          }
-        } else if (callbackType === 'nsfw') {
+        if (callbackType === 'nsfw') {
           const postId = url.searchParams.get('postId');
           const detections = (resultObj?.detections as NudeNetDetection[] | undefined) ?? [];
           if (postId) {

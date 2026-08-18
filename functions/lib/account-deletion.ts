@@ -114,7 +114,6 @@ export async function deleteAccount(env: Env, userId: string): Promise<void> {
   for (const ids of chunkIds(postIds, 400)) {
     const ph = placeholders(ids.length);
     statements.push(db.prepare(`DELETE FROM post_embeddings WHERE post_id IN (${ph})`).bind(...ids));
-    statements.push(db.prepare(`DELETE FROM post_translations WHERE post_id IN (${ph})`).bind(...ids));
     statements.push(db.prepare(`DELETE FROM admin_alerts WHERE post_id IN (${ph})`).bind(...ids));
     statements.push(db.prepare(`DELETE FROM arcade_events WHERE post_id IN (${ph})`).bind(...ids));
     statements.push(db.prepare(`DELETE FROM reports WHERE post_id IN (${ph})`).bind(...ids));

@@ -231,15 +231,6 @@ const csrfProtection = async (c: any, next: any) => {
 
 app.use('/*', csrfProtection);
 
-function getCrowdClient(c: Context<{ Bindings: Bindings; Variables: Variables }>): FlaxiaClient | null {
-  const orchestratorUrl = (c.env.CROWD_ORCHESTRATOR_URL ?? '').replace(/\/+$/, '');
-  const apiKey = c.env.CROWD_API_KEY;
-  if (!orchestratorUrl || !apiKey) return null;
-  // Ensure the orchestrator base URL includes the /crowd prefix
-  const baseUrl = `${orchestratorUrl}/crowd`;
-  return new FlaxiaClient({ baseUrl, apiKey });
-}
-
 const embeddingPosts = new Set<string>();
 let lastEmbedTime = 0;
 const EMBED_RATE_LIMIT_MS = 10_000;
@@ -9185,110 +9176,6 @@ app.get('/api/posts/:id', async (c) => {
     const err = error as { message?: string };
     console.error('Get post error:', error);
     return c.json({ error: 'Failed to get post', details: err.message || 'Unknown error' }, 500);
-  }
-});
-
-function detectLanguage(text: string): string {
-  const cjkRegex = /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/g;
-  const cjkCount = (text.match(cjkRegex) || []).length;
-  const totalChars = text.replace(/\s/g, '').length;
-  if (totalChars === 0) return 'en';
-  return cjkCount / totalChars > 0.2 ? 'ja' : 'en';
-}
-
-// POST /api/posts/:id/translate - submit translation task
-app.post('/api/posts/:id/translate', requireAuth, async (c) => {
-  try {
-    const postId = c.req.param('id');
-    const targetLang = c.req.query('target');
-    if (!targetLang) return c.json({ error: 'target query param required' }, 400);
-
-    const post = (await c.env.DB.prepare(
-      "SELECT p.id, p.user_id, p.text, u.language as author_language FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.id = ? AND p.status = 'published'",
-    )
-      .bind(postId)
-      .first()) as { id: string; user_id: string; text: string; author_language: string | null } | null;
-    if (!post) return c.json({ error: 'Not found' }, 404);
-    if (!post.author_language) return c.json({ error: 'Author language not set' }, 400);
-
-    const srcLang = detectLanguage(post.text);
-    if (srcLang === targetLang) {
-      return c.json({ status: 'done', translated_text: post.text });
-    }
-
-    const existing = (await c.env.DB.prepare(
-      'SELECT translated_text, task_id FROM post_translations WHERE post_id = ? AND language = ?',
-    )
-      .bind(postId, targetLang)
-      .first()) as { translated_text: string; task_id: string | null } | null;
-
-    if (existing) {
-      if (existing.translated_text) {
-        return c.json({ status: 'done', translated_text: existing.translated_text });
-      }
-      return c.json({ status: 'processing' });
-    }
-
-    const client = getCrowdClient(c);
-    if (!client) return c.json({ error: 'Crowd Worker not configured' }, 500);
-
-    const callbackUrl = `${c.env.BASE_URL || 'https://flaxia.app'}/api/crowd/webhook?type=translation&postId=${postId}&lang=${targetLang}`;
-    const task = await client.submit({
-      workload: 'ai-inference',
-      payload: {
-        task: 'translation',
-        model: 'Xenova/m2m100_418M',
-        input: post.text,
-        options: {
-          src_lang: srcLang,
-          tgt_lang: targetLang,
-          dtype: 'q4f16',
-          max_new_tokens: 256,
-        },
-      },
-      callbackUrl,
-      timeoutMs: 600000,
-    } as never);
-
-    const taskId = (task as { taskId?: string }).taskId;
-    if (!taskId) return c.json({ error: 'Failed to get task ID' }, 500);
-
-    await c.env.DB.prepare(
-      "INSERT INTO post_translations (post_id, language, task_id, created_at) VALUES (?, ?, ?, datetime('now'))",
-    )
-      .bind(postId, targetLang, taskId)
-      .run();
-
-    return c.json({ status: 'processing' }, 202);
-  } catch (err: unknown) {
-    const e = err as { message?: string };
-    console.error('Translation submission error:', err);
-    return c.json({ error: 'Translation submission failed', details: e.message || 'Unknown error' }, 500);
-  }
-});
-
-// GET /api/posts/:id/translate - poll translation status
-app.get('/api/posts/:id/translate', async (c) => {
-  try {
-    const postId = c.req.param('id');
-    const targetLang = c.req.query('target');
-    if (!targetLang) return c.json({ error: 'target query param required' }, 400);
-
-    const row = (await c.env.DB.prepare(
-      'SELECT translated_text, task_id FROM post_translations WHERE post_id = ? AND language = ?',
-    )
-      .bind(postId, targetLang)
-      .first()) as { translated_text: string; task_id: string | null } | null;
-
-    if (!row) return c.json({ status: 'not_found' }, 404);
-    if (row.translated_text) {
-      return c.json({ status: 'done', translated_text: row.translated_text });
-    }
-    return c.json({ status: 'processing' });
-  } catch (err: unknown) {
-    const e = err as { message?: string };
-    console.error('Translation status error:', err);
-    return c.json({ error: 'Failed to check translation status', details: e.message || 'Unknown error' }, 500);
   }
 });
 
