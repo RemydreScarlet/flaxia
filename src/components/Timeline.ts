@@ -19,6 +19,8 @@ export class Timeline {
   private composer!: PostComposer;
   private fabButton?: HTMLElement;
   private composerObserver: IntersectionObserver | null = null;
+  private headSentinel!: HTMLElement;
+  private headObserver: IntersectionObserver | null = null;
   private infiniteScroll: ReturnType<typeof createInfiniteScroll>;
   private postUpdatedHandler?: (e: Event) => void;
 
@@ -28,6 +30,9 @@ export class Timeline {
   // Never prune when fewer than this many cards remain, so scrolling back up
   // doesn't hit an empty gap.
   private static readonly PRUNE_MIN_CARDS = 30;
+  // How many pruned posts are restored at once when the user scrolls back up
+  // toward the head of the timeline.
+  private static readonly HEAD_RESTORE_CHUNK = 60;
 
   // Store bound event handlers for proper cleanup
   private boundHandleProfileUpdate: () => void;
@@ -57,6 +62,7 @@ export class Timeline {
     });
 
     this.element = this.createElement();
+    this.setupHeadObserver();
     this.setupEventListeners();
     this.setupComposerObserver();
 
@@ -215,6 +221,13 @@ export class Timeline {
     const list = document.createElement('div');
     list.className = 'post-list';
 
+    // Sentinel at the head of the list. When the user scrolls back up to the
+    // top of the rendered cards, restoreHeadPosts() re-inserts the pruned
+    // posts above it.
+    this.headSentinel = document.createElement('div');
+    this.headSentinel.style.cssText = 'height: 1px; width: 100%; pointer-events: none;';
+    list.appendChild(this.headSentinel);
+
     // Show skeleton cards while loading initial posts
     if (this.state.loading && this.state.posts.length === 0) {
       list.appendChild(createSkeletonCards(3));
@@ -320,24 +333,10 @@ export class Timeline {
     const postList = this.element.querySelector('.post-list') as HTMLElement;
     if (!postList) return;
 
-    const postCard = createPostCard({
-      post,
-      currentUser: this.props.currentUser,
-      sandboxOrigin: this.props.sandboxOrigin,
-      initialMode: PostCardMode.PREVIEW,
-      depth: post.depth,
-      onDelete: (postId) => {
-        this.state.posts = this.state.posts.filter((p) => !isAd(p) && p.id !== postId);
-        const card = this.postCards.get(postId);
-        if (card) {
-          card.destroy();
-          this.postCards.delete(postId);
-        }
-      },
-    });
+    const postCard = this.buildPostCard(post);
 
     this.postCards.set(post.id, postCard);
-    postList.insertBefore(postCard.getElement(), postList.firstChild);
+    postList.insertBefore(postCard.getElement(), this.headSentinel.nextSibling);
     this.updateLoadMoreButton();
   }
 
@@ -440,6 +439,94 @@ export class Timeline {
       if (adElement.getBoundingClientRect().bottom <= pruneTop) {
         adElement.remove();
       }
+    });
+  }
+
+  /**
+   * Restores posts that were pruned from the head of the timeline once the
+   * user scrolls back up toward it. The post data is still held in
+   * state.posts, so no network request is needed; only the cards (and their
+   * DOM) are rebuilt. Scroll anchoring keeps the viewport stable when the
+   * restored content is inserted above the current cards.
+   */
+  private restoreHeadPosts(): void {
+    const postList = this.element.querySelector('.post-list') as HTMLElement | null;
+    if (!postList) return;
+
+    const firstCard = postList.querySelector('.post-card') as HTMLElement | null;
+    if (!firstCard) return;
+    const firstId = firstCard.dataset.postId;
+    if (!firstId) return;
+
+    // Find the position of the first rendered post in the post-only ordering
+    // of state.posts to learn how many head posts were pruned.
+    let headIndex = -1;
+    let postCount = 0;
+    for (const item of this.state.posts) {
+      if (isAd(item)) continue;
+      if (item.id === firstId) {
+        headIndex = postCount;
+        break;
+      }
+      postCount++;
+    }
+    if (headIndex <= 0) return;
+
+    // Collect the slice of items (posts and their interleaved ads) to restore.
+    const restoreFrom = Math.max(0, headIndex - Timeline.HEAD_RESTORE_CHUNK);
+    const restored: TimelineItem[] = [];
+    let idx = 0;
+    for (const item of this.state.posts) {
+      if (isAd(item)) {
+        if (idx >= restoreFrom && idx < headIndex) restored.push(item);
+      } else {
+        if (idx >= restoreFrom && idx < headIndex) restored.push(item);
+        idx++;
+      }
+    }
+    if (restored.length === 0) return;
+
+    const fragment = document.createDocumentFragment();
+    for (const item of restored) {
+      if (isAd(item)) {
+        fragment.appendChild(createAdCard(item));
+      } else {
+        const card = this.buildPostCard(item);
+        this.postCards.set(item.id, card);
+        fragment.appendChild(card.getElement());
+      }
+    }
+
+    postList.insertBefore(fragment, firstCard);
+  }
+
+  private setupHeadObserver(): void {
+    this.headObserver = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          this.restoreHeadPosts();
+        }
+      },
+      { root: null, rootMargin: '300px 0px 0px 0px', threshold: 0 },
+    );
+    this.headObserver.observe(this.headSentinel);
+  }
+
+  private buildPostCard(item: Post): ReturnType<typeof createPostCard> {
+    return createPostCard({
+      post: item,
+      currentUser: this.props.currentUser,
+      sandboxOrigin: this.props.sandboxOrigin,
+      initialMode: PostCardMode.PREVIEW,
+      depth: item.depth,
+      onDelete: (postId) => {
+        this.state.posts = this.state.posts.filter((p) => !isAd(p) && p.id !== postId);
+        const card = this.postCards.get(postId);
+        if (card) {
+          card.destroy();
+          this.postCards.delete(postId);
+        }
+      },
     });
   }
 
@@ -549,21 +636,7 @@ export class Timeline {
       if (isAd(item)) {
         fragment.appendChild(createAdCard(item));
       } else {
-        const postCard = createPostCard({
-          post: item,
-          currentUser: this.props.currentUser,
-          sandboxOrigin: this.props.sandboxOrigin,
-          initialMode: PostCardMode.PREVIEW,
-          depth: item.depth,
-          onDelete: (postId) => {
-            this.state.posts = this.state.posts.filter((p) => !isAd(p) && p.id !== postId);
-            const card = this.postCards.get(postId);
-            if (card) {
-              card.destroy();
-              this.postCards.delete(postId);
-            }
-          },
-        });
+        const postCard = this.buildPostCard(item);
         this.postCards.set(item.id, postCard);
         fragment.appendChild(postCard.getElement());
       }
@@ -634,21 +707,7 @@ export class Timeline {
         return;
       } else {
         // Render text posts immediately (highest priority)
-        const postCard = createPostCard({
-          post: item,
-          currentUser: this.props.currentUser,
-          sandboxOrigin: this.props.sandboxOrigin,
-          initialMode: PostCardMode.PREVIEW,
-          depth: item.depth,
-          onDelete: (postId) => {
-            this.state.posts = this.state.posts.filter((p) => !isAd(p) && p.id !== postId);
-            const card = this.postCards.get(postId);
-            if (card) {
-              card.destroy();
-              this.postCards.delete(postId);
-            }
-          },
-        });
+        const postCard = this.buildPostCard(item);
 
         this.postCards.set(item.id, postCard);
 
@@ -736,6 +795,11 @@ export class Timeline {
   public destroy(): void {
     // Clean up infinite scroll observer
     this.infiniteScroll.disconnect();
+
+    if (this.headObserver) {
+      this.headObserver.disconnect();
+      this.headObserver = null;
+    }
 
     if (this.composerObserver) {
       this.composerObserver.disconnect();
