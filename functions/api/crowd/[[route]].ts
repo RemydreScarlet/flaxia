@@ -1,4 +1,4 @@
-const UPSTREAM = 'https://unpkg.com/@flaxia/node@0.3.1/dist';
+const UPSTREAM = 'https://unpkg.com/@flaxia/node@0.3.2/dist';
 const MIME: Record<string, string> = {
   js: 'application/javascript',
   wasm: 'application/wasm',

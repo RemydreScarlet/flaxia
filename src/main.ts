@@ -3019,16 +3019,33 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const canRunCrowdNode = () => {
         if (typeof navigator === 'undefined') return false;
+
+        // The crowd node runs Web Workers that load heavy WebAssembly inference
+        // (transformers.js / onnxruntime). Enabling it inside the native Capacitor
+        // WebView or on any device that doesn't report device memory is dangerous:
+        // `navigator.deviceMemory` is only defined on desktop Chrome and stays
+        // `undefined` in Android/iOS WebViews and mobile browsers. Requiring a KNOWN
+        // value >= 4 GB blocks those platforms outright — otherwise loading a model
+        // inside the app process spikes memory and Android kills the whole app.
+        const isCapacitorNative =
+          typeof window !== 'undefined' &&
+          typeof window.Capacitor !== 'undefined' &&
+          typeof window.Capacitor.isNativePlatform === 'function' &&
+          window.Capacitor.isNativePlatform();
+        if (isCapacitorNative) return false;
+
         const cores = navigator.hardwareConcurrency ?? 0;
         if (cores < 4) return false;
+
         const deviceMemory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-        return typeof deviceMemory !== 'number' || deviceMemory >= 4;
+        if (typeof deviceMemory !== 'number' || deviceMemory < 4) return false;
+        return true;
       };
 
       if (!canRunCrowdNode()) return;
 
       // @ts-expect-error - dynamic import of local path
-      const { initFlaxiaNode } = await import('/api/crowd/v0.3.1-0/index.js');
+      const { initFlaxiaNode } = await import('/api/crowd/v0.3.2-0/index.js');
       initFlaxiaNode({
         orchestratorUrl: 'https://crowd.flaxia.app',
         siteId: 'flaxia',
