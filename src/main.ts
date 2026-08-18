@@ -3017,6 +3017,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       initCapacitorNotifications().catch(() => {});
       initCapacitorPushRegistration().catch(() => {});
 
+      const canRunCrowdNode = () => {
+        if (typeof navigator === 'undefined') return false;
+        const cores = navigator.hardwareConcurrency ?? 0;
+        if (cores < 4) return false;
+        const deviceMemory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+        return typeof deviceMemory !== 'number' || deviceMemory >= 4;
+      };
+
+      if (!canRunCrowdNode()) return;
+
       // @ts-expect-error - dynamic import of local path
       const { initFlaxiaNode } = await import('/api/crowd/v0.3.1-0/index.js');
       initFlaxiaNode({
