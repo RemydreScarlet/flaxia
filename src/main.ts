@@ -1,11 +1,10 @@
 import type { ArcadePageHandle } from './components/ArcadePage.js';
 import { BookmarksPage } from './components/BookmarksPage.js';
+import { ChatChannelList } from './components/ChatChannelList.js';
 import { ConversationView } from './components/ConversationView.js';
 import { ExplorePage } from './components/ExplorePage.js';
 import type { GroupChatView } from './components/GroupChatView.js';
-import type { GroupsPage } from './components/GroupsPage.js';
 import { createLeftNav, LeftNav, updateLeftNavUser } from './components/LeftNav.js';
-import { MessagesPage } from './components/MessagesPage.js';
 import { NotificationsPage } from './components/NotificationsPage.js';
 import { createRightPanel } from './components/RightPanel.js';
 import { ThreadPage } from './components/ThreadPage.js';
@@ -80,9 +79,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     let arcadePage: ArcadePageHandle | null = null;
     let searchPage: PageComponent | null = null;
     let bookmarksPage: BookmarksPage | null = null;
-    let messagesPage: MessagesPage | null = null;
+    let chatChannelList: ChatChannelList | null = null;
     let conversationView: ConversationView | null = null;
-    let groupsPage: GroupsPage | null = null;
     let groupChatView: GroupChatView | null = null;
     let callUI: { element: HTMLElement; destroy: () => void } | null = null;
     let cachedContentComponent: { view: string; component: unknown; scrollY: number } | null = null;
@@ -1219,17 +1217,13 @@ document.addEventListener('DOMContentLoaded', async () => {
           bookmarksPage.destroy();
           bookmarksPage = null;
         }
-        if (messagesPage) {
-          messagesPage.destroy();
-          messagesPage = null;
+        if (chatChannelList) {
+          chatChannelList.destroy();
+          chatChannelList = null;
         }
         if (conversationView) {
           conversationView.destroy();
           conversationView = null;
-        }
-        if (groupsPage) {
-          groupsPage.destroy();
-          groupsPage = null;
         }
         if (groupChatView) {
           groupChatView.destroy();
@@ -1267,12 +1261,12 @@ document.addEventListener('DOMContentLoaded', async () => {
           } else if (currentView === 'bookmarks' && bookmarksPage) {
             cachedContentComponent = { view: 'bookmarks', component: bookmarksPage, scrollY: window.scrollY };
             bookmarksPage = null;
-          } else if (currentView === 'messages' && messagesPage) {
-            cachedContentComponent = { view: 'messages', component: messagesPage, scrollY: window.scrollY };
-            messagesPage = null;
-          } else if (currentView === 'groups' && groupsPage) {
-            cachedContentComponent = { view: 'groups', component: groupsPage, scrollY: window.scrollY };
-            groupsPage = null;
+          } else if (currentView === 'messages' && chatChannelList) {
+            cachedContentComponent = { view: 'messages', component: chatChannelList, scrollY: window.scrollY };
+            chatChannelList = null;
+          } else if (currentView === 'groups' && chatChannelList) {
+            cachedContentComponent = { view: 'groups', component: chatChannelList, scrollY: window.scrollY };
+            chatChannelList = null;
           }
         }
 
@@ -1326,17 +1320,13 @@ document.addEventListener('DOMContentLoaded', async () => {
           searchPage.destroy();
           searchPage = null;
         }
-        if (messagesPage) {
-          messagesPage.destroy();
-          messagesPage = null;
+        if (chatChannelList) {
+          chatChannelList.destroy();
+          chatChannelList = null;
         }
         if (conversationView) {
           conversationView.destroy();
           conversationView = null;
-        }
-        if (groupsPage) {
-          groupsPage.destroy();
-          groupsPage = null;
         }
         if (groupChatView) {
           groupChatView.destroy();
@@ -2182,10 +2172,13 @@ document.addEventListener('DOMContentLoaded', async () => {
           return;
         }
 
-        // Handle messages page (within 3-column layout)
-        if (view === 'messages') {
-          currentView = 'messages';
-          currentPostId = postId || null;
+        // Handle messages + groups pages (Discord-like 3-pane layout)
+        const renderMessagesLayout = async (opts: {
+          activeConversationId: string | null;
+          activeGroupId: string | null;
+        }): Promise<void> => {
+          currentView = opts.activeGroupId ? 'groups' : 'messages';
+          currentPostId = opts.activeConversationId || opts.activeGroupId || null;
           _currentUsername = null;
           currentTag = null;
 
@@ -2197,7 +2190,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
           // Create main container for 3-column layout
           const mainContainer = document.createElement('div');
-          mainContainer.className = 'main-container';
+          mainContainer.className = 'main-container main-container--chat';
 
           const leftNav = createLeftNav({
             activeItem: 'messages',
@@ -2249,159 +2242,90 @@ document.addEventListener('DOMContentLoaded', async () => {
 
           leftNavInstances.add(leftNav);
 
-          if (postId) {
-            // Conversation thread view
-            if (cachedContentComponent?.view === 'messages' && messagesPage) {
-              messagesPage = null;
-            }
+          // Channel list (Discord-style sidebar)
+          if (
+            (cachedContentComponent?.view === 'messages' || cachedContentComponent?.view === 'groups') &&
+            chatChannelList
+          ) {
+            chatChannelList = cachedContentComponent.component as ChatChannelList;
+            cachedContentComponent = null;
+            chatChannelList.refresh();
+          } else {
+            const { createChatChannelList } = await import('./components/ChatChannelList.js');
+            chatChannelList = createChatChannelList({
+              currentUser,
+              activeConversationId: opts.activeConversationId,
+              activeGroupId: opts.activeGroupId,
+              onSelectConversation: (convId) => {
+                window.history.pushState({}, '', `/messages/${convId}`);
+                navigateTo('messages', convId);
+              },
+              onSelectGroup: (groupId) => {
+                window.history.pushState({}, '', `/groups/${groupId}`);
+                navigateTo('groups', groupId);
+              },
+            });
+          }
+          chatChannelList.setActive(opts.activeConversationId, opts.activeGroupId);
 
+          // Center chat pane
+          const center = document.createElement('div');
+          center.className = 'chat-center';
+
+          if (opts.activeConversationId) {
             const { createConversationView } = await import('./components/ConversationView.js');
             conversationView = createConversationView({
-              conversationId: postId,
+              conversationId: opts.activeConversationId,
               currentUser,
               onBack: () => {
                 window.history.pushState({}, '', '/messages');
                 navigateTo('messages');
               },
+              onMenu: () => chatChannelList?.setMobileOpen(true),
             });
-
-            mainContainer.appendChild(leftNav.getElement());
-            mainContainer.appendChild(conversationView.getElement());
+            center.appendChild(conversationView.getElement());
+          } else if (opts.activeGroupId) {
+            const { createGroupChatView } = await import('./components/GroupChatView.js');
+            groupChatView = createGroupChatView({
+              groupId: opts.activeGroupId,
+              currentUser,
+              onBack: () => {
+                window.history.pushState({}, '', '/messages');
+                navigateTo('messages');
+              },
+              onMenu: () => chatChannelList?.setMobileOpen(true),
+            });
+            center.appendChild(groupChatView.getElement());
           } else {
-            // Combined messages + groups list view
-            if (cachedContentComponent?.view === 'messages') {
-              messagesPage = cachedContentComponent.component as MessagesPage;
-              cachedContentComponent = null;
-              messagesPage.refresh();
-            } else {
-              const { createMessagesPage } = await import('./components/MessagesPage.js');
-              messagesPage = createMessagesPage({
-                currentUser,
-                onNavigateToConversation: (convId) => {
-                  window.history.pushState({}, '', `/messages/${convId}`);
-                  navigateTo('messages', convId);
-                },
-                onNavigateToGroup: (groupId) => {
-                  window.history.pushState({}, '', `/groups/${groupId}`);
-                  navigateTo('groups', groupId);
-                },
-              });
-            }
-
-            // Create Right Panel
-            const rightPanel = createRightPanel({
-              onSearch: (query) => {},
-              onFollowUser: (userId) => {},
-            });
-
-            mainContainer.appendChild(leftNav.getElement());
-            mainContainer.appendChild(messagesPage.getElement());
-            mainContainer.appendChild(rightPanel.getElement());
+            const { createMessagesWelcome } = await import('./components/ChatChannelList.js');
+            center.appendChild(createMessagesWelcome());
           }
+
+          mainContainer.appendChild(leftNav.getElement());
+          mainContainer.appendChild(chatChannelList.getElement());
+          mainContainer.appendChild(center);
 
           app.appendChild(mainContainer);
           hidePageLoader();
 
           setupMobileLeftNav(leftNav.getElement());
+        };
 
-          return;
-        }
-
-        // Handle groups page - only for specific group chat view
-        if (view === 'groups') {
-          if (!postId) {
-            // No group ID: redirect to combined messages page
-            window.history.pushState({}, '', '/messages');
-            navigateTo('messages');
-            return;
-          }
-
-          currentView = 'groups';
-          currentPostId = postId || null;
-          _currentUsername = null;
-          currentTag = null;
-
+        if (view === 'messages' || view === 'groups') {
           if (!currentUser) {
             window.history.pushState({}, '', '/explore');
             navigateTo('explore');
             return;
           }
-
-          const mainContainer = document.createElement('div');
-          mainContainer.className = 'main-container';
-
-          const leftNav = createLeftNav({
-            activeItem: 'messages',
-            unreadCount: unreadNotificationCount,
-            unreadDmCount,
-            unreadGroupCount,
-            currentUser: currentUser || undefined,
-            onNavigate: async (item) => {
-              if (item === 'home') {
-                window.history.pushState({}, '', '/home');
-                navigateTo('timeline');
-              } else if (item === 'explore') {
-                window.history.pushState({}, '', '/explore');
-                navigateTo('explore');
-              } else if (item === 'arcade') {
-                window.history.pushState({}, '', '/arcade');
-                navigateTo('arcade');
-              } else if (item === 'notifications') {
-                window.history.pushState({}, '', '/notifications');
-                navigateTo('notifications');
-              } else if (item === 'bookmarks') {
-                window.history.pushState({}, '', '/bookmarks');
-                navigateTo('bookmarks');
-              } else if (item === 'messages') {
-                window.history.pushState({}, '', '/messages');
-                navigateTo('messages');
-              } else if (item === 'settings') {
-                window.history.pushState({}, '', '/settings');
-                navigateTo('settings');
-              } else if (item === 'profile') {
-                if (!currentUser) {
-                  window.history.pushState({}, '', '/arcade');
-                  navigateTo('arcade');
-                  return;
-                }
-                window.history.pushState({}, '', `/profile/${currentUser.username}`);
-                navigateTo('profile', undefined, currentUser.username);
-              }
-            },
-            onSignIn: () => {
-              window.history.pushState({}, '', '/login');
-              navigateTo('login');
-            },
-            onSignUp: () => {
-              window.history.pushState({}, '', '/register');
-              navigateTo('register');
-            },
-          });
-
-          leftNavInstances.add(leftNav);
-
-          if (cachedContentComponent?.view === 'groups' && groupsPage) {
-            groupsPage = null;
+          if (view === 'groups' && !postId) {
+            window.history.pushState({}, '', '/messages');
+            navigateTo('messages');
+            return;
           }
-
-          const { createGroupChatView } = await import('./components/GroupChatView.js');
-          groupChatView = createGroupChatView({
-            groupId: postId,
-            currentUser,
-            onBack: () => {
-              window.history.pushState({}, '', '/messages');
-              navigateTo('messages');
-            },
+          await renderMessagesLayout({
+            activeConversationId: (view === 'messages' ? postId : null) ?? null,
+            activeGroupId: (view === 'groups' ? postId : null) ?? null,
           });
-
-          mainContainer.appendChild(leftNav.getElement());
-          mainContainer.appendChild(groupChatView.getElement());
-
-          app.appendChild(mainContainer);
-          hidePageLoader();
-
-          setupMobileLeftNav(leftNav.getElement());
-
           return;
         }
 

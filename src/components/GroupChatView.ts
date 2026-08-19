@@ -41,6 +41,7 @@ export interface GroupChatViewProps {
   groupId: string;
   currentUser: { id: string; username: string; display_name?: string; avatar_key?: string } | null;
   onBack: () => void;
+  onMenu?: () => void;
 }
 
 export class GroupChatView {
@@ -70,9 +71,18 @@ export class GroupChatView {
     const container = document.createElement('div');
     container.className = 'group-chat-view';
 
+    const main = document.createElement('div');
+    main.className = 'group-chat-main';
+
     // Header
     const header = document.createElement('div');
-    header.className = 'group-chat-header';
+    header.className = 'group-chat-header chat-header';
+
+    const menuBtn = document.createElement('button');
+    menuBtn.className = 'chat-header-menu';
+    menuBtn.textContent = '≡';
+    menuBtn.title = t('messages.menu');
+    menuBtn.addEventListener('click', () => this.props.onMenu?.());
 
     const backBtn = document.createElement('button');
     backBtn.className = 'group-chat-header-back';
@@ -84,35 +94,26 @@ export class GroupChatView {
 
     const groupAvatar = document.createElement('div');
     groupAvatar.id = 'group-chat-avatar';
-    groupAvatar.className = 'group-chat-header-avatar';
+    groupAvatar.className = 'group-chat-header-avatar chat-header-icon';
 
     const groupInfo = document.createElement('div');
-    groupInfo.className = 'group-chat-header-info';
+    groupInfo.className = 'group-chat-header-info chat-header-title';
 
     const groupName = document.createElement('div');
     groupName.id = 'group-chat-name';
-    groupName.className = 'group-chat-header-name';
+    groupName.className = 'group-chat-header-name chat-header-name';
 
     const groupMeta = document.createElement('div');
     groupMeta.id = 'group-chat-meta';
-    groupMeta.className = 'group-chat-header-meta';
+    groupMeta.className = 'group-chat-header-meta chat-header-meta';
 
     groupInfo.appendChild(groupName);
     groupInfo.appendChild(groupMeta);
 
-    const membersBtn = document.createElement('button');
-    membersBtn.className = 'group-chat-members-btn';
-    membersBtn.textContent = t('groups.members');
-    membersBtn.addEventListener('click', () => this.showMembersModal());
-
-    header.appendChild(backBtn);
-    header.appendChild(groupAvatar);
-    header.appendChild(groupInfo);
-
     // Call button
     const callBtn = document.createElement('button');
-    callBtn.className = 'group-call-btn';
-    callBtn.title = 'Voice call';
+    callBtn.className = 'group-call-btn chat-header-call';
+    callBtn.title = t('calls.voice');
     callBtn.innerHTML =
       '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
     callBtn.addEventListener('click', () => {
@@ -121,14 +122,23 @@ export class GroupChatView {
       });
       window.dispatchEvent(event);
     });
-    header.appendChild(callBtn);
 
+    const membersBtn = document.createElement('button');
+    membersBtn.className = 'group-chat-members-btn';
+    membersBtn.textContent = t('groups.members');
+    membersBtn.addEventListener('click', () => this.showMembersModal());
+
+    header.appendChild(menuBtn);
+    header.appendChild(backBtn);
+    header.appendChild(groupAvatar);
+    header.appendChild(groupInfo);
+    header.appendChild(callBtn);
     header.appendChild(membersBtn);
 
     // Messages area
     const messagesArea = document.createElement('div');
     messagesArea.id = 'group-messages-area';
-    messagesArea.className = 'group-messages-area';
+    messagesArea.className = 'chat-messages';
     messagesArea.addEventListener('scroll', () => {
       if (messagesArea.scrollTop < 100 && this.hasMore && !this.loadingMore) {
         this.loadOlderMessages();
@@ -137,11 +147,11 @@ export class GroupChatView {
 
     // Input area
     const inputArea = document.createElement('div');
-    inputArea.className = 'group-input-area';
+    inputArea.className = 'chat-input-area';
 
     const fileBtn = document.createElement('button');
     fileBtn.id = 'group-file-btn';
-    fileBtn.className = 'group-file-btn';
+    fileBtn.className = 'chat-input-btn';
     fileBtn.textContent = '📎';
     fileBtn.title = t('composer.attach_file');
     fileBtn.addEventListener('click', () => fileInput.click());
@@ -156,10 +166,10 @@ export class GroupChatView {
       if (file) this.handleFileSelection(file);
     });
 
-    const input = document.createElement('input');
-    input.type = 'text';
+    const input = document.createElement('textarea');
     input.id = 'group-message-input';
-    input.className = 'group-input';
+    input.className = 'group-input chat-input';
+    input.rows = 1;
     input.placeholder = t('groups.placeholder');
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -167,22 +177,27 @@ export class GroupChatView {
         this.sendMessage();
       }
     });
-    input.addEventListener('input', () => this.updateCharCount());
+    input.addEventListener('input', () => {
+      this.updateCharCount();
+      this.autoGrow();
+    });
 
     const sendBtn = document.createElement('button');
     sendBtn.id = 'group-send-btn';
-    sendBtn.className = 'group-send-btn';
-    sendBtn.textContent = t('messages.send');
+    sendBtn.className = 'chat-send-btn';
+    sendBtn.title = t('messages.send');
+    sendBtn.innerHTML =
+      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
     sendBtn.addEventListener('click', () => this.sendMessage());
 
     const charCount = document.createElement('div');
     charCount.id = 'group-char-count';
-    charCount.className = 'group-char-count';
+    charCount.className = 'group-char-count chat-char-count';
 
     // File preview
     const filePreview = document.createElement('div');
     filePreview.id = 'group-file-preview';
-    filePreview.className = 'group-file-preview';
+    filePreview.className = 'group-file-preview chat-file-preview';
     filePreview.style.display = 'none';
     const filePreviewInfo = document.createElement('span');
     filePreviewInfo.className = 'group-file-preview-info';
@@ -196,19 +211,85 @@ export class GroupChatView {
     inputArea.appendChild(fileBtn);
     inputArea.appendChild(fileInput);
     inputArea.appendChild(input);
-    inputArea.appendChild(sendBtn);
     inputArea.appendChild(charCount);
+    inputArea.appendChild(sendBtn);
     inputArea.appendChild(filePreview);
 
-    container.appendChild(header);
-    container.appendChild(messagesArea);
-    container.appendChild(inputArea);
+    main.appendChild(header);
+    main.appendChild(messagesArea);
+    main.appendChild(inputArea);
+
+    container.appendChild(main);
+    container.appendChild(this.createMemberPanel());
 
     return container;
   }
 
+  private createMemberPanel(): HTMLElement {
+    const panel = document.createElement('aside');
+    panel.className = 'group-member-panel';
+    panel.id = 'group-member-panel';
+
+    const title = document.createElement('div');
+    title.className = 'group-member-panel-title';
+    title.textContent = t('groups.members').toUpperCase();
+
+    panel.appendChild(title);
+    return panel;
+  }
+
+  private renderMemberPanel(): void {
+    const panel = this.element.querySelector('#group-member-panel') as HTMLElement;
+    if (!panel) return;
+    // Keep title, replace the rest
+    Array.from(panel.querySelectorAll(':scope > .group-member-row')).forEach((el) => {
+      el.remove();
+    });
+
+    this.members.forEach((member) => {
+      const row = document.createElement('div');
+      row.className = 'group-member-row';
+
+      const avatar = document.createElement('div');
+      avatar.className = 'group-member-row-avatar';
+      if (member.avatar_key) {
+        avatar.style.backgroundImage = `url(/api/images/${member.avatar_key})`;
+        avatar.style.backgroundSize = 'cover';
+        avatar.textContent = '';
+      } else {
+        avatar.textContent = (member.display_name || member.username).charAt(0).toUpperCase();
+      }
+
+      const info = document.createElement('div');
+      info.className = 'group-member-row-info';
+      const name = document.createElement('div');
+      name.className = 'group-member-row-name';
+      name.textContent = member.display_name || member.username;
+      info.appendChild(name);
+
+      row.appendChild(avatar);
+      row.appendChild(info);
+
+      if (member.role === 'owner') {
+        const role = document.createElement('span');
+        role.className = 'group-member-row-role';
+        role.textContent = '👑';
+        row.appendChild(role);
+      }
+
+      panel.appendChild(row);
+    });
+  }
+
+  private autoGrow(): void {
+    const input = this.element.querySelector('#group-message-input') as HTMLTextAreaElement;
+    if (!input) return;
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 200) + 'px';
+  }
+
   private updateCharCount(): void {
-    const input = this.element.querySelector('#group-message-input') as HTMLInputElement;
+    const input = this.element.querySelector('#group-message-input') as HTMLTextAreaElement;
     const count = this.element.querySelector('#group-char-count') as HTMLElement;
     if (input && count) {
       count.textContent = `${input.value.length}/200`;
@@ -269,7 +350,9 @@ export class GroupChatView {
           }
         }
         if (name) name.textContent = data.name;
-        if (meta) meta.textContent = `${data.members.length} members`;
+        if (meta) meta.textContent = `${data.members.length} ${t('groups.members')}`;
+
+        this.renderMemberPanel();
       }
     } catch {
       // ignore
@@ -387,27 +470,35 @@ export class GroupChatView {
 
   private startEdit(msg: GroupMessage): void {
     this.editingMsgId = msg.id;
-    const input = this.element.querySelector('#group-message-input') as HTMLInputElement;
+    const input = this.element.querySelector('#group-message-input') as HTMLTextAreaElement;
     const sendBtn = this.element.querySelector('#group-send-btn') as HTMLButtonElement;
     if (input) {
       input.value = msg.content;
       input.focus();
       this.updateCharCount();
+      this.autoGrow();
     }
-    if (sendBtn) sendBtn.textContent = t('messages.save');
+    if (sendBtn) {
+      sendBtn.title = t('messages.save');
+      sendBtn.classList.add('chat-send-btn--edit');
+    }
   }
 
   private cancelEdit(): void {
     this.editingMsgId = null;
-    const input = this.element.querySelector('#group-message-input') as HTMLInputElement;
+    const input = this.element.querySelector('#group-message-input') as HTMLTextAreaElement;
     const sendBtn = this.element.querySelector('#group-send-btn') as HTMLButtonElement;
     if (input) input.value = '';
-    if (sendBtn) sendBtn.textContent = t('messages.send');
+    if (sendBtn) {
+      sendBtn.title = t('messages.send');
+      sendBtn.classList.remove('chat-send-btn--edit');
+    }
     this.updateCharCount();
+    this.autoGrow();
   }
 
   private async sendMessage(): Promise<void> {
-    const input = this.element.querySelector('#group-message-input') as HTMLInputElement;
+    const input = this.element.querySelector('#group-message-input') as HTMLTextAreaElement;
     const sendBtn = this.element.querySelector('#group-send-btn') as HTMLButtonElement;
     const content = input?.value?.trim();
     if ((!content && !this.selectedFile) || this.sending) return;
@@ -511,6 +602,7 @@ export class GroupChatView {
         input.value = '';
         this.clearFileSelection();
         this.updateCharCount();
+        this.autoGrow();
       } else {
         const err = (await res.json()) as { error?: string };
         console.error('Send failed:', err.error);
@@ -532,7 +624,7 @@ export class GroupChatView {
 
     if (this.loading && this.messages.length === 0) {
       const loader = document.createElement('div');
-      loader.style.cssText = 'text-align: center; padding: 48px 24px; color: var(--text-muted);';
+      loader.className = 'chat-loading';
       loader.textContent = t('common.loading');
       area.appendChild(loader);
       return;
@@ -540,7 +632,7 @@ export class GroupChatView {
 
     if (this.messages.length === 0) {
       const empty = document.createElement('div');
-      empty.style.cssText = 'text-align: center; padding: 48px 24px; color: var(--text-muted);';
+      empty.className = 'chat-empty';
       empty.textContent = t('groups.empty');
       area.appendChild(empty);
       return;
@@ -548,98 +640,138 @@ export class GroupChatView {
 
     if (this.hasMore) {
       const loadMore = document.createElement('div');
-      loadMore.style.cssText = 'text-align: center; padding: 8px; color: var(--text-muted); font-size: 12px;';
+      loadMore.className = 'chat-load-more';
       loadMore.textContent = this.loadingMore ? t('common.loading') : '';
       area.appendChild(loadMore);
     }
 
-    // Group messages by sender for display
+    let prevMsg: GroupMessage | null = null;
+    let prevDay = '';
+
     this.messages.forEach((msg) => {
-      const bubble = document.createElement('div');
-      bubble.setAttribute('data-msg-id', msg.id);
-      bubble.className = `group-bubble ${msg.is_mine ? 'group-bubble-mine' : 'group-bubble-other'}`;
+      const day = new Date(msg.created_at).toDateString();
 
-      // Show sender info for other users' messages
-      if (!msg.is_mine) {
-        const senderInfo = document.createElement('div');
-        senderInfo.className = 'group-bubble-sender';
+      if (day !== prevDay) {
+        const divider = document.createElement('div');
+        divider.className = 'chat-divider';
+        const label = document.createElement('span');
+        label.className = 'chat-divider-label';
+        label.textContent = this.formatDay(msg.created_at);
+        divider.appendChild(label);
+        area.appendChild(divider);
+        prevMsg = null;
+      }
+      prevDay = day;
 
-        const senderAvatar = document.createElement('div');
-        senderAvatar.className = 'group-bubble-sender-avatar';
-        if (msg.sender.avatar_key) {
-          senderAvatar.style.backgroundImage = `url(/api/images/${msg.sender.avatar_key})`;
-          senderAvatar.style.backgroundSize = 'cover';
-          senderAvatar.textContent = '';
-        } else {
-          senderAvatar.textContent = (msg.sender.display_name || msg.sender.username).charAt(0).toUpperCase();
+      const grouped = this.shouldGroup(prevMsg, msg);
+      const row = document.createElement('div');
+      row.setAttribute('data-msg-id', msg.id);
+      row.className = 'msg-row' + (grouped ? ' msg-row--grouped' : '');
+
+      // Avatar
+      const avatar = document.createElement('div');
+      avatar.className = 'msg-row-avatar';
+      if (!grouped && msg.sender.avatar_key) {
+        avatar.style.backgroundImage = `url(/api/images/${msg.sender.avatar_key})`;
+        avatar.style.backgroundSize = 'cover';
+        avatar.textContent = '';
+      } else if (!grouped) {
+        avatar.textContent = (msg.sender.display_name || msg.sender.username).charAt(0).toUpperCase();
+      }
+
+      const content = document.createElement('div');
+      content.className = 'msg-row-content';
+
+      if (!grouped) {
+        const head = document.createElement('div');
+        head.className = 'msg-row-head';
+
+        const username = document.createElement('span');
+        username.className = 'msg-row-username';
+        username.textContent = msg.sender.display_name || msg.sender.username;
+
+        const time = document.createElement('span');
+        time.className = 'msg-row-time';
+        time.textContent = this.formatClock(msg.created_at);
+
+        head.appendChild(username);
+        head.appendChild(time);
+
+        if (msg.edited_at) {
+          const edited = document.createElement('span');
+          edited.className = 'msg-row-edited';
+          edited.textContent = t('messages.edited');
+          head.appendChild(edited);
         }
 
-        const senderName = document.createElement('span');
-        senderName.className = 'group-bubble-sender-name';
-        senderName.textContent = msg.sender.display_name || msg.sender.username;
-
-        senderInfo.appendChild(senderAvatar);
-        senderInfo.appendChild(senderName);
-        bubble.appendChild(senderInfo);
+        content.appendChild(head);
       }
+
+      const body = document.createElement('div');
+      body.className = 'msg-row-body';
 
       // Attachment rendering
       if (msg.gif_key || msg.payload_key || msg.swf_key) {
         const attachment = document.createElement('div');
         attachment.className = 'group-bubble-attachment';
         this.renderAttachment(attachment, msg);
-        bubble.appendChild(attachment);
+        body.appendChild(attachment);
       }
 
-      // Text content (rendered as Markdown, like timeline posts)
+      // Text content
       if (msg.content) {
         const text = document.createElement('div');
-        text.className = `group-bubble-text ${msg.is_mine ? 'mine' : 'other'}`;
+        text.className = 'msg-row-text';
         text.textContent = msg.content;
-        bubble.appendChild(text);
+        body.appendChild(text);
         this.enrichText(text, msg.content);
 
         const previewContainer = document.createElement('div');
         previewContainer.className = 'post-link-preview-container';
         previewContainer.style.cssText = 'overflow: hidden;';
-        bubble.appendChild(previewContainer);
+        body.appendChild(previewContainer);
         loadLinkPreview(msg.content, previewContainer);
       }
 
-      // Time + edited indicator + edit/delete buttons
-      const meta = document.createElement('div');
-      meta.className = 'group-bubble-meta';
+      content.appendChild(body);
 
-      const time = document.createElement('span');
-      time.className = 'group-bubble-time';
-      time.textContent = this.formatTime(msg.created_at);
-
-      meta.appendChild(time);
-
-      if (msg.edited_at) {
-        const edited = document.createElement('span');
-        edited.className = 'group-bubble-edited';
-        edited.textContent = t('messages.edited');
-        meta.appendChild(edited);
-      }
-
+      // Hover actions (edit/delete for own messages)
       if (msg.is_mine) {
+        const actions = document.createElement('div');
+        actions.className = 'msg-row-actions';
+
         const editBtn = document.createElement('button');
-        editBtn.className = 'group-bubble-edit-btn';
+        editBtn.className = 'msg-row-action';
         editBtn.textContent = t('messages.edit');
         editBtn.addEventListener('click', () => this.startEdit(msg));
-        meta.appendChild(editBtn);
 
         const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'group-bubble-delete-btn';
+        deleteBtn.className = 'msg-row-action msg-row-action--danger';
         deleteBtn.textContent = t('common.delete');
         deleteBtn.addEventListener('click', () => this.confirmDelete(msg));
-        meta.appendChild(deleteBtn);
+
+        actions.appendChild(editBtn);
+        actions.appendChild(deleteBtn);
+        content.appendChild(actions);
       }
 
-      bubble.appendChild(meta);
-      area.appendChild(bubble);
+      row.appendChild(avatar);
+      row.appendChild(content);
+      area.appendChild(row);
+
+      prevMsg = msg;
     });
+  }
+
+  private shouldGroup(prev: GroupMessage | null, curr: GroupMessage): boolean {
+    if (!prev) return false;
+    if (prev.sender_id !== curr.sender_id) return false;
+    if (prev.is_mine !== curr.is_mine) return false;
+    const prevDate = new Date(prev.created_at);
+    const currDate = new Date(curr.created_at);
+    if (prevDate.toDateString() !== currDate.toDateString()) return false;
+    const diff = currDate.getTime() - prevDate.getTime();
+    return diff >= 0 && diff <= 5 * 60 * 1000;
   }
 
   private async enrichText(el: HTMLElement, content: string): Promise<void> {
@@ -1163,18 +1295,19 @@ export class GroupChatView {
     });
   }
 
-  private formatTime(createdAt: string): string {
+  private formatDay(createdAt: string): string {
     const date = new Date(createdAt);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+    if (date.toDateString() === today.toDateString()) return t('time.today');
+    if (date.toDateString() === yesterday.toDateString()) return t('time.yesterday');
+    return date.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+  }
 
-    if (diffMins < 1) return t('messages.just_now');
-    if (diffMins < 60) return t('time.minutes_ago', { n: diffMins });
-
-    const hours = date.getHours().toString().padStart(2, '0');
-    const mins = date.getMinutes().toString().padStart(2, '0');
-    return `${hours}:${mins}`;
+  private formatClock(createdAt: string): string {
+    const date = new Date(createdAt);
+    return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
   }
 
   private scrollToBottom(): void {
@@ -1187,7 +1320,7 @@ export class GroupChatView {
   }
 
   public focusInput(): void {
-    const input = this.element.querySelector('#group-message-input') as HTMLInputElement;
+    const input = this.element.querySelector('#group-message-input') as HTMLTextAreaElement;
     if (input) setTimeout(() => input.focus(), 100);
   }
 

@@ -30,6 +30,7 @@ export interface ConversationViewProps {
   conversationId: string;
   currentUser: { id: string; username: string; display_name?: string; avatar_key?: string } | null;
   onBack: () => void;
+  onMenu?: () => void;
 }
 
 export class ConversationView {
@@ -58,7 +59,13 @@ export class ConversationView {
 
     // Header
     const header = document.createElement('div');
-    header.className = 'conv-header';
+    header.className = 'chat-header conv-header';
+
+    const menuBtn = document.createElement('button');
+    menuBtn.className = 'chat-header-menu';
+    menuBtn.textContent = '≡';
+    menuBtn.title = t('messages.menu');
+    menuBtn.addEventListener('click', () => this.props.onMenu?.());
 
     const backBtn = document.createElement('button');
     backBtn.className = 'conv-header-back';
@@ -68,22 +75,28 @@ export class ConversationView {
       this.props.onBack();
     });
 
+    const titleWrap = document.createElement('div');
+    titleWrap.className = 'chat-header-title';
+
     const userAvatar = document.createElement('div');
     userAvatar.id = 'conv-user-avatar';
-    userAvatar.className = 'conv-header-avatar';
+    userAvatar.className = 'conv-header-avatar chat-header-icon';
 
     const userName = document.createElement('div');
     userName.id = 'conv-user-name';
-    userName.className = 'conv-header-name';
+    userName.className = 'conv-header-name chat-header-name';
 
+    titleWrap.appendChild(userAvatar);
+    titleWrap.appendChild(userName);
+
+    header.appendChild(menuBtn);
     header.appendChild(backBtn);
-    header.appendChild(userAvatar);
-    header.appendChild(userName);
+    header.appendChild(titleWrap);
 
     // Messages area
     const messagesArea = document.createElement('div');
     messagesArea.id = 'conv-messages-area';
-    messagesArea.className = 'conv-messages-area';
+    messagesArea.className = 'chat-messages';
     messagesArea.addEventListener('scroll', () => {
       if (messagesArea.scrollTop < 100 && this.hasMore && !this.loadingMore) {
         this.loadOlderMessages();
@@ -92,11 +105,11 @@ export class ConversationView {
 
     // Input area
     const inputArea = document.createElement('div');
-    inputArea.className = 'conv-input-area';
+    inputArea.className = 'chat-input-area';
 
     const fileBtn = document.createElement('button');
     fileBtn.id = 'conv-file-btn';
-    fileBtn.className = 'conv-file-btn';
+    fileBtn.className = 'chat-input-btn';
     fileBtn.textContent = '📎';
     fileBtn.title = t('composer.attach_file');
     fileBtn.addEventListener('click', () => fileInput.click());
@@ -111,10 +124,10 @@ export class ConversationView {
       if (file) this.handleFileSelection(file);
     });
 
-    const input = document.createElement('input');
-    input.type = 'text';
+    const input = document.createElement('textarea');
     input.id = 'conv-message-input';
-    input.className = 'conv-input';
+    input.className = 'conv-input chat-input';
+    input.rows = 1;
     input.placeholder = t('messages.placeholder');
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -122,22 +135,27 @@ export class ConversationView {
         this.sendMessage();
       }
     });
-    input.addEventListener('input', () => this.updateCharCount());
+    input.addEventListener('input', () => {
+      this.updateCharCount();
+      this.autoGrow();
+    });
 
     const sendBtn = document.createElement('button');
     sendBtn.id = 'conv-send-btn';
-    sendBtn.className = 'conv-send-btn';
-    sendBtn.textContent = t('messages.send');
+    sendBtn.className = 'chat-send-btn';
+    sendBtn.title = t('messages.send');
+    sendBtn.innerHTML =
+      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
     sendBtn.addEventListener('click', () => this.sendMessage());
 
     const charCount = document.createElement('div');
     charCount.id = 'conv-char-count';
-    charCount.className = 'conv-char-count';
+    charCount.className = 'conv-char-count chat-char-count';
 
     // File preview
     const filePreview = document.createElement('div');
     filePreview.id = 'conv-file-preview';
-    filePreview.className = 'conv-file-preview';
+    filePreview.className = 'conv-file-preview chat-file-preview';
     filePreview.style.display = 'none';
     const filePreviewInfo = document.createElement('span');
     filePreviewInfo.className = 'conv-file-preview-info';
@@ -151,8 +169,8 @@ export class ConversationView {
     inputArea.appendChild(fileBtn);
     inputArea.appendChild(fileInput);
     inputArea.appendChild(input);
-    inputArea.appendChild(sendBtn);
     inputArea.appendChild(charCount);
+    inputArea.appendChild(sendBtn);
     inputArea.appendChild(filePreview);
 
     container.appendChild(header);
@@ -162,8 +180,15 @@ export class ConversationView {
     return container;
   }
 
+  private autoGrow(): void {
+    const input = this.element.querySelector('#conv-message-input') as HTMLTextAreaElement;
+    if (!input) return;
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 200) + 'px';
+  }
+
   private updateCharCount(): void {
-    const input = this.element.querySelector('#conv-message-input') as HTMLInputElement;
+    const input = this.element.querySelector('#conv-message-input') as HTMLTextAreaElement;
     const count = this.element.querySelector('#conv-char-count') as HTMLElement;
     if (input && count) {
       count.textContent = `${input.value.length}/200`;
@@ -338,27 +363,35 @@ export class ConversationView {
 
   private startEdit(msg: Message): void {
     this.editingMsgId = msg.id;
-    const input = this.element.querySelector('#conv-message-input') as HTMLInputElement;
+    const input = this.element.querySelector('#conv-message-input') as HTMLTextAreaElement;
     const sendBtn = this.element.querySelector('#conv-send-btn') as HTMLButtonElement;
     if (input) {
       input.value = msg.content;
       input.focus();
       this.updateCharCount();
+      this.autoGrow();
     }
-    if (sendBtn) sendBtn.textContent = t('messages.save');
+    if (sendBtn) {
+      sendBtn.title = t('messages.save');
+      sendBtn.classList.add('chat-send-btn--edit');
+    }
   }
 
   private cancelEdit(): void {
     this.editingMsgId = null;
-    const input = this.element.querySelector('#conv-message-input') as HTMLInputElement;
+    const input = this.element.querySelector('#conv-message-input') as HTMLTextAreaElement;
     const sendBtn = this.element.querySelector('#conv-send-btn') as HTMLButtonElement;
     if (input) input.value = '';
-    if (sendBtn) sendBtn.textContent = t('messages.send');
+    if (sendBtn) {
+      sendBtn.title = t('messages.send');
+      sendBtn.classList.remove('chat-send-btn--edit');
+    }
     this.updateCharCount();
+    this.autoGrow();
   }
 
   private async sendMessage(): Promise<void> {
-    const input = this.element.querySelector('#conv-message-input') as HTMLInputElement;
+    const input = this.element.querySelector('#conv-message-input') as HTMLTextAreaElement;
     const sendBtn = this.element.querySelector('#conv-send-btn') as HTMLButtonElement;
     const content = input?.value?.trim();
     if ((!content && !this.selectedFile) || this.sending) return;
@@ -467,6 +500,7 @@ export class ConversationView {
         input.value = '';
         this.clearFileSelection();
         this.updateCharCount();
+        this.autoGrow();
       } else {
         const err = (await res.json()) as { error?: string };
         console.error('Send failed:', err.error);
@@ -488,7 +522,7 @@ export class ConversationView {
 
     if (this.loading && this.messages.length === 0) {
       const loader = document.createElement('div');
-      loader.style.cssText = 'text-align: center; padding: 48px 24px; color: var(--text-muted);';
+      loader.className = 'chat-loading';
       loader.textContent = t('common.loading');
       area.appendChild(loader);
       return;
@@ -496,7 +530,7 @@ export class ConversationView {
 
     if (this.messages.length === 0) {
       const empty = document.createElement('div');
-      empty.style.cssText = 'text-align: center; padding: 48px 24px; color: var(--text-muted);';
+      empty.className = 'chat-empty';
       empty.textContent = t('messages.empty');
       area.appendChild(empty);
       return;
@@ -505,73 +539,135 @@ export class ConversationView {
     // Load more indicator at top
     if (this.hasMore) {
       const loadMore = document.createElement('div');
-      loadMore.style.cssText = 'text-align: center; padding: 8px; color: var(--text-muted); font-size: 12px;';
+      loadMore.className = 'chat-load-more';
       loadMore.textContent = this.loadingMore ? t('common.loading') : '';
       area.appendChild(loadMore);
     }
 
-    this.messages.forEach((msg, idx) => {
-      const bubble = document.createElement('div');
-      bubble.setAttribute('data-msg-id', msg.id);
-      bubble.className = `conv-bubble ${msg.is_mine ? 'conv-bubble-mine' : 'conv-bubble-other'}`;
+    let prevMsg: Message | null = null;
+    let prevDay = '';
 
-      // Attachment rendering (before text for visual consistency)
+    this.messages.forEach((msg) => {
+      const day = new Date(msg.created_at).toDateString();
+
+      // Date separator
+      if (day !== prevDay) {
+        const divider = document.createElement('div');
+        divider.className = 'chat-divider';
+        const label = document.createElement('span');
+        label.className = 'chat-divider-label';
+        label.textContent = this.formatDay(msg.created_at);
+        divider.appendChild(label);
+        area.appendChild(divider);
+        prevMsg = null;
+      }
+      prevDay = day;
+
+      const grouped = this.shouldGroup(prevMsg, msg);
+      const row = document.createElement('div');
+      row.setAttribute('data-msg-id', msg.id);
+      row.className = 'msg-row' + (grouped ? ' msg-row--grouped' : '');
+
+      // Avatar (hidden on grouped continuation)
+      const avatar = document.createElement('div');
+      avatar.className = 'msg-row-avatar';
+      if (!grouped) {
+        avatar.textContent = (msg.sender.display_name || msg.sender.username).charAt(0).toUpperCase();
+      }
+
+      const content = document.createElement('div');
+      content.className = 'msg-row-content';
+
+      if (!grouped) {
+        const head = document.createElement('div');
+        head.className = 'msg-row-head';
+
+        const username = document.createElement('span');
+        username.className = 'msg-row-username';
+        username.textContent = msg.sender.display_name || msg.sender.username;
+
+        const time = document.createElement('span');
+        time.className = 'msg-row-time';
+        time.textContent = this.formatClock(msg.created_at);
+
+        head.appendChild(username);
+        head.appendChild(time);
+
+        if (msg.edited_at) {
+          const edited = document.createElement('span');
+          edited.className = 'msg-row-edited';
+          edited.textContent = t('messages.edited');
+          head.appendChild(edited);
+        }
+
+        content.appendChild(head);
+      }
+
+      const body = document.createElement('div');
+      body.className = 'msg-row-body';
+
+      // Attachment rendering
       if (msg.gif_key || msg.payload_key || msg.swf_key) {
         const attachment = document.createElement('div');
         attachment.className = 'conv-bubble-attachment';
         this.renderAttachment(attachment, msg);
-        bubble.appendChild(attachment);
+        body.appendChild(attachment);
       }
 
-      // Text content (rendered as Markdown, like timeline posts)
+      // Text content
       if (msg.content) {
         const text = document.createElement('div');
-        text.className = `conv-bubble-text ${msg.is_mine ? 'mine' : 'other'}`;
+        text.className = 'msg-row-text';
         text.textContent = msg.content;
-        bubble.appendChild(text);
+        body.appendChild(text);
         this.enrichText(text, msg.content);
 
         const previewContainer = document.createElement('div');
         previewContainer.className = 'post-link-preview-container';
         previewContainer.style.cssText = 'overflow: hidden;';
-        bubble.appendChild(previewContainer);
+        body.appendChild(previewContainer);
         loadLinkPreview(msg.content, previewContainer);
       }
 
-      // Time + edited indicator + edit button
-      const meta = document.createElement('div');
-      meta.className = 'conv-bubble-meta';
+      content.appendChild(body);
 
-      const time = document.createElement('span');
-      time.className = 'conv-bubble-time';
-      time.textContent = this.formatTime(msg.created_at, idx, msg);
-
-      meta.appendChild(time);
-
-      if (msg.edited_at) {
-        const edited = document.createElement('span');
-        edited.className = 'conv-bubble-edited';
-        edited.textContent = t('messages.edited');
-        meta.appendChild(edited);
-      }
-
+      // Hover actions (edit/delete for own messages)
       if (msg.is_mine) {
+        const actions = document.createElement('div');
+        actions.className = 'msg-row-actions';
+
         const editBtn = document.createElement('button');
-        editBtn.className = 'conv-bubble-edit-btn';
+        editBtn.className = 'msg-row-action';
         editBtn.textContent = t('messages.edit');
         editBtn.addEventListener('click', () => this.startEdit(msg));
-        meta.appendChild(editBtn);
 
         const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'conv-bubble-delete-btn';
+        deleteBtn.className = 'msg-row-action msg-row-action--danger';
         deleteBtn.textContent = t('common.delete');
         deleteBtn.addEventListener('click', () => this.confirmDelete(msg));
-        meta.appendChild(deleteBtn);
+
+        actions.appendChild(editBtn);
+        actions.appendChild(deleteBtn);
+        content.appendChild(actions);
       }
 
-      bubble.appendChild(meta);
-      area.appendChild(bubble);
+      row.appendChild(avatar);
+      row.appendChild(content);
+      area.appendChild(row);
+
+      prevMsg = msg;
     });
+  }
+
+  private shouldGroup(prev: Message | null, curr: Message): boolean {
+    if (!prev) return false;
+    if (prev.sender_id !== curr.sender_id) return false;
+    if (prev.is_mine !== curr.is_mine) return false;
+    const prevDate = new Date(prev.created_at);
+    const currDate = new Date(curr.created_at);
+    if (prevDate.toDateString() !== currDate.toDateString()) return false;
+    const diff = currDate.getTime() - prevDate.getTime();
+    return diff >= 0 && diff <= 5 * 60 * 1000;
   }
 
   private async enrichText(el: HTMLElement, content: string): Promise<void> {
@@ -874,18 +970,19 @@ export class ConversationView {
     });
   }
 
-  private formatTime(createdAt: string, _idx: number, _msg: Message): string {
+  private formatDay(createdAt: string): string {
     const date = new Date(createdAt);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+    if (date.toDateString() === today.toDateString()) return t('time.today');
+    if (date.toDateString() === yesterday.toDateString()) return t('time.yesterday');
+    return date.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+  }
 
-    if (diffMins < 1) return t('messages.just_now');
-    if (diffMins < 60) return t('time.minutes_ago', { n: diffMins });
-
-    const hours = date.getHours().toString().padStart(2, '0');
-    const mins = date.getMinutes().toString().padStart(2, '0');
-    return `${hours}:${mins}`;
+  private formatClock(createdAt: string): string {
+    const date = new Date(createdAt);
+    return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
   }
 
   private scrollToBottom(): void {
@@ -898,7 +995,7 @@ export class ConversationView {
   }
 
   public focusInput(): void {
-    const input = this.element.querySelector('#conv-message-input') as HTMLInputElement;
+    const input = this.element.querySelector('#conv-message-input') as HTMLTextAreaElement;
     if (input) setTimeout(() => input.focus(), 100);
   }
 
