@@ -2023,17 +2023,17 @@ h1 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   margin-top: 2px;
 }
 
 .post-reaction-chip {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 16px;
-  border-radius: 16px;
-  font-size: 1.5rem;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
   border: 1px solid var(--border);
   cursor: pointer;
   background: var(--bg-secondary);
@@ -2055,20 +2055,18 @@ h1 {
 
 .post-reaction-emoji {
   line-height: 1;
-  font-size: 1.5rem;
 }
 
 .post-reaction-count {
   font-weight: 600;
-  font-size: 1rem;
 }
 
 .post-reaction-add {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 48px;
-  height: 48px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border-radius: 50%;
   border: 1px solid var(--border);
@@ -2092,8 +2090,8 @@ h1 {
 }
 
 .post-reaction-add-icon svg {
-  width: 28px;
-  height: 28px;
+  width: 14px;
+  height: 14px;
 }
 
 emoji-picker {
@@ -2110,10 +2108,10 @@ emoji-picker {
 
 @media (max-width: 768px) {
   .post-reactions {
-    gap: 6px;
+    gap: 3px;
   }
   .post-reaction-chip {
-    padding: 4px 12px;
+    padding: 2px 6px;
   }
 }
 
