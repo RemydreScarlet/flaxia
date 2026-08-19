@@ -6654,10 +6654,6 @@ html {
   min-width: 0;
 }
 
-.msg-row--grouped .msg-row-content {
-  margin-left: 52px;
-}
-
 .msg-row-head {
   display: flex;
   align-items: baseline;

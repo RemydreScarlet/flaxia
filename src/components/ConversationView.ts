@@ -46,6 +46,7 @@ export class ConversationView {
 
   private selectedFile: File | null = null;
   private editingMsgId: string | null = null;
+  private pendingEnrich: Promise<void>[] = [];
 
   constructor(props: ConversationViewProps) {
     this.props = props;
@@ -519,6 +520,7 @@ export class ConversationView {
     const area = this.element.querySelector('#conv-messages-area') as HTMLElement;
     if (!area) return;
     area.innerHTML = '';
+    this.pendingEnrich = [];
 
     if (this.loading && this.messages.length === 0) {
       const loader = document.createElement('div');
@@ -620,7 +622,7 @@ export class ConversationView {
         text.className = 'msg-row-text';
         text.textContent = msg.content;
         body.appendChild(text);
-        this.enrichText(text, msg.content);
+        this.pendingEnrich.push(this.enrichText(text, msg.content));
 
         const previewContainer = document.createElement('div');
         previewContainer.className = 'post-link-preview-container';
@@ -987,10 +989,24 @@ export class ConversationView {
 
   private scrollToBottom(): void {
     const area = this.element.querySelector('#conv-messages-area') as HTMLElement;
-    if (area) {
-      requestAnimationFrame(() => {
-        area.scrollTop = area.scrollHeight;
-      });
+    if (!area) return;
+    Promise.allSettled(this.pendingEnrich).then(() => {
+      if (!this.element.isConnected) return;
+      this.stabilizeScroll(area, 0);
+      setTimeout(() => {
+        if (this.element.isConnected) area.scrollTop = area.scrollHeight;
+      }, 300);
+      setTimeout(() => {
+        if (this.element.isConnected) area.scrollTop = area.scrollHeight;
+      }, 1000);
+    });
+  }
+
+  private stabilizeScroll(area: HTMLElement, attempts: number): void {
+    if (!this.element.isConnected || attempts > 30) return;
+    if (area.scrollTop !== area.scrollHeight) {
+      area.scrollTop = area.scrollHeight;
+      requestAnimationFrame(() => this.stabilizeScroll(area, attempts + 1));
     }
   }
 
