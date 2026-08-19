@@ -877,66 +877,14 @@ export class ArcadePage {
     const reportBtn = this.createActionButton('🚩', '', () => this.handleReport());
     reportBtn.title = t('arcade.report');
 
-    // Screenshot button (hidden for now)
-    // const screenshotBtn = this.createActionButton('📸', '', () => void this.handleCaptureScreenshot());
-    // screenshotBtn.title = t('arcade.capture_screenshot');
-
-    // Clip button (hidden for now)
-    // const clipBtn = this.createActionButton('🎬', '', () => void this.handleCaptureClip());
-    // clipBtn.title = t('arcade.capture_clip');
-
     container.appendChild(freshBtn);
     container.appendChild(fullscreenBtn);
     container.appendChild(shareBtn);
     container.appendChild(commentsBtn);
     container.appendChild(bookmarkBtn);
     container.appendChild(reportBtn);
-    // container.appendChild(screenshotBtn);
-    // container.appendChild(clipBtn);
 
     return container;
-  }
-
-  private async handleCaptureScreenshot(): Promise<void> {
-    const game = this.games[this.currentIndex];
-    const client = this.captureClient;
-    if (!game || !client || this.captureBusy) return;
-
-    this.captureBusy = true;
-    try {
-      showToast(t('arcade.capture_processing'));
-      const blob = await client.requestFrame();
-      const card = await client.composeScoreCard(blob, {
-        title: game.title,
-        username: game.username,
-        footer: t('arcade.capture_screenshot'),
-      });
-      this.openCaptureShareModal(card, `flaxia-${game.id}-capture.png`, 'image/png');
-    } catch (error) {
-      console.warn('Screenshot capture failed:', error);
-      showToast(t('arcade.capture_screenshot_failed'), true);
-    } finally {
-      this.captureBusy = false;
-    }
-  }
-
-  private async handleCaptureClip(): Promise<void> {
-    const game = this.games[this.currentIndex];
-    const client = this.captureClient;
-    if (!game || !client || this.captureBusy) return;
-
-    this.captureBusy = true;
-    try {
-      showToast(t('arcade.capture_processing'));
-      const frames = await client.requestGif();
-      const gif = client.encodeGif(frames);
-      this.openCaptureShareModal(gif, `flaxia-${game.id}-clip.gif`, 'image/gif');
-    } catch (error) {
-      console.warn('Clip capture failed:', error);
-      showToast(t('arcade.capture_clip_failed'), true);
-    } finally {
-      this.captureBusy = false;
-    }
   }
 
   private handlePostScore(score: number, label: string): void {
