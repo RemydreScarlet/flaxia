@@ -70,15 +70,26 @@ export class ReplyComposer {
         <div class="reply-composer-footer">
           <div class="reply-composer-actions">
             <input type="file" class="reply-composer-file-input" accept=".gif,.png,.jpg,.jpeg,.mp3,.wav,.ogg,.m4a,.webm" />
-            <button class="reply-composer-file-button" type="button" style="
+            <div class="reply-composer-attach-group">
+              <button class="reply-composer-file-button reply-composer-file-button--image" type="button" title="${t('composer.attach_image_video')}" style="
               background: none;
               border: none;
               color: #94a3b8;
               cursor: pointer;
               padding: 0.25rem;
             ">
-              <span class="action-icon" data-icon="attach"></span>
-            </button>
+                <span class="action-icon" data-icon="image-video"></span>
+              </button>
+              <button class="reply-composer-file-button reply-composer-file-button--audio" type="button" title="${t('composer.attach_audio')}" style="
+              background: none;
+              border: none;
+              color: #94a3b8;
+              cursor: pointer;
+              padding: 0.25rem;
+            ">
+                <span class="action-icon" data-icon="audio"></span>
+              </button>
+            </div>
             <span class="reply-composer-char-count" style="color: #94a3b8; font-size: 0.75rem;">0/200</span>
           </div>
           <div class="reply-composer-buttons">
@@ -205,10 +216,16 @@ export class ReplyComposer {
       }
     });
 
-    // File button click
-    const fileButton = this.element.querySelector('.reply-composer-file-button')!;
-    fileButton.addEventListener('click', () => {
-      this.fileInput.click();
+    // File button clicks - image/video and audio
+    const fileButtons = this.element.querySelectorAll('.reply-composer-file-button')!;
+    fileButtons.forEach((btn) => {
+      const btnEl = btn as HTMLElement;
+      btnEl.addEventListener('click', () => {
+        this.fileInput.accept = btnEl.classList.contains('reply-composer-file-button--audio')
+          ? '.mp3,.wav,.ogg,.m4a'
+          : '.gif,.png,.jpg,.jpeg,.webm';
+        this.fileInput.click();
+      });
     });
 
     // File selection

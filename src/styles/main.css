@@ -2235,6 +2235,12 @@ emoji-picker {
   transition: background-color 0.2s ease;
 }
 
+.composer-attach-group {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+
 .composer-file-button:hover {
   background: var(--bg-secondary);
 }
@@ -3353,6 +3359,12 @@ html {
   font-size: 1rem;
   border-radius: 50%;
   transition: background-color 0.2s ease;
+}
+
+.reply-composer-attach-group {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
 }
 
 .reply-composer-file-button:hover {

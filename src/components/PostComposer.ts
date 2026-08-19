@@ -83,9 +83,17 @@ export class PostComposer {
         <div class="composer-footer">
           <div class="composer-actions">
             <input type="file" class="composer-file-input" accept=".js,.wasm,.html,.gif,.png,.jpg,.jpeg,.mp3,.wav,.ogg,.m4a,.webm,.mp4,.mov,.zip,.swf,.jsdos" />
-            <button class="composer-file-button" type="button" title="${t('composer.attach_button')}">
-              <span class="action-icon" data-icon="attach"></span>
-            </button>
+            <div class="composer-attach-group">
+              <button class="composer-file-button composer-file-button--image" type="button" title="${t('composer.attach_image_video')}">
+                <span class="action-icon" data-icon="image-video"></span>
+              </button>
+              <button class="composer-file-button composer-file-button--audio" type="button" title="${t('composer.attach_audio')}">
+                <span class="action-icon" data-icon="audio"></span>
+              </button>
+              <button class="composer-file-button composer-file-button--game" type="button" title="${t('composer.attach_game')}">
+                <span class="action-icon" data-icon="game"></span>
+              </button>
+            </div>
             <button class="composer-poll-button" type="button" title="${t('poll.toggle_button')}">
               <span class="action-icon" data-icon="poll"></span>
             </button>
@@ -376,10 +384,24 @@ export class PostComposer {
       }
     });
 
-    // File button click
-    const fileButton = this.element.querySelector('.composer-file-button')!;
-    fileButton.addEventListener('click', () => {
-      this.fileInput.click();
+    // File button clicks - image/video, audio, game
+    const fileButtons = this.element.querySelectorAll('.composer-file-button')!;
+    const accepts: Record<string, string> = {
+      '--image': '.gif,.png,.jpg,.jpeg,.webm,.mp4,.mov',
+      '--audio': '.mp3,.wav,.ogg,.m4a',
+      '--game': '.zip,.swf,.jsdos,.rsp,.js,.wasm',
+    };
+    fileButtons.forEach((btn) => {
+      const btnEl = btn as HTMLElement;
+      btnEl.addEventListener('click', () => {
+        const modifier = btnEl.classList.contains('composer-file-button--game')
+          ? '--game'
+          : btnEl.classList.contains('composer-file-button--audio')
+            ? '--audio'
+            : '--image';
+        this.fileInput.accept = accepts[modifier];
+        this.fileInput.click();
+      });
     });
 
     // File selection - from both click and drop

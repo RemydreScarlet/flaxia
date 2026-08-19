@@ -4,9 +4,12 @@ import {
   Copy,
   createElement,
   Eye,
+  Gamepad2,
   type IconNode,
+  ImagePlus,
   Leaf,
   MessageCircle,
+  Music2,
   Quote,
   Save,
   Send,
@@ -31,7 +34,10 @@ export type IconName =
   | 'close'
   | 'copy'
   | 'send'
-  | 'smile-plus';
+  | 'smile-plus'
+  | 'image-video'
+  | 'audio'
+  | 'game';
 
 const ICON_NODES: Record<IconName, IconNode> = {
   fresh: Leaf,
@@ -48,6 +54,9 @@ const ICON_NODES: Record<IconName, IconNode> = {
   copy: Copy,
   send: Send,
   'smile-plus': SmilePlus,
+  'image-video': ImagePlus,
+  audio: Music2,
+  game: Gamepad2,
 };
 
 export function icon(name: IconName, attrs: Record<string, string> = {}): SVGElement {
