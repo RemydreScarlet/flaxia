@@ -214,12 +214,6 @@ function createWvfsIframe(
 
 function waitForLoad(iframe: HTMLIFrameElement, loadingEl: HTMLElement | null): Promise<boolean> {
   return new Promise((resolve) => {
-    if (iframe.contentWindow?.location?.href && iframe.contentWindow.location.href !== 'about:blank') {
-      iframe.style.opacity = '1';
-      resolve(true);
-      return;
-    }
-
     const timeoutId = window.setTimeout(() => {
       iframe.removeEventListener('load', onLoad);
       resolve(false);

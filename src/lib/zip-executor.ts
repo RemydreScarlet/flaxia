@@ -234,11 +234,6 @@ function createSandboxIframe(
 
 function waitForLegacyLoad(iframe: HTMLIFrameElement, loadingEl: HTMLElement): Promise<boolean> {
   return new Promise((resolve) => {
-    if (iframe.contentWindow?.location?.href && iframe.contentWindow.location.href !== 'about:blank') {
-      resolve(true);
-      return;
-    }
-
     const timeoutId = window.setTimeout(() => {
       iframe.removeEventListener('load', onLoad);
       resolve(false);
