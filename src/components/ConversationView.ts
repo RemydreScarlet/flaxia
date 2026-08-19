@@ -105,7 +105,7 @@ export class ConversationView {
     fileInput.type = 'file';
     fileInput.id = 'conv-file-input';
     fileInput.style.display = 'none';
-    fileInput.accept = '.gif,.jpg,.jpeg,.png,.webp,.mp3,.wav,.ogg,.m4a,.webm,.zip,.swf,.jsdos';
+    fileInput.accept = '.gif,.jpg,.jpeg,.png,.webp,.mp3,.wav,.ogg,.m4a,.webm,.zip,.swf';
     fileInput.addEventListener('change', (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (file) this.handleFileSelection(file);

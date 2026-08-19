@@ -551,7 +551,7 @@ export class ReplyComposer {
     this.previewHandle?.destroy();
     fileName.textContent = `${file.name} (${this.formatFileSize(file.size)})`;
     preview.style.display = 'block';
-    this.previewHandle = renderFilePreview(file, preview, () => null);
+    this.previewHandle = renderFilePreview(file, preview);
   }
 
   private hideFilePreview(): void {

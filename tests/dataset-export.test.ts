@@ -50,7 +50,7 @@ describe('dataset-export', () => {
         did_skip: 0,
         is_fullscreen: 1,
         swipe_velocity: 0.1,
-        game_type: 'dos',
+        game_type: 'zip',
         created_at: '2026-08-03T04:06:00.000Z',
       },
     ];

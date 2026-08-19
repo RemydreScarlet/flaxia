@@ -127,14 +127,12 @@ describe('validateZipLegacy', () => {
     await assert.rejects(() => validateZipLegacy(zipData), /File type not allowed/);
   });
 
-  it('accepts zip with DOS executable files', async () => {
+  it('rejects zip with .exe files', async () => {
     const zipData = await createZip({
       'index.html': '<html></html>',
       'game.exe': new Uint8Array([0x4d, 0x5a, 0x90]),
-      'setup.bat': '@echo off',
-      'config.conf': 'setting=1',
     });
-    await assert.doesNotReject(() => validateZipLegacy(zipData));
+    await assert.rejects(() => validateZipLegacy(zipData), /File type not allowed/);
   });
 
   it('accepts zip with directories alongside valid files', async () => {

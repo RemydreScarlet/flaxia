@@ -36,12 +36,8 @@ describe('ALLOWED_EXTENSIONS map', () => {
     assert.equal(ALLOWED_EXTENSIONS['.mov'], 'video/quicktime');
   });
 
-  it('includes DOS/support extensions', () => {
-    assert.equal(ALLOWED_EXTENSIONS['.exe'], 'application/x-msdos-program');
-    assert.equal(ALLOWED_EXTENSIONS['.com'], 'application/x-msdos-program');
-    assert.equal(ALLOWED_EXTENSIONS['.bat'], 'text/plain');
+  it('includes support extensions', () => {
     assert.equal(ALLOWED_EXTENSIONS['.zip'], 'application/zip');
-    assert.equal(ALLOWED_EXTENSIONS['.jsdos'], 'application/zip');
   });
 });
 
@@ -94,12 +90,8 @@ describe('isExtensionAllowed', () => {
     assert.ok(isExtensionAllowed('game.unityweb'));
   });
 
-  it('returns true for DOS/executable files', () => {
-    assert.ok(isExtensionAllowed('game.exe'));
-    assert.ok(isExtensionAllowed('command.com'));
-    assert.ok(isExtensionAllowed('setup.bat'));
-    assert.ok(isExtensionAllowed('disk.img'));
-    assert.ok(isExtensionAllowed('cd.iso'));
+  it('returns false for .exe files', () => {
+    assert.ok(!isExtensionAllowed('game.exe'));
   });
 
   it('returns false for .php files', () => {
@@ -226,10 +218,10 @@ describe('validateFileType', () => {
     assert.equal(result.mimeType, 'text/plain');
   });
 
-  it('returns allowed=true for .exe DOS programs', () => {
+  it('returns allowed=false for .exe programs', () => {
     const result = validateFileType('game.exe');
-    assert.ok(result.allowed);
-    assert.equal(result.mimeType, 'application/x-msdos-program');
+    assert.ok(!result.allowed);
+    assert.equal(result.mimeType, 'text/plain');
   });
 
   it('returns allowed=false for files without extension', () => {

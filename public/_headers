@@ -9,9 +9,6 @@
 /assets/*.js
   Content-Type: application/javascript
 
-/js-dos/*
-  Access-Control-Allow-Origin: *
-
 # Ad network MIME type fixes
 /AdServer/js/*.js
   Content-Type: application/javascript

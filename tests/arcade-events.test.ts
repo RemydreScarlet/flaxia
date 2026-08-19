@@ -74,7 +74,7 @@ describe('POST /api/games/events', () => {
             didSkip: 0,
             isFullscreen: 0,
             position: 1,
-            gameType: 'dos',
+            gameType: 'zip',
           },
         ],
       }),

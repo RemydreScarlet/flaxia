@@ -212,7 +212,7 @@ export class ArcadeCaptureClient {
   }
 
   private handleMessage(event: MessageEvent): void {
-    // Source check is the reliable guard for opaque-origin (DOS) iframes.
+    // Source check is the reliable guard for opaque-origin iframes.
     if (event.source !== this.iframe.contentWindow) return;
 
     const data = event.data;

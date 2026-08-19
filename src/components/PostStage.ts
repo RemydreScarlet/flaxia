@@ -2,7 +2,6 @@ import { t } from '../lib/i18n.js';
 import { executeZipAuto } from '../lib/zip-manager.js';
 import { PostCardMode, PostStageProps } from '../types/post.js';
 import { createAudioPlayer } from './AudioPlayer.js';
-import { executeDos } from './DosPlayer.js';
 import { executeFlash } from './FlashPlayer.js';
 import { createImagePreview } from './ImagePreview.js';
 import { createVideoPlayer } from './VideoPlayer.js';
@@ -159,7 +158,7 @@ function createThumbnailWithOverlay(props: {
   const container = document.createElement('div');
   container.className = 'thumbnail-overlay-container';
 
-  // The parent .post-stage--flash/--zip/--dos already establishes the aspect ratio
+  // The parent .post-stage--flash/--zip already establishes the aspect ratio
   // via padding-bottom, so we use absolute positioning to fill it instead of
   // adding another padding-bottom (which would double the height).
   container.style.cssText = `
@@ -282,7 +281,7 @@ export function createPostStage(props: PostStageProps): HTMLElement {
   container.className = 'post-stage';
 
   // Click handler to toggle between preview and execution modes
-  // Only for post types that have execution modes (ZIP/SWF/DOS)
+  // Only for post types that have execution modes (ZIP/SWF)
   container.addEventListener('click', (e) => {
     // Don't toggle mode if clicking on execution button (ZIP or SWF)
     if ((e.target as HTMLElement).closest('.zip-execution-button')) {
@@ -318,28 +317,7 @@ async function updateStageContent(container: HTMLElement, props: PostStageProps)
   if (props.mode === PostCardMode.PREVIEW) {
     let mediaElement: HTMLElement = null!;
 
-    // Check if it's a DOS ZIP file (payload_key starting with 'dos/')
-    if (props.post.payload_key && props.post.payload_key.startsWith('dos/')) {
-      // ... (existing DOS logic)
-      if (props.post.thumbnail_key) {
-        mediaElement = createThumbnailWithOverlay({
-          postId: props.post.id,
-          thumbnailKey: props.post.thumbnail_key,
-          overlayLabel: t('post_stage.play_dos'),
-          aspectRatio: '75',
-          onClick: () => props.onModeChange(PostCardMode.EXECUTING),
-        });
-        container.classList.add('post-stage--dos');
-      } else {
-        mediaElement = createSwfExecutionButton({
-          postId: props.post.id,
-          label: t('post_stage.click_play_dos'),
-          icon: '💾',
-          onClick: () => props.onModeChange(PostCardMode.EXECUTING),
-        });
-        container.classList.add('post-stage--dos');
-      }
-    } else if (
+    if (
       props.post.payload_key &&
       (props.post.payload_key.startsWith('zip/') || props.post.payload_key.startsWith('html/'))
     ) {
@@ -419,7 +397,6 @@ async function updateStageContent(container: HTMLElement, props: PostStageProps)
     if (
       !props.post.payload_key?.startsWith('zip/') &&
       !props.post.payload_key?.startsWith('html/') &&
-      !props.post.payload_key?.startsWith('dos/') &&
       !props.post.swf_key?.startsWith('swf/') &&
       !props.post.gif_key
     ) {
@@ -429,16 +406,7 @@ async function updateStageContent(container: HTMLElement, props: PostStageProps)
       container.appendChild(hint);
     }
   } else {
-    // For DOS ZIP files, use the DOS player
-    if (props.post.payload_key && props.post.payload_key.startsWith('dos/')) {
-      executeDos(props.post.id, container).catch((error: Error) => {
-        console.error('Failed to execute DOS:', error);
-        container.innerHTML =
-          '<div style="padding: 20px; text-align: center; color: var(--text-muted);">' +
-          t('post_stage.dos_load_error') +
-          '</div>';
-      });
-    } else if (
+    if (
       props.post.payload_key &&
       (props.post.payload_key.startsWith('zip/') || props.post.payload_key.startsWith('html/'))
     ) {

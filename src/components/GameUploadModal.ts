@@ -2,7 +2,6 @@ import { getMimeType } from '../lib/file-extensions.js';
 import { t } from '../lib/i18n.js';
 import { registerModal } from '../lib/modal-state.js';
 import { showToast } from '../lib/toast.js';
-import { detectZipType } from '../lib/zip-type.js';
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
 const MAX_THUMBNAIL_SIZE = 1024 * 1024;
@@ -26,7 +25,6 @@ export class GameUploadModal {
   private thumbnailArea!: HTMLElement;
   private selectedFile: File | null = null;
   private selectedThumbnail: File | null = null;
-  private zipType: 'html5' | 'dos' | null = null;
   private isSubmitting = false;
 
   constructor(props: GameUploadModalProps) {
@@ -284,29 +282,13 @@ export class GameUploadModal {
     }
 
     this.selectedFile = file;
-    this.zipType = null;
-
-    // Detect type: .zip is auto-detected (HTML5 if index.html, DOS if an
-    // executable is present), .html/.htm are always HTML5
-    if (ext === 'html' || ext === 'htm') {
-      this.zipType = 'html5';
-      this.renderFileLabel();
-    } else {
-      void detectZipType(file).then((type) => {
-        this.zipType = type;
-        this.renderFileLabel();
-        this.updateSubmitButton();
-      });
-    }
-
-    this.fileInput.value = '';
     this.renderFileLabel();
     this.updateSubmitButton();
   }
 
   private renderFileLabel(): void {
     if (!this.selectedFile) return;
-    const typeLabel = this.zipType === 'dos' ? ' (DOS)' : this.zipType === 'html5' ? ' (HTML5)' : '';
+    const typeLabel = this.selectedFile.name.toLowerCase().endsWith('.zip') ? ' (HTML5)' : '';
     this.fileLabel.innerHTML = `<span style="font-size: 2rem; line-height: 1;">📦</span>`;
     const name = document.createElement('div');
     name.style.cssText = 'font-weight: 600; color: var(--text-primary); font-size: 0.9rem; word-break: break-all;';
@@ -398,7 +380,6 @@ export class GameUploadModal {
         body: JSON.stringify({
           filename: file.name,
           contentType: file.type || getMimeType(file.name),
-          payloadType: this.zipType === 'dos' ? 'dos' : undefined,
         }),
       });
       if (!response.ok) {

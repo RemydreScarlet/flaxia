@@ -76,7 +76,6 @@ function toRelatedGame(row: RawPost): RelatedGame {
 
 function detectGameType(post: PostRow): string {
   if (post.swf_key) return 'flash';
-  if (post.payload_key?.startsWith('dos/')) return 'dos';
   if (post.payload_key) return 'zip';
   return 'html5';
 }
@@ -158,7 +157,7 @@ export async function onRequest(context: {
     const post = toPost(mainRow);
     const title = buildGameTitle(post.text);
     const gameType = detectGameType(post);
-    const typeLabels: Record<string, string> = { flash: 'Flash', dos: 'DOS', zip: 'ZIP', html5: 'HTML5' };
+    const typeLabels: Record<string, string> = { flash: 'Flash', zip: 'ZIP', html5: 'HTML5' };
     const typeLabel = typeLabels[gameType] || 'Game';
     const authorName = post.display_name || post.username;
 
@@ -195,12 +194,7 @@ export async function onRequest(context: {
         .all<RawPost>();
       sameAuthorGames = (authorRows.results || []).map(toRelatedGame);
 
-      const typeCondition =
-        gameType === 'dos'
-          ? "p.payload_key LIKE 'dos/%'"
-          : gameType === 'flash'
-            ? 'p.swf_key IS NOT NULL'
-            : "p.payload_key IS NOT NULL AND p.payload_key NOT LIKE 'dos/%'";
+      const typeCondition = gameType === 'flash' ? 'p.swf_key IS NOT NULL' : 'p.payload_key IS NOT NULL';
 
       const typeRows = await env.DB.prepare(`
         SELECT p.id, p.username, u.display_name, p.text

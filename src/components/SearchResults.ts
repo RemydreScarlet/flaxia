@@ -231,7 +231,7 @@ export function createSearchResults(props: SearchResultsProps): HTMLElement {
         const badge = document.createElement('span');
         badge.style.cssText =
           'margin-left: 0.5rem; padding: 0.1rem 0.4rem; background: var(--accent); color: white; border-radius: 4px; font-size: 0.7rem; vertical-align: middle;';
-        badge.textContent = post.payload_key?.startsWith('dos/') ? t('search.media_dos') : t('search.media_game');
+        badge.textContent = t('search.media_game');
         postHeader.appendChild(badge);
       }
 

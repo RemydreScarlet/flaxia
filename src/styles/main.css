@@ -1123,8 +1123,7 @@ h1 {
   overflow: hidden;
 }
 
-.post-stage--flash,
-.post-stage--dos {
+.post-stage--flash {
   padding-bottom: 75%; /* 4:3 aspect ratio */
 }
 

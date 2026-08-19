@@ -4,7 +4,6 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { nanoid } from 'nanoid';
 import { isAdmin } from '../../src/lib/admin';
-import { CAPTURE_BRIDGE_IIFE } from '../../src/lib/capture-bridge.generated';
 import { copyHtmlToWvfs, extractFileFromZip, extractZipToR2 } from '../../src/lib/wvfs-zip-server';
 import type { ReportCategory } from '../../src/types/post';
 import { deleteAccount } from '../lib/account-deletion';
@@ -931,174 +930,7 @@ app.get('/api/video/*', async (c) => {
   }
 });
 
-// GET /api/dos-player/:postId - serve DOS player iframe HTML
-app.get('/api/dos-player/:postId', async (c) => {
-  try {
-    const postId = c.req.param('postId');
-    const loadFailed = c.req.query('load_failed') || 'Failed to load game';
-    const origin = new URL(c.req.url).origin;
-    let zipUrl = c.req.query('zip_url') || `${origin}/api/zip/${postId}`;
-    // Validate zip_url to prevent reflected XSS
-    try {
-      const parsed = new URL(zipUrl);
-      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-        zipUrl = `${origin}/api/zip/${postId}`;
-      }
-    } catch {
-      zipUrl = `${origin}/api/zip/${postId}`;
-    }
-    // Escape loadFailed for safe injection
-    const escapedLoadFailed = loadFailed.replace(/[&<>"']/g, (c: string) => {
-      const m: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
-      return m[c] || c;
-    });
-
-    const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>DOS Game</title>
-  <link rel="stylesheet" href="${origin}/js-dos/js-dos.css?v=1">
-  <style>
-    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
-    #dos-container { width: 100%; height: 100%; }
-    #dos-container canvas { display: block; margin: 0 auto; }
-    .error-overlay {
-      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-      display: flex; align-items: center; justify-content: center;
-      background: #000; color: #fff; font-family: monospace; padding: 20px; text-align: center;
-    }
-  </style>
-</head>
-<body>
-  <div id="dos-container"></div>
-  <div id="error-overlay" class="error-overlay" style="display:none;"></div>
-  <script>${CAPTURE_BRIDGE_IIFE}</script>
-  <script>
-    var zipUrl = '${zipUrl}';
-    var loadFailedMsg = '${escapedLoadFailed}';
-    var loadAttempts = 0;
-
-    function showError(msg) {
-      var overlay = document.getElementById('error-overlay');
-      if (overlay) {
-        overlay.style.display = 'flex';
-        overlay.textContent = msg;
-      }
-    }
-
-    function checkSupport() {
-      var issues = [];
-      if (typeof WebAssembly === 'undefined') {
-        issues.push('WebAssembly not available');
-      }
-      try {
-        var canvas = document.createElement('canvas');
-        var gl = canvas.getContext('webgl') || canvas.getContext('webgl2');
-        if (!gl) {
-          issues.push('WebGL not available');
-        }
-      } catch (e) {
-        issues.push('WebGL check failed: ' + e.message);
-      }
-      if (issues.length) {
-        showError(loadFailedMsg + ' (' + issues.join('; ') + ')');
-        console.error('DOS support check failed:', issues);
-        return false;
-      }
-      return true;
-    }
-
-    function loadJsdos() {
-      return new Promise(function (resolve, reject) {
-        var src;
-        if (loadAttempts === 0) {
-          src = '${origin}/js-dos/js-dos.js?v=' + Date.now();
-        } else if (loadAttempts === 1) {
-          src = 'https://v8.js-dos.com/latest/js-dos.js';
-        } else {
-          reject(new Error('All js-dos sources failed'));
-          return;
-        }
-        loadAttempts++;
-        console.log('DOS: fetching', src);
-        fetch(src).then(function (r) {
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          return r.text();
-        }).then(function (code) {
-          try {
-            (new Function(code))();
-            if (typeof window.Dos !== 'undefined') {
-              console.log('DOS: loaded from', src);
-              resolve();
-            } else {
-              console.warn('DOS: loaded but Dos undefined from', src);
-              loadJsdos().then(resolve).catch(reject);
-            }
-          } catch (e) {
-            console.warn('DOS: eval error from', src, e);
-            loadJsdos().then(resolve).catch(reject);
-          }
-        }).catch(function (e) {
-          console.error('DOS: fetch failed from', src, e);
-          loadJsdos().then(resolve).catch(reject);
-        });
-      });
-    }
-
-    async function init() {
-      var container = document.getElementById('dos-container');
-      var errorOverlay = document.getElementById('error-overlay');
-      var diagnostics = [];
-
-      if (!checkSupport()) return;
-
-      diagnostics.push('SAB=' + (typeof SharedArrayBuffer !== 'undefined'));
-      diagnostics.push('isolated=' + window.crossOriginIsolated);
-      diagnostics.push('ua=' + navigator.userAgent.substring(0, 80));
-      console.log('DOS: init ' + diagnostics.join(' | '));
-
-      try {
-        console.log('DOS: loading js-dos...');
-        await loadJsdos();
-        console.log('DOS: js-dos loaded, initializing Dos()...');
-        await Dos(container, {
-          url: zipUrl,
-          autolock: true,
-          workerThread: false,
-          pathPrefix: '${origin}/js-dos/emulators/'
-        });
-        console.log('DOS: Dos() initialized successfully');
-      } catch (err) {
-        console.error('DOS Player error:', err);
-        errorOverlay.style.display = 'flex';
-        errorOverlay.textContent = loadFailedMsg + ' (' + (err instanceof Error ? err.message : String(err)) + ')';
-      }
-    }
-
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', init);
-    } else {
-      init();
-    }
-  </script>
-</body>
-</html>`;
-
-    return new Response(html, {
-      headers: {
-        'Content-Type': 'text/html; charset=utf-8',
-        'Cache-Control': 'no-cache',
-        'Cross-Origin-Embedder-Policy': 'credentialless',
-      },
-    });
-  } catch (error: unknown) {
-    console.error('DOS player error:', error);
-    return c.json({ error: 'Failed to serve DOS player' }, 500);
-  }
-});
-
-// GET /api/zip/:postId - serve ZIP files from R2 (supports zip/, dos/, and dm/ prefixes)
+// GET /api/zip/:postId - serve ZIP files from R2 (supports zip/ and dm/ prefixes)
 app.get('/api/zip/:postId', async (c) => {
   try {
     const postId = c.req.param('postId');
@@ -1111,14 +943,7 @@ app.get('/api/zip/:postId', async (c) => {
       return c.json({ error: 'Storage not available' }, 500);
     }
 
-    // Try HTML5 ZIP key first, then DOS ZIP key, then JSDOS key, then DM variants
-    const keysToTry = [
-      `zip/${postId}.zip`,
-      `dos/${postId}.zip`,
-      `jsdos/${postId}.jsdos`,
-      `dm/zip/${postId}.zip`,
-      `dm/dos/${postId}.zip`,
-    ];
+    const keysToTry = [`zip/${postId}.zip`, `dm/zip/${postId}.zip`];
     let object = null;
 
     for (const zipKey of keysToTry) {
@@ -1843,9 +1668,7 @@ app.get('/api/games', async (c) => {
           .map((id) => {
             const row = gameMap.get(id);
             if (!row) return null;
-            let type: string;
-            if (row.payload_key && row.payload_key.startsWith('dos/')) type = 'dos';
-            else type = 'zip';
+            const type = 'zip';
             const game: Record<string, unknown> = {
               id: row.postId,
               postId: row.postId,
@@ -2087,9 +1910,7 @@ app.get('/api/games', async (c) => {
       }
 
       const games = page.map(({ row }) => {
-        let type: string;
-        if (row.payload_key && row.payload_key.startsWith('dos/')) type = 'dos';
-        else type = 'zip';
+        const type = 'zip';
         return {
           id: row.postId,
           postId: row.postId,
@@ -2197,12 +2018,7 @@ app.get('/api/games', async (c) => {
     }
 
     const games = (results || []).map((row) => {
-      let type: string;
-      if (row.payload_key && row.payload_key.startsWith('dos/')) {
-        type = 'dos';
-      } else {
-        type = 'zip';
-      }
+      const type = 'zip';
       return {
         id: row.postId,
         postId: row.postId,
@@ -6670,7 +6486,7 @@ app.post('/api/posts/:id/prepare-attachment', requireAuth, async (c) => {
     const user = c.get('user');
     if (!user) return c.json({ error: 'Unauthorized' }, 401);
     const postId = c.req.param('id');
-    const { filename, payloadType } = await c.req.json();
+    const { filename } = await c.req.json();
 
     if (!filename) return c.json({ error: 'Missing filename' }, 400);
 
@@ -6693,9 +6509,8 @@ app.post('/api/posts/:id/prepare-attachment', requireAuth, async (c) => {
     if (name.endsWith('.swf') || ext === 'swf') {
       storageKey = `swf/${postId}.swf`;
       keyType = 'swf';
-    } else if (name.endsWith('.zip') || name.endsWith('.jsdos') || name.endsWith('.dosz')) {
-      const isDos = payloadType === 'dos' || name.endsWith('.jsdos');
-      storageKey = isDos ? `dos/${postId}.zip` : `zip/${postId}.zip`;
+    } else if (name.endsWith('.zip')) {
+      storageKey = `zip/${postId}.zip`;
       keyType = 'payload';
     } else if (name.endsWith('.html') || name.endsWith('.htm')) {
       storageKey = `html/${postId}.html`;
@@ -6741,7 +6556,7 @@ app.post('/api/posts/:id/prepare-attachment', requireAuth, async (c) => {
 // Step 1 — POST /api/posts/prepare (protected)
 app.post('/api/posts/prepare', requireAuth, async (c) => {
   try {
-    const { filename, payloadType } = await c.req.json();
+    const { filename } = await c.req.json();
 
     if (!filename) {
       return c.json({ error: 'Missing filename' }, 400);
@@ -6761,10 +6576,9 @@ app.post('/api/posts/prepare', requireAuth, async (c) => {
       keyColumn = 'swf_key';
       responseType = 'swf';
     }
-    // ZIP/JSDOS/DOS files
-    else if (name.endsWith('.zip') || name.endsWith('.jsdos') || name.endsWith('.dosz')) {
-      const isDos = payloadType === 'dos' || name.endsWith('.jsdos');
-      storageKey = isDos ? `dos/${postId}.zip` : `zip/${postId}.zip`;
+    // ZIP files
+    else if (name.endsWith('.zip')) {
+      storageKey = `zip/${postId}.zip`;
       keyColumn = 'payload_key';
       responseType = 'zip';
     }
@@ -7196,7 +7010,7 @@ app.post('/api/posts/commit', requireAuth, async (c) => {
     }
 
     // Extract game description from ZIP
-    if (payloadKey && (payloadKey.endsWith('.zip') || payloadKey.endsWith('.jsdos'))) {
+    if (payloadKey && payloadKey.endsWith('.zip')) {
       await extractGameDescription(c.env.BUCKET, c.env.DB, payloadKey!, postId!);
     }
 
@@ -7237,7 +7051,7 @@ app.post('/api/posts/commit', requireAuth, async (c) => {
     );
 
     // Pre-extract ZIP to R2 for WVFS persistent caching
-    if (payloadKey && (payloadKey.endsWith('.zip') || payloadKey.endsWith('.jsdos'))) {
+    if (payloadKey && payloadKey.endsWith('.zip')) {
       const execCtx = (c as any).executionCtx;
       if (execCtx?.waitUntil) {
         execCtx.waitUntil(
@@ -10015,7 +9829,7 @@ app.post('/api/admin/backfill-game-descriptions', requireAuth, requireAdmin, asy
       SELECT id, payload_key
       FROM posts
       WHERE payload_key IS NOT NULL
-        AND (payload_key LIKE '%.zip' OR payload_key LIKE '%.jsdos')
+        AND (payload_key LIKE '%.zip')
         AND (game_description IS NULL OR game_description = '')
       ORDER BY created_at DESC
       LIMIT ?
@@ -10689,7 +10503,7 @@ app.post('/api/dm/conversations/:id/messages/prepare', requireAuth, async (c) =>
     if (name.endsWith('.swf') || ext === 'swf') {
       storageKey = `dm/swf/${msgId}.swf`;
       responseType = 'swf';
-    } else if (name.endsWith('.zip') || name.endsWith('.jsdos') || name.endsWith('.dosz')) {
+    } else if (name.endsWith('.zip')) {
       storageKey = `dm/zip/${msgId}.zip`;
       responseType = 'zip';
     } else if (name.endsWith('.html') || name.endsWith('.htm')) {
@@ -11527,7 +11341,7 @@ app.post('/api/groups/:id/messages/prepare', requireAuth, async (c) => {
     if (name.endsWith('.swf') || ext === 'swf') {
       storageKey = `group/swf/${msgId}.swf`;
       responseType = 'swf';
-    } else if (name.endsWith('.zip') || name.endsWith('.jsdos') || name.endsWith('.dosz')) {
+    } else if (name.endsWith('.zip')) {
       storageKey = `group/zip/${msgId}.zip`;
       responseType = 'zip';
     } else if (name.endsWith('.html') || name.endsWith('.htm')) {
@@ -11898,12 +11712,7 @@ app.get('/api/current-topic', async (c) => {
       reply_count: result.reply_count,
       impressions: result.impressions,
       created_at: result.created_at,
-      type: result.swf_key
-        ? 'flash'
-        : typeof (result as Record<string, unknown>).payload_key === 'string' &&
-            ((result as Record<string, unknown>).payload_key as string).startsWith('dos/')
-          ? 'dos'
-          : 'html',
+      type: result.swf_key ? 'flash' : 'html',
     };
 
     return c.json(topicPost);

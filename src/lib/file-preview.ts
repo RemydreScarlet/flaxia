@@ -1,9 +1,7 @@
 import { createAudioPlayer } from '../components/AudioPlayer.js';
-import { executeDos } from '../components/DosPlayer.js';
 import { executeFlash } from '../components/FlashPlayer.js';
 import { createVideoPlayer } from '../components/VideoPlayer.js';
 import { t } from './i18n.js';
-import { detectZipType } from './zip-type.js';
 
 export type AttachPreviewKind = 'image' | 'audio' | 'video' | 'game';
 
@@ -57,7 +55,7 @@ export function detectAttachKind(file: File): AttachPreviewKind | null {
   if (name.endsWith('.webm') || name.endsWith('.mp4') || name.endsWith('.mov')) {
     return 'video';
   }
-  if (name.endsWith('.zip') || name.endsWith('.jsdos') || name.endsWith('.swf')) {
+  if (name.endsWith('.zip') || name.endsWith('.swf')) {
     return 'game';
   }
   return null;
@@ -66,14 +64,10 @@ export function detectAttachKind(file: File): AttachPreviewKind | null {
 /**
  * Renders an inline preview of a selected attachment inside the composer's
  * file preview area. Images, audio and video are shown as compact inline
- * media; games (.zip / .jsdos / .swf) render as a chip with a play button that
- * executes the game once clicked.
+ * media; games (.zip / .swf) render as a chip with a play button that executes
+ * the game once clicked.
  */
-export function renderFilePreview(
-  file: File,
-  previewContainer: HTMLElement,
-  getZipType: () => 'html5' | 'dos' | null,
-): AttachPreviewHandle {
+export function renderFilePreview(file: File, previewContainer: HTMLElement): AttachPreviewHandle {
   const kind = detectAttachKind(file);
 
   const body = document.createElement('div');
@@ -133,15 +127,7 @@ export function renderFilePreview(
         })();
         return;
       }
-      let type = getZipType();
-      if (!type && ext === 'zip') {
-        void detectZipType(file).then(async (detected) => {
-          type = detected;
-          await runGame(file, type, ext, gameStage, (h) => (gameHandle = h));
-        });
-        return;
-      }
-      void runGame(file, type, ext, gameStage, (h) => (gameHandle = h));
+      void runGame(file, gameStage, (h) => (gameHandle = h));
     });
 
     const chipIcon = document.createElement('span');
@@ -181,18 +167,12 @@ export function renderFilePreview(
 
 async function runGame(
   file: File,
-  type: 'html5' | 'dos' | null,
-  ext: string,
   gameStage: HTMLElement,
   storeHandle: (h: { destroy: () => void }) => void,
 ): Promise<void> {
   const url = URL.createObjectURL(file);
   try {
-    if (type === 'dos' || ext === 'jsdos') {
-      storeHandle(await executeDos('preview', gameStage, url, true));
-    } else {
-      storeHandle(await executeZipPreview(file, gameStage, url));
-    }
+    storeHandle(await executeZipPreview(file, gameStage, url));
   } catch (error) {
     console.error('Failed to preview game:', error);
     showGameError(gameStage, error);

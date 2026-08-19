@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { defineConfig } from 'vite';
 import { docsManifestPlugin } from './vite-docs-manifest';
@@ -80,32 +80,8 @@ export default defineConfig({
       },
     },
     {
-      name: 'copy-jsdos',
+      name: 'copy-crowd-assets',
       writeBundle() {
-        function copyDirectory(src: string, dest: string) {
-          if (!existsSync(dest)) {
-            mkdirSync(dest, { recursive: true });
-          }
-          const entries = readdirSync(src, { withFileTypes: true });
-          for (const entry of entries) {
-            const srcPath = join(src, entry.name);
-            const destPath = join(dest, entry.name);
-            if (entry.isDirectory()) {
-              copyDirectory(srcPath, destPath);
-            } else {
-              copyFileSync(srcPath, destPath);
-            }
-          }
-        }
-
-        const jsdosSrc = 'node_modules/js-dos/dist';
-        const jsdosDest = 'dist/js-dos';
-        if (existsSync(jsdosSrc)) {
-          console.log('Copying js-dos files to dist...');
-          copyDirectory(jsdosSrc, jsdosDest);
-          console.log('js-dos files copied successfully!');
-        }
-
         const crowdSrc = 'node_modules/@flaxia/node/dist/assets';
         const crowdDest = 'dist/assets';
         if (existsSync(crowdSrc)) {

@@ -865,7 +865,6 @@ export class PostCard {
     const isExecutable =
       (!!quoted.payload_key && quoted.payload_key.startsWith('zip/')) ||
       (!!quoted.payload_key && quoted.payload_key.startsWith('html/')) ||
-      (!!quoted.payload_key && quoted.payload_key.startsWith('dos/')) ||
       (!!quoted.swf_key && quoted.swf_key.startsWith('swf/'));
 
     if (quoted.thumbnail_key) {
@@ -893,8 +892,7 @@ export class PostCard {
           font-weight: 600;
           pointer-events: none;
         `;
-        if (quoted.payload_key?.startsWith('dos/')) badge.textContent = t('post_stage.play_dos');
-        else if (quoted.swf_key?.startsWith('swf/')) badge.textContent = t('post_stage.play_flash');
+        if (quoted.swf_key?.startsWith('swf/')) badge.textContent = t('post_stage.play_flash');
         else badge.textContent = t('post_stage.run_zip');
         wrap.appendChild(badge);
       }
@@ -912,8 +910,7 @@ export class PostCard {
         font-weight: 600;
         text-align: center;
       `;
-      if (quoted.payload_key?.startsWith('dos/')) pill.textContent = t('post_stage.click_play_dos');
-      else if (quoted.swf_key?.startsWith('swf/')) pill.textContent = t('post_stage.click_play_flash');
+      if (quoted.swf_key?.startsWith('swf/')) pill.textContent = t('post_stage.click_play_flash');
       else pill.textContent = t('post_stage.click_to_run');
       wrap.appendChild(pill);
       return wrap;
@@ -2173,7 +2170,7 @@ export class PostCard {
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
     fileInput.style.display = 'none';
-    fileInput.accept = '.gif,.png,.jpg,.jpeg,.swf,.zip,.jsdos,.mp3,.wav,.ogg,.m4a,.webm,.mp4,.mov';
+    fileInput.accept = '.gif,.png,.jpg,.jpeg,.swf,.zip,.mp3,.wav,.ogg,.m4a,.webm,.mp4,.mov';
     attachmentSection.appendChild(fileInput);
 
     const changeBtn = document.createElement('button');

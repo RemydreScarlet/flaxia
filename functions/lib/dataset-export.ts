@@ -137,7 +137,7 @@ including quick skips as negative feedback.
 - \`user_id\` — salted SHA-256 of the user id (consistent within a salt epoch)
 - \`session_id\` — salted SHA-256 of the browsing session id
 - \`post_id\` — salted SHA-256 of the game post id (consistent across users)
-- \`game_type\` — zip | dos | html5
+- \`game_type\` — zip | html5
 - \`position\` — index within the session feed
 - \`event_type\` — view | fresh | reply | fullscreen | share
 - \`dwell_ms\` — time the game was shown

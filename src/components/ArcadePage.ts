@@ -9,7 +9,6 @@ import { showToast } from '../lib/toast.js';
 import { executeWvfsZip } from '../lib/wvfs-zip-client.js';
 import type { ArcadePageProps, Game, GameType } from '../types/game.js';
 import type { Post } from '../types/post.js';
-import { executeDos } from './DosPlayer.js';
 import { GameUploadModal } from './GameUploadModal.js';
 import { createPostCard } from './PostCard.js';
 import { createReplyComposer, ReplyComposer } from './ReplyComposer.js';
@@ -146,7 +145,7 @@ export class ArcadePage {
     }
 
     // Preconnect to emulator CDNs and sandbox
-    const preconnects = ['https://unpkg.com', 'https://v8.js-dos.com', 'https://sandbox.flaxia.app'];
+    const preconnects = ['https://unpkg.com', 'https://sandbox.flaxia.app'];
     for (const href of preconnects) {
       const link = document.createElement('link');
       link.rel = 'preconnect';
@@ -1758,8 +1757,6 @@ export class ArcadePage {
     switch (type) {
       case 'zip':
         return t('arcade.loading_zip');
-      case 'dos':
-        return t('arcade.loading_dos');
       case 'html5':
         return t('arcade.loading_html5');
     }
@@ -1821,9 +1818,6 @@ export class ArcadePage {
         // Use WVFS for ZIP execution
         const handle = await executeWvfsZip(game.postId, container, undefined, true, false);
         this.currentGameHandle = handle;
-      } else if (game.type === 'dos' && game.payloadKey) {
-        const handle = await executeDos(game.postId, container, `/api/zip/${game.postId}`, true);
-        this.currentGameHandle = handle;
       } else if (game.type === 'html5') {
         // HTML5 games would use iframe
         const iframe = document.createElement('iframe');
@@ -1869,10 +1863,8 @@ export class ArcadePage {
     const iframe = container.querySelector<HTMLIFrameElement>('iframe');
     if (!iframe) return;
 
-    // DOS iframes run with a sandbox without allow-same-origin, so their
-    // origin is opaque ('null'); only '*' can be used as the target origin.
     const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://sandbox.flaxia.app';
-    const targetOrigin = game.type === 'dos' ? '*' : sandboxOrigin;
+    const targetOrigin = sandboxOrigin;
 
     const client = new ArcadeCaptureClient({
       iframe,
@@ -1890,7 +1882,7 @@ export class ArcadePage {
     });
     this.captureClient = client;
 
-    // executeWvfsZip/executeDos wait for the iframe's load event, so by the
+    // executeWvfsZip waits for the iframe's load event, so by the
     // time we get here the frame is usually already loaded. contentDocument is
     // always null for the cross-origin sandbox, so a `load`-only init would
     // never fire. Send immediately, and keep a load listener as a fallback
@@ -2004,14 +1996,7 @@ export class ArcadePage {
     this.preloadedIds.add(game.postId);
 
     try {
-      if (game.type === 'dos') {
-        const url = `/api/zip/${game.postId}`;
-        this.prefetchLink(url);
-        const resp = await fetch(url, { credentials: 'include' });
-        if (resp.ok) {
-          await resp.blob();
-        }
-      } else if (game.type === 'zip') {
+      if (game.type === 'zip') {
         const sandboxOrigin = import.meta.env.VITE_SANDBOX_ORIGIN || 'https://sandbox.flaxia.app';
         this.prefetchLink(`${sandboxOrigin}/api/wvfs-zip/${game.postId}`);
       }

@@ -14,7 +14,6 @@ import { t } from '../lib/i18n.js';
 import { attachIcons, icon } from '../lib/icons.js';
 import { registerModal } from '../lib/modal-state.js';
 import { showToast } from '../lib/toast.js';
-import { detectZipType } from '../lib/zip-type.js';
 import { createAudioPlayer } from './AudioPlayer.js';
 import { createImagePreview } from './ImagePreview.js';
 import { createVideoPlayer } from './VideoPlayer.js';
@@ -29,7 +28,6 @@ export class PostComposer {
   private charCount!: HTMLSpanElement;
   private selectedFile: File | null = null;
   private selectedThumbnail: File | null = null;
-  private zipType: 'html5' | 'dos' | null = null;
   private previewHandle: AttachPreviewHandle | null = null;
   private isSubmitting = false;
   private dragCounter = 0;
@@ -82,7 +80,7 @@ export class PostComposer {
         <div class="composer-divider"></div>
         <div class="composer-footer">
           <div class="composer-actions">
-            <input type="file" class="composer-file-input" accept=".js,.wasm,.html,.gif,.png,.jpg,.jpeg,.mp3,.wav,.ogg,.m4a,.webm,.mp4,.mov,.zip,.swf,.jsdos" />
+            <input type="file" class="composer-file-input" accept=".js,.wasm,.html,.gif,.png,.jpg,.jpeg,.mp3,.wav,.ogg,.m4a,.webm,.mp4,.mov,.zip,.swf" />
             <div class="composer-attach-group">
               <button class="composer-file-button composer-file-button--image" type="button" title="${t('composer.attach_image_video')}">
                 <span class="action-icon" data-icon="image-video"></span>
@@ -331,7 +329,6 @@ export class PostComposer {
     const isExecutable =
       (!!quoted.payload_key && quoted.payload_key.startsWith('zip/')) ||
       (!!quoted.payload_key && quoted.payload_key.startsWith('html/')) ||
-      (!!quoted.payload_key && quoted.payload_key.startsWith('dos/')) ||
       (!!quoted.swf_key && quoted.swf_key.startsWith('swf/'));
 
     if (isExecutable) {
@@ -345,8 +342,7 @@ export class PostComposer {
         font-weight: 600;
         text-align: center;
       `;
-      if (quoted.payload_key?.startsWith('dos/')) pill.textContent = t('post_stage.click_play_dos');
-      else if (quoted.swf_key?.startsWith('swf/')) pill.textContent = t('post_stage.click_play_flash');
+      if (quoted.swf_key?.startsWith('swf/')) pill.textContent = t('post_stage.click_play_flash');
       else pill.textContent = t('post_stage.click_to_run');
       wrap.appendChild(pill);
       return wrap;
@@ -389,7 +385,7 @@ export class PostComposer {
     const accepts: Record<string, string> = {
       '--image': '.gif,.png,.jpg,.jpeg,.webm,.mp4,.mov',
       '--audio': '.mp3,.wav,.ogg,.m4a',
-      '--game': '.zip,.swf,.jsdos,.rsp,.js,.wasm',
+      '--game': '.zip,.swf,.rsp,.js,.wasm',
     };
     fileButtons.forEach((btn) => {
       const btnEl = btn as HTMLElement;
@@ -806,7 +802,6 @@ export class PostComposer {
       'wasm',
       'zip',
       'rsp',
-      'jsdos',
       'mp3',
       'wav',
       'ogg',
@@ -897,7 +892,6 @@ export class PostComposer {
       file.name.toLowerCase().endsWith('.wasm') ||
       file.name.toLowerCase().endsWith('.zip') ||
       file.name.toLowerCase().endsWith('.rsp') ||
-      file.name.toLowerCase().endsWith('.jsdos') ||
       file.name.toLowerCase().endsWith('.mp4') ||
       file.name.toLowerCase().endsWith('.webm') ||
       file.name.toLowerCase().endsWith('.mov');
@@ -920,29 +914,10 @@ export class PostComposer {
     this.selectedFile = file;
     this.showFilePreview(file);
 
-    // Detect ZIP type for DOS vs HTML5
+    // Show thumbnail section for ZIP or SWF files
     const isZip = file.name.toLowerCase().endsWith('.zip');
-    const isJsdos = file.name.toLowerCase().endsWith('.jsdos');
-    if (isZip) {
-      this.zipType = null;
-      detectZipType(file).then((type) => {
-        this.zipType = type;
-        if (type === 'dos') {
-          const fileInfo = this.element.querySelector('.file-name') as HTMLElement;
-          if (fileInfo) fileInfo.textContent = file.name + ' (DOS)';
-        }
-      });
-    } else if (isJsdos) {
-      this.zipType = 'dos';
-      const fileInfo = this.element.querySelector('.file-name') as HTMLElement;
-      if (fileInfo) fileInfo.textContent = file.name + ' (DOS)';
-    } else {
-      this.zipType = null;
-    }
-
-    // Show thumbnail section for ZIP, JSDOS, or SWF files
     const isSwf = file.name.toLowerCase().endsWith('.swf');
-    if (isZip || isJsdos || isSwf) {
+    if (isZip || isSwf) {
       this.showThumbnailSection();
     } else {
       this.hideThumbnailSection();
@@ -953,7 +928,6 @@ export class PostComposer {
 
   private clearFileSelection(): void {
     this.selectedFile = null;
-    this.zipType = null;
     this.fileInput.value = '';
     this.hideFilePreview();
     this.hideThumbnailSection();
@@ -1100,7 +1074,7 @@ export class PostComposer {
     this.previewHandle?.destroy();
     fileName.textContent = `${file.name} (${this.formatFileSize(file.size)})`;
     preview.style.display = 'block';
-    this.previewHandle = renderFilePreview(file, preview, () => this.zipType);
+    this.previewHandle = renderFilePreview(file, preview);
   }
 
   private hideFilePreview(): void {
@@ -1660,7 +1634,6 @@ export class PostComposer {
         body: JSON.stringify({
           filename: file.name,
           contentType: file.type || getMimeType(file.name),
-          payloadType: this.zipType === 'dos' ? 'dos' : undefined,
         }),
       });
 

@@ -45,7 +45,6 @@ function toGame(row: RawGame): GameRow {
 
 function detectGameType(game: GameRow): string {
   if (game.swf_key) return 'flash';
-  if (game.payload_key?.startsWith('dos/')) return 'dos';
   if (game.payload_key) return 'zip';
   return 'html5';
 }
@@ -68,7 +67,6 @@ function renderGameCard(game: GameRow, baseUrl: string): string {
 
   const typeLabels: Record<string, string> = {
     flash: 'Flash',
-    dos: 'DOS',
     zip: 'ZIP',
     html5: 'HTML5',
   };
@@ -139,7 +137,7 @@ export async function onRequest(context: {
         '@type': 'CollectionPage',
         name: 'Flaxia Arcade',
         description:
-          'ゲームやアプリをそのまま投稿できるSNS、Flaxiaのアーケード。DOS、ZIP、HTML5ゲームをブラウザで遊べます。',
+          'ゲームやアプリをそのまま投稿できるSNS、Flaxiaのアーケード。ZIP、HTML5ゲームをブラウザで遊べます。',
         url: canonicalUrl,
         mainEntity: {
           '@type': 'ItemList',
@@ -273,7 +271,7 @@ export async function onRequest(context: {
       renderHtmlShell(content, {
         title: 'Flaxia Arcade - ゲームを遊べるSNS',
         description:
-          'Flaxia Arcadeで、コミュニティが投稿したDOS、ZIP、HTML5ゲームをブラウザで直接遊ぼう。スワイプしてどんどん新しいゲームを発見。',
+          'Flaxia Arcadeで、コミュニティが投稿したZIP、HTML5ゲームをブラウザで直接遊ぼう。スワイプしてどんどん新しいゲームを発見。',
         canonicalUrl,
         image: defaultImage,
         jsonLd,

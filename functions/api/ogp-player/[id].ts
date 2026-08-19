@@ -32,10 +32,6 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       return serveSwfPlayer(postId, baseUrl);
     }
 
-    if (payloadKey.startsWith('dos/')) {
-      return serveDosPlayer(postId, baseUrl);
-    }
-
     if (payloadKey) {
       return serveZipPlayer(postId, sandboxOrigin);
     }
@@ -100,8 +96,4 @@ function serveSwfPlayer(postId: string, baseUrl: string): Response {
       'Cache-Control': 'public, max-age=3600',
     },
   });
-}
-
-function serveDosPlayer(postId: string, baseUrl: string): Response {
-  return Response.redirect(`${baseUrl}/api/dos-player/${postId}`, 302);
 }

@@ -56,7 +56,6 @@ const POST_SELECT = `
 
 function detectGameType(post: PostRow): string {
   if (post.swf_key) return 'flash';
-  if (post.payload_key?.startsWith('dos/')) return 'dos';
   if (post.payload_key) return 'zip';
   return 'html5';
 }
