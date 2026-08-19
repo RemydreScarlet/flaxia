@@ -87,6 +87,34 @@ function createDraftsPanel(composer: PostComposer): { panel: HTMLElement; refres
   updateTitle();
   titleRow.appendChild(title);
 
+  const titleActions = document.createElement('div');
+  titleActions.style.cssText = 'display: flex; align-items: center; gap: 0.25rem;';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = t('composer.save_draft');
+  saveBtn.style.cssText = `
+    background: none;
+    border: none;
+    color: var(--accent);
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-family: inherit;
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    transition: background 0.15s;
+  `;
+  saveBtn.addEventListener('mouseenter', () => {
+    saveBtn.style.background = 'var(--bg-hover, rgba(0,0,0,0.04))';
+  });
+  saveBtn.addEventListener('mouseleave', () => {
+    saveBtn.style.background = 'none';
+  });
+  saveBtn.addEventListener('click', () => {
+    composer.saveDraftPublic();
+    renderItems();
+  });
+  titleActions.appendChild(saveBtn);
+
   const deleteAllBtn = document.createElement('button');
   deleteAllBtn.textContent = t('composer.draft_delete_all');
   deleteAllBtn.style.cssText = `
@@ -168,7 +196,9 @@ function createDraftsPanel(composer: PostComposer): { panel: HTMLElement; refres
       renderItems();
     });
   });
-  titleRow.appendChild(deleteAllBtn);
+  titleActions.appendChild(deleteAllBtn);
+
+  titleRow.appendChild(titleActions);
 
   panel.appendChild(titleRow);
 

@@ -96,7 +96,6 @@ export class PostComposer {
               <span class="action-icon" data-icon="poll"></span>
             </button>
             <span class="composer-char-count">${t('composer.char_count', { current: 0, max: 200 })}</span>
-            <button class="composer-save-draft" type="button" title="${t('composer.save_draft')}"><span class="action-icon" data-icon="save"></span></button>
             <button class="composer-list-drafts" type="button" title="${t('composer.list_drafts')}"><span class="action-icon" data-icon="drafts"></span></button>
           </div>
           <button class="composer-submit" type="button" disabled>
@@ -445,13 +444,6 @@ export class PostComposer {
       this.togglePollSection();
     });
 
-    // Save draft button
-    const saveDraftBtn = this.element.querySelector('.composer-save-draft')!;
-    saveDraftBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.saveExplicitDraft();
-    });
-
     // List drafts button
     const listDraftsBtn = this.element.querySelector('.composer-list-drafts')!;
     listDraftsBtn.addEventListener('click', (e) => {
@@ -470,7 +462,6 @@ export class PostComposer {
       if (
         this.draftsDropdown.style.display === 'block' &&
         !this.draftsDropdown.contains(target) &&
-        !saveDraftBtn.contains(target) &&
         !listDraftsBtn.contains(target)
       ) {
         this.closeDraftsDropdown();
@@ -1334,10 +1325,6 @@ export class PostComposer {
   private renderDraftsDropdown(): void {
     this.loadSavedDrafts();
     this.draftsDropdown.innerHTML = '';
-    if (this.savedDrafts.length === 0) {
-      this.draftsDropdown.innerHTML = `<div style="padding: 1rem; color: var(--text-muted); font-size: 0.85rem; text-align: center;">${t('composer.no_drafts')}</div>`;
-      return;
-    }
 
     const header = document.createElement('div');
     header.style.cssText = `
@@ -1351,6 +1338,33 @@ export class PostComposer {
       font-weight: 600;
     `;
     header.innerHTML = `<span>${t('composer.list_drafts')} (${formatCount(this.savedDrafts.length)})</span>`;
+
+    const headerActions = document.createElement('div');
+    headerActions.style.cssText = 'display: flex; align-items: center; gap: 0.25rem;';
+
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.textContent = t('composer.save_draft');
+    saveBtn.style.cssText = `
+      background: none;
+      border: none;
+      color: var(--accent);
+      cursor: pointer;
+      font-size: 0.75rem;
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+    `;
+    saveBtn.addEventListener('mouseenter', () => {
+      saveBtn.style.background = 'var(--bg-hover)';
+    });
+    saveBtn.addEventListener('mouseleave', () => {
+      saveBtn.style.background = '';
+    });
+    saveBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.saveExplicitDraft();
+    });
+    headerActions.appendChild(saveBtn);
 
     if (this.savedDrafts.length > 1) {
       const deleteAllBtn = document.createElement('button');
@@ -1375,10 +1389,20 @@ export class PostComposer {
         e.stopPropagation();
         this.showDeleteAllConfirmation();
       });
-      header.appendChild(deleteAllBtn);
+      headerActions.appendChild(deleteAllBtn);
     }
 
+    header.appendChild(headerActions);
+
     this.draftsDropdown.appendChild(header);
+
+    if (this.savedDrafts.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'padding: 1rem; color: var(--text-muted); font-size: 0.85rem; text-align: center;';
+      empty.textContent = t('composer.no_drafts');
+      this.draftsDropdown.appendChild(empty);
+      return;
+    }
 
     const list = document.createElement('div');
     list.style.cssText = 'display: flex; flex-direction: column;';
@@ -1801,6 +1825,10 @@ export class PostComposer {
       localStorage.setItem(PostComposer.SAVED_DRAFTS_KEY, JSON.stringify(this.savedDrafts));
     } catch {}
     this.renderDraftsDropdown();
+  }
+
+  public saveDraftPublic(): void {
+    this.saveExplicitDraft();
   }
 
   public deleteAllDraftsPublic(): void {
