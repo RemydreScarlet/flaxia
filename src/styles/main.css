@@ -6182,6 +6182,14 @@ html {
   overflow: hidden;
 }
 
+.channel-list-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 1199;
+  display: none;
+}
+
 .channel-list-top {
   display: flex;
   align-items: center;
@@ -6912,12 +6920,35 @@ html {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  color: var(--text-muted);
+}
+
+.messages-welcome-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-primary);
+  flex-shrink: 0;
+}
+
+.messages-welcome-head-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.messages-welcome-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 12px;
   padding: 32px;
   text-align: center;
-  color: var(--text-muted);
 }
 
 .messages-welcome-icon {
@@ -6962,6 +6993,10 @@ html {
 
   .channel-list--open {
     transform: translateX(0);
+  }
+
+  .channel-list-overlay {
+    display: block;
   }
 
   .channel-list-close {

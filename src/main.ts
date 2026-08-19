@@ -1262,9 +1262,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             cachedContentComponent = { view: 'bookmarks', component: bookmarksPage, scrollY: window.scrollY };
             bookmarksPage = null;
           } else if (currentView === 'messages' && chatChannelList) {
+            chatChannelList.setMobileOpen(false);
             cachedContentComponent = { view: 'messages', component: chatChannelList, scrollY: window.scrollY };
             chatChannelList = null;
           } else if (currentView === 'groups' && chatChannelList) {
+            chatChannelList.setMobileOpen(false);
             cachedContentComponent = { view: 'groups', component: chatChannelList, scrollY: window.scrollY };
             chatChannelList = null;
           }
@@ -2298,12 +2300,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             center.appendChild(groupChatView.getElement());
           } else {
             const { createMessagesWelcome } = await import('./components/ChatChannelList.js');
-            center.appendChild(createMessagesWelcome());
+            center.appendChild(createMessagesWelcome(() => chatChannelList?.setMobileOpen(true)));
           }
 
           mainContainer.appendChild(leftNav.getElement());
           mainContainer.appendChild(chatChannelList.getElement());
           mainContainer.appendChild(center);
+
+          if (window.innerWidth <= 768 && !opts.activeConversationId && !opts.activeGroupId && chatChannelList) {
+            chatChannelList.setMobileOpen(true);
+          }
 
           app.appendChild(mainContainer);
           hidePageLoader();

@@ -63,6 +63,7 @@ export class ChatChannelList {
   private selectedMemberIds: string[] = [];
   private selectedMemberNames: Map<string, string> = new Map();
   private groupSearchResults: ChannelListUser[] = [];
+  private mobileOverlay: HTMLElement | null = null;
 
   constructor(props: ChatChannelListProps) {
     this.props = props;
@@ -236,6 +237,30 @@ export class ChatChannelList {
 
   public setMobileOpen(open: boolean): void {
     this.element.classList.toggle('channel-list--open', open);
+    if (open) {
+      this.ensureOverlay();
+    } else {
+      this.removeOverlay();
+    }
+  }
+
+  private ensureOverlay(): void {
+    if (this.mobileOverlay) {
+      this.mobileOverlay.style.display = 'block';
+      return;
+    }
+    const overlay = document.createElement('div');
+    overlay.className = 'channel-list-overlay';
+    overlay.addEventListener('click', () => this.setMobileOpen(false));
+    document.body.appendChild(overlay);
+    this.mobileOverlay = overlay;
+  }
+
+  private removeOverlay(): void {
+    if (this.mobileOverlay) {
+      this.mobileOverlay.remove();
+      this.mobileOverlay = null;
+    }
   }
 
   private toggleSearch(): void {
@@ -650,6 +675,7 @@ export class ChatChannelList {
   public destroy(): void {
     if (this.pollTimer) clearInterval(this.pollTimer);
     if (this.searchTimer) clearTimeout(this.searchTimer);
+    this.removeOverlay();
     this.element.remove();
   }
 }
@@ -658,9 +684,29 @@ export function createChatChannelList(props: ChatChannelListProps): ChatChannelL
   return new ChatChannelList(props);
 }
 
-export function createMessagesWelcome(): HTMLElement {
+export function createMessagesWelcome(onMenu?: () => void): HTMLElement {
   const welcome = document.createElement('div');
   welcome.className = 'messages-welcome';
+
+  const header = document.createElement('div');
+  header.className = 'messages-welcome-header';
+
+  const menuBtn = document.createElement('button');
+  menuBtn.className = 'chat-header-menu';
+  menuBtn.textContent = '≡';
+  menuBtn.title = t('messages.menu');
+  if (onMenu) menuBtn.addEventListener('click', onMenu);
+
+  const headTitle = document.createElement('div');
+  headTitle.className = 'messages-welcome-head-title';
+  headTitle.textContent = t('messages.title');
+
+  header.appendChild(menuBtn);
+  header.appendChild(headTitle);
+  welcome.appendChild(header);
+
+  const body = document.createElement('div');
+  body.className = 'messages-welcome-body';
 
   const icon = document.createElement('div');
   icon.className = 'messages-welcome-icon';
@@ -674,8 +720,9 @@ export function createMessagesWelcome(): HTMLElement {
   text.className = 'messages-welcome-text';
   text.textContent = t('messages.welcome_hint');
 
-  welcome.appendChild(icon);
-  welcome.appendChild(title);
-  welcome.appendChild(text);
+  body.appendChild(icon);
+  body.appendChild(title);
+  body.appendChild(text);
+  welcome.appendChild(body);
   return welcome;
 }
