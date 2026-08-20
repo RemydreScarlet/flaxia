@@ -7425,3 +7425,129 @@ html {
   color: var(--text-muted);
   margin-top: 2px;
 }
+
+/* ==== Chat modal (server create / confirm / user picker / settings) ==== */
+.chat-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+.chat-modal-dialog {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 24px;
+  width: min(440px, calc(100vw - 32px));
+  max-height: 85vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.chat-modal-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.chat-modal-body {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+.chat-modal-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+.chat-modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.chat-modal-textarea {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.9rem;
+  outline: none;
+  resize: vertical;
+}
+.chat-modal-textarea:focus {
+  border-color: var(--accent);
+}
+.chat-modal-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-modal-results {
+  max-height: 200px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.chat-modal-result {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-modal-result:hover {
+  background: var(--bg-hover, rgba(0, 0, 0, 0.06));
+}
+
+/* ==== Server rail add button + unread badge ==== */
+.chat-server-item {
+  position: relative;
+}
+.chat-server-add {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  color: var(--text-muted);
+  border: 1px dashed var(--border);
+  cursor: pointer;
+  margin-bottom: 8px;
+  transition:
+    border-radius 0.15s,
+    background 0.15s;
+}
+.chat-server-add:hover {
+  border-radius: 14px;
+  background: var(--bg-secondary);
+}
+.chat-server-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--danger, #ef4444);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--bg-primary);
+}
