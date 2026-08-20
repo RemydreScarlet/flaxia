@@ -7,6 +7,7 @@ import type { GroupChatView } from './components/GroupChatView.js';
 import { createLeftNav, LeftNav, updateLeftNavUser } from './components/LeftNav.js';
 import { NotificationsPage } from './components/NotificationsPage.js';
 import { createRightPanel } from './components/RightPanel.js';
+import type { ServerView } from './components/ServerView.js';
 import { ThreadPage } from './components/ThreadPage.js';
 import { Timeline } from './components/Timeline.js';
 import { getMe } from './lib/auth-cache.js';
@@ -60,6 +61,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       | 'arcade'
       | 'messages'
       | 'groups'
+      | 'servers'
       | 'call' = 'timeline';
     let currentPostId: string | null = null;
     let _currentUsername: string | null = null;
@@ -82,6 +84,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     let chatChannelList: ChatChannelList | null = null;
     let conversationView: ConversationView | null = null;
     let groupChatView: GroupChatView | null = null;
+    let serverView: ServerView | null = null;
+    let lastActiveServerId: string | null = null;
     let callUI: { element: HTMLElement; destroy: () => void } | null = null;
     let cachedContentComponent: { view: string; component: unknown; scrollY: number } | null = null;
     let adminLayout:
@@ -884,6 +888,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         return true;
       }
 
+      // For /servers, redirect to arcade if not authenticated
+      if (cleanPath === '/servers' || cleanPath.startsWith('/servers/')) {
+        if (!isAuthenticated) {
+          window.history.replaceState({}, '', '/arcade');
+          navigateTo('arcade');
+          return false;
+        }
+        return true;
+      }
+
       // For /notifications, redirect to arcade if not authenticated
       if (cleanPath === '/notifications') {
         if (!isAuthenticated) {
@@ -1044,6 +1058,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         return { view: 'groups' as const, postId: null, username: null, tag: null };
       }
 
+      // Server routes - require auth
+      const serverConvMatch = cleanPath.match(/^\/servers\/([^/]+)(?:\/([^/]+))?$/);
+      if (serverConvMatch) {
+        console.log('Server route detected, id:', serverConvMatch[1], 'channel:', serverConvMatch[2]);
+        return {
+          view: 'servers' as const,
+          postId: serverConvMatch[1],
+          username: serverConvMatch[2] || null,
+          tag: null,
+        };
+      }
+
+      if (cleanPath === '/servers') {
+        console.log('Servers route detected');
+        return { view: 'servers' as const, postId: null, username: null, tag: null };
+      }
+
       // Call route - requires auth
       const callMatch = cleanPath.match(/^\/call\/([^/]+)$/);
       if (callMatch) {
@@ -1167,6 +1198,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         | 'arcade'
         | 'messages'
         | 'groups'
+        | 'servers'
         | 'call',
       postId?: string,
       username?: string,
@@ -1238,7 +1270,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Cache current view when navigating to thread, arcade, or messages conversation (for back navigation with preserved content)
         if (
-          (view === 'thread' || view === 'arcade' || view === 'messages' || view === 'groups') &&
+          (view === 'thread' || view === 'arcade' || view === 'messages' || view === 'groups' || view === 'servers') &&
           currentView !== view
         ) {
           console.log(`Caching current view for back navigation to ${view}:`, currentView);
@@ -1334,9 +1366,11 @@ document.addEventListener('DOMContentLoaded', async () => {
           groupChatView.destroy();
           groupChatView = null;
         }
+        if (serverView) {
+          serverView.destroy();
+          serverView = null;
+        }
       }
-
-      // Clear app content
       showPageLoader();
       app.innerHTML = '';
 
@@ -2258,6 +2292,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               currentUser,
               activeConversationId: opts.activeConversationId,
               activeGroupId: opts.activeGroupId,
+              activeServerId: lastActiveServerId,
               onSelectConversation: (convId) => {
                 window.history.pushState({}, '', `/messages/${convId}`);
                 navigateTo('messages', convId);
@@ -2265,6 +2300,19 @@ document.addEventListener('DOMContentLoaded', async () => {
               onSelectGroup: (groupId) => {
                 window.history.pushState({}, '', `/groups/${groupId}`);
                 navigateTo('groups', groupId);
+              },
+              onSelectServer: (serverId) => {
+                window.history.pushState({}, '', `/servers/${serverId}`);
+                navigateTo('servers', serverId);
+              },
+              onCreateServer: async () => {
+                const { showServerCreateModal } = await import('./components/ServerModals.js');
+                showServerCreateModal((created) => {
+                  if (created && created.id) {
+                    window.history.pushState({}, '', `/servers/${created.id}`);
+                    navigateTo('servers', created.id);
+                  }
+                });
               },
             });
           }
@@ -2317,6 +2365,96 @@ document.addEventListener('DOMContentLoaded', async () => {
           setupMobileLeftNav(leftNav.getElement());
         };
 
+        const renderServerLayout = async (opts: {
+          serverId: string | null;
+          initialChannelId?: string | null;
+        }): Promise<void> => {
+          currentView = 'servers';
+          currentPostId = opts.serverId;
+          _currentUsername = null;
+          currentTag = null;
+          lastActiveServerId = opts.serverId;
+
+          if (!currentUser) {
+            window.history.pushState({}, '', '/explore');
+            navigateTo('explore');
+            return;
+          }
+
+          if (!opts.serverId) {
+            window.history.pushState({}, '', '/messages');
+            navigateTo('messages');
+            return;
+          }
+
+          // Create main container
+          const mainContainer = document.createElement('div');
+          mainContainer.className = 'main-container main-container--server';
+
+          // Fetch my servers for the rail
+          let railServers: Array<{
+            id: string;
+            name: string;
+            icon_key?: string | null;
+            unread_count?: number;
+          }> = [];
+          try {
+            const res = await fetch('/api/servers', { credentials: 'include' });
+            if (res.ok) {
+              const data = (await res.json()) as {
+                servers?: Array<{ id: string; name: string; icon_key?: string | null; unread_count?: number }>;
+              };
+              railServers = data.servers || [];
+            }
+          } catch (err) {
+            console.error('Failed to load server rail:', err);
+          }
+
+          const { createServerRail } = await import('./components/ServerRail.js');
+          const { showServerCreateModal } = await import('./components/ServerModals.js');
+          const { ServerView } = await import('./components/ServerView.js');
+
+          const rail = createServerRail({
+            servers: railServers,
+            activeServerId: opts.serverId,
+            homeActive: false,
+            onSelectHome: () => {
+              window.history.pushState({}, '', '/messages');
+              navigateTo('messages');
+            },
+            onSelectServer: (id) => {
+              window.history.pushState({}, '', `/servers/${id}`);
+              navigateTo('servers', id);
+            },
+            onAddServer: () => {
+              showServerCreateModal((created) => {
+                if (created && created.id) {
+                  window.history.pushState({}, '', `/servers/${created.id}`);
+                  navigateTo('servers', created.id);
+                }
+              });
+            },
+          });
+
+          serverView = new ServerView({
+            serverId: opts.serverId,
+            currentUser,
+            onBack: () => {
+              window.history.pushState({}, '', '/messages');
+              navigateTo('messages');
+            },
+          });
+          if (opts.initialChannelId) {
+            serverView.openChannel(opts.initialChannelId);
+          }
+
+          mainContainer.appendChild(rail);
+          mainContainer.appendChild(serverView.getElement());
+
+          app.appendChild(mainContainer);
+          hidePageLoader();
+        };
+
         if (view === 'messages' || view === 'groups') {
           if (!currentUser) {
             window.history.pushState({}, '', '/explore');
@@ -2331,6 +2469,19 @@ document.addEventListener('DOMContentLoaded', async () => {
           await renderMessagesLayout({
             activeConversationId: (view === 'messages' ? postId : null) ?? null,
             activeGroupId: (view === 'groups' ? postId : null) ?? null,
+          });
+          return;
+        }
+
+        if (view === 'servers') {
+          if (!currentUser) {
+            window.history.pushState({}, '', '/explore');
+            navigateTo('explore');
+            return;
+          }
+          await renderServerLayout({
+            serverId: (postId as string) || null,
+            initialChannelId: (_currentUsername as string | null) ?? null,
           });
           return;
         }

@@ -7019,3 +7019,409 @@ html {
     left: 12px;
   }
 }
+
+/* ============================================================
+   Discord-style Server (server rail + channel + message)
+   ============================================================ */
+.main-container--server {
+  height: 100vh;
+  height: 100dvh;
+  max-width: none;
+  overflow: hidden;
+}
+
+.server-rail {
+  height: 100%;
+}
+
+.server-chat-view {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+/* --- Channel list inside server --- */
+.server-channel-panel {
+  width: 240px;
+  flex-shrink: 0;
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.server-channel-header {
+  padding: 16px;
+  font-weight: 700;
+  font-size: 1rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.server-channel-panel .server-channel-delete {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 2px 6px;
+  border-radius: 6px;
+  opacity: 0;
+  transition:
+    opacity 0.15s,
+    background 0.15s,
+    color 0.15s;
+}
+.server-channel-panel .server-channel-item:hover .server-channel-delete {
+  opacity: 1;
+}
+.server-channel-panel .server-channel-delete:hover {
+  color: var(--danger, #ef4444);
+  background: var(--bg-secondary);
+}
+
+.server-channel-category {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 12px 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  gap: 4px;
+}
+
+.server-channel-add {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0 4px;
+  border-radius: 6px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.server-channel-category:hover .server-channel-add,
+.server-channel-item:hover .server-channel-add {
+  opacity: 1;
+}
+.server-channel-add:hover {
+  color: var(--accent);
+}
+
+.server-channel-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  transition: background 0.15s;
+  user-select: none;
+  gap: 6px;
+  min-width: 0;
+}
+.server-channel-item:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+.server-channel-item.active {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+/* --- Message main area --- */
+.server-chat-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.server-chat-back {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+.server-chat-back:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.server-members-toggle {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.server-members-toggle:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.server-input-area {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+  position: relative;
+}
+.server-input-area .server-input {
+  flex: 1;
+}
+
+/* --- Message rows (reuses .msg-row base) --- */
+.msg-row-encrypted {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.server-bubble-attachment {
+  margin: 4px 0 8px;
+  max-width: 480px;
+}
+.server-bubble-attachment img {
+  max-width: 100%;
+  max-height: 420px;
+  border-radius: 8px;
+  display: block;
+  object-fit: cover;
+}
+
+/* --- Member panel --- */
+.server-member-panel {
+  display: none;
+  width: 210px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  background: var(--bg-secondary);
+  padding: 12px;
+  overflow-y: auto;
+}
+.server-member-panel.open {
+  display: block;
+}
+
+.server-member-panel-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+  padding: 4px 8px 8px;
+}
+
+.server-member-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+.server-member-row:hover {
+  background: var(--bg-primary);
+}
+.server-member-row-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--bg-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+.server-member-row-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.server-member-row-info {
+  flex: 1;
+  min-width: 0;
+}
+.server-member-row-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.server-member-row-role {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+.server-member-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.server-member-row:hover .server-member-actions {
+  opacity: 1;
+}
+
+/* --- Buttons (generic, app-styled) --- */
+.chat-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.chat-btn:hover {
+  background: var(--bg-primary);
+}
+.chat-btn--primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: #000;
+}
+.chat-btn--primary:hover {
+  background: var(--accent-dark);
+}
+.chat-btn--danger {
+  background: var(--danger, #ef4444);
+  border-color: transparent;
+  color: #fff;
+}
+.chat-btn--danger:hover {
+  filter: brightness(0.92);
+}
+.chat-btn--ghost {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+}
+.chat-btn--ghost:hover {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
+.chat-file-preview-info {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-file-preview-remove {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0 2px;
+}
+.chat-file-preview-remove:hover {
+  color: var(--danger, #ef4444);
+}
+
+/* --- ZIP / Flash player modal --- */
+.server-zip-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.server-zip-modal {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: min(560px, calc(100vw - 32px));
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.server-zip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+.server-zip-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+.server-zip-content a {
+  display: block;
+  padding: 8px 16px;
+  color: var(--text-primary);
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+.server-zip-content a:hover {
+  background: var(--bg-secondary);
+}
+
+/* Server avatar inside the channel list */
+.channel-server-avatar {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.channel-server-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.channel-item-role {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}

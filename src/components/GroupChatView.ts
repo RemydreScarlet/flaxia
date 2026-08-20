@@ -1,5 +1,12 @@
 import { t } from '../lib/i18n.js';
 import { loadLinkPreview } from '../lib/link-preview.js';
+import {
+  decryptFileForGroup,
+  decryptGroupText,
+  encryptFileForGroup,
+  encryptGroupText,
+  unlockIdentityFromSession,
+} from '../lib/messenger-store.js';
 import { registerModal } from '../lib/modal-state.js';
 import { showToast } from '../lib/toast.js';
 import { executeZipAuto } from '../lib/zip-manager.js';
@@ -17,6 +24,9 @@ export interface GroupMessage {
   gif_key?: string | null;
   payload_key?: string | null;
   swf_key?: string | null;
+  content_iv?: string | null;
+  enc_version?: number | null;
+  key_version?: number | null;
   created_at: string;
   edited_at?: string | null;
   is_mine: boolean;
@@ -59,13 +69,24 @@ export class GroupChatView {
   private members: GroupMember[] = [];
 
   private selectedFile: File | null = null;
+  private encryptedUpload = false;
   private editingMsgId: string | null = null;
   private pendingEnrich: Promise<void>[] = [];
+  private keyVersion = 1;
 
   constructor(props: GroupChatViewProps) {
     this.props = props;
     this.element = this.createElement();
+    void this.unlockIdentity();
     this.loadGroup();
+  }
+
+  private async unlockIdentity(): Promise<boolean> {
+    try {
+      return await unlockIdentityFromSession();
+    } catch {
+      return false;
+    }
   }
 
   private createElement(): HTMLElement {
@@ -314,6 +335,7 @@ export class GroupChatView {
 
   private clearFileSelection(): void {
     this.selectedFile = null;
+    this.encryptedUpload = false;
     const preview = this.element.querySelector('#group-file-preview') as HTMLElement;
     const input = this.element.querySelector('#group-file-input') as HTMLInputElement;
     if (preview) preview.style.display = 'none';
@@ -329,6 +351,7 @@ export class GroupChatView {
           name: string;
           description: string;
           icon_key: string | null;
+          key_version?: number;
           my_role: string;
           members: GroupMember[];
         };
@@ -336,6 +359,7 @@ export class GroupChatView {
         this.groupName = data.name;
         this.myRole = data.my_role;
         this.members = data.members || [];
+        this.keyVersion = data.key_version || 1;
 
         const avatar = this.element.querySelector('#group-chat-avatar') as HTMLElement;
         const name = this.element.querySelector('#group-chat-name') as HTMLElement;
@@ -510,18 +534,40 @@ export class GroupChatView {
 
     try {
       if (this.editingMsgId) {
+        let body: Record<string, unknown> = { content };
+        if (content) {
+          const encrypted = await encryptGroupText(this.props.groupId, this.keyVersion, content);
+          if (encrypted) {
+            body = {
+              content: encrypted.ciphertext,
+              contentIv: encrypted.iv,
+              encVersion: 1,
+              keyVersion: this.keyVersion,
+            };
+          }
+        }
         const res = await fetch(`/api/groups/${this.props.groupId}/messages/${this.editingMsgId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ content }),
+          body: JSON.stringify(body),
         });
 
         if (res.ok) {
-          const updated = (await res.json()) as { id: string; content: string; edited_at: string };
+          const updated = (await res.json()) as {
+            id: string;
+            content: string;
+            content_iv?: string | null;
+            enc_version?: number | null;
+            key_version?: number | null;
+            edited_at: string;
+          };
           const idx = this.messages.findIndex((m) => m.id === updated.id);
           if (idx !== -1) {
             this.messages[idx].content = updated.content;
+            this.messages[idx].content_iv = updated.content_iv;
+            this.messages[idx].enc_version = updated.enc_version;
+            this.messages[idx].key_version = updated.key_version;
             this.messages[idx].edited_at = updated.edited_at;
           }
           this.renderMessages();
@@ -569,9 +615,20 @@ export class GroupChatView {
         payloadKey = prepareData.payloadKey;
         swfKey = prepareData.swfKey;
 
+        // Encrypt the file blob before uploading (E2EE)
+        let uploadBody: Blob = this.selectedFile;
+        if (await this.unlockIdentity()) {
+          const ab = await this.selectedFile.arrayBuffer();
+          const enc = await encryptFileForGroup(this.props.groupId, this.keyVersion, prepareData.storageKey, ab);
+          if (enc) {
+            uploadBody = new Blob([enc.buffer as ArrayBuffer], { type: 'application/octet-stream' });
+            this.encryptedUpload = true;
+          }
+        }
+
         const uploadRes = await fetch(prepareData.uploadUrl, {
           method: 'PUT',
-          body: this.selectedFile,
+          body: uploadBody,
           credentials: 'include',
         });
 
@@ -582,7 +639,23 @@ export class GroupChatView {
       }
 
       const body: Record<string, unknown> = {};
-      if (content) body.content = content;
+      let encryptedMessage = false;
+      if (content) {
+        const encrypted = await encryptGroupText(this.props.groupId, this.keyVersion, content);
+        if (encrypted) {
+          body.content = encrypted.ciphertext;
+          body.contentIv = encrypted.iv;
+          body.encVersion = 1;
+          body.keyVersion = this.keyVersion;
+          encryptedMessage = true;
+        }
+      }
+      if (this.encryptedUpload) {
+        body.encVersion = 1;
+        body.keyVersion = this.keyVersion;
+        encryptedMessage = true;
+      }
+      if (!encryptedMessage && content) body.content = content;
       if (gifKey) body.gifKey = gifKey;
       if (payloadKey) body.payloadKey = payloadKey;
       if (swfKey) body.swfKey = swfKey;
@@ -602,6 +675,7 @@ export class GroupChatView {
         this.scrollToBottom();
         input.value = '';
         this.clearFileSelection();
+        this.encryptedUpload = false;
         this.updateCharCount();
         this.autoGrow();
       } else {
@@ -724,15 +798,23 @@ export class GroupChatView {
       if (msg.content) {
         const text = document.createElement('div');
         text.className = 'msg-row-text';
-        text.textContent = msg.content;
-        body.appendChild(text);
-        this.pendingEnrich.push(this.enrichText(text, msg.content));
+        const isEnc = !!msg.enc_version && !!msg.content_iv;
+        if (isEnc) {
+          text.textContent = t('messages.encrypted');
+          text.classList.add('msg-row-encrypted');
+          body.appendChild(text);
+          this.pendingEnrich.push(this.decryptTextInto(text, msg));
+        } else {
+          text.textContent = msg.content;
+          body.appendChild(text);
+          this.pendingEnrich.push(this.enrichText(text, msg.content));
 
-        const previewContainer = document.createElement('div');
-        previewContainer.className = 'post-link-preview-container';
-        previewContainer.style.cssText = 'overflow: hidden;';
-        body.appendChild(previewContainer);
-        loadLinkPreview(msg.content, previewContainer);
+          const previewContainer = document.createElement('div');
+          previewContainer.className = 'post-link-preview-container';
+          previewContainer.style.cssText = 'overflow: hidden;';
+          body.appendChild(previewContainer);
+          loadLinkPreview(msg.content, previewContainer);
+        }
       }
 
       content.appendChild(body);
@@ -787,10 +869,52 @@ export class GroupChatView {
     }
   }
 
+  private async decryptTextInto(el: HTMLElement, msg: GroupMessage): Promise<void> {
+    const plain = await decryptGroupText(
+      this.props.groupId,
+      msg.key_version || this.keyVersion,
+      msg.content,
+      msg.content_iv || '',
+    );
+    if (!plain) return;
+    if (!el.isConnected) return;
+    el.classList.remove('msg-row-encrypted');
+    el.textContent = plain;
+    await this.enrichText(el, plain);
+  }
+
   private renderAttachment(container: HTMLElement, msg: GroupMessage): void {
     const gifKey = msg.gif_key;
     const payloadKey = msg.payload_key;
     const swfKey = msg.swf_key;
+    const key = gifKey || payloadKey || swfKey;
+    const isEnc = !!msg.enc_version;
+
+    if (isEnc && key) {
+      // E2EE: decrypt the blob first, then render it from an object URL
+      this.decryptAttachment(msg, key).then((res) => {
+        if (!res || !container.isConnected) return;
+        container.innerHTML = '';
+        if (key.startsWith('group/audio/')) {
+          const player = createAudioPlayer({ gifKey: key, postId: msg.id, src: res.url });
+          player.style.maxWidth = '300px';
+          container.appendChild(player);
+        } else if (key.startsWith('group/video/')) {
+          const player = createVideoPlayer({ gifKey: key, postId: msg.id, src: res.url });
+          player.style.maxWidth = '100%';
+          container.appendChild(player);
+        } else if (key.startsWith('group/gif/')) {
+          const preview = createImagePreview({ gifKey: key, postId: msg.id, src: res.url });
+          preview.style.maxWidth = '100%';
+          container.appendChild(preview);
+        } else if (key.startsWith('group/zip/') || key.startsWith('group/html/')) {
+          this.renderZipAttachment(container, msg, res.url);
+        } else if (key.startsWith('group/swf/')) {
+          this.renderSwfAttachment(container, msg, res.data);
+        }
+      });
+      return;
+    }
 
     if (gifKey && gifKey.startsWith('group/audio/')) {
       const player = createAudioPlayer({ gifKey, postId: msg.id });
@@ -811,7 +935,24 @@ export class GroupChatView {
     }
   }
 
-  private renderZipAttachment(container: HTMLElement, msg: GroupMessage): void {
+  private async decryptAttachment(msg: GroupMessage, key: string): Promise<{ url: string; data: ArrayBuffer } | null> {
+    try {
+      let base = '/api/images/';
+      if (key.startsWith('group/audio/')) base = '/api/audio/';
+      const res = await fetch(base + key, { credentials: 'include' });
+      if (!res.ok) return null;
+      const data = await res.arrayBuffer();
+      const plain = await decryptFileForGroup(this.props.groupId, msg.key_version || this.keyVersion, key, data);
+      if (!plain) return null;
+      const url = URL.createObjectURL(new Blob([plain]));
+      return { url, data: plain };
+    } catch (err) {
+      console.error('Failed to decrypt attachment:', err);
+      return null;
+    }
+  }
+
+  private renderZipAttachment(container: HTMLElement, msg: GroupMessage, url?: string): void {
     const btn = document.createElement('div');
     btn.className = 'execution-button';
     btn.style.cssText = `
@@ -830,11 +971,11 @@ export class GroupChatView {
       btn.style.transform = 'scale(1)';
       btn.style.boxShadow = 'none';
     });
-    btn.addEventListener('click', () => this.executeZipModal(msg));
+    btn.addEventListener('click', () => this.executeZipModal(msg, url));
     container.appendChild(btn);
   }
 
-  private renderSwfAttachment(container: HTMLElement, msg: GroupMessage): void {
+  private renderSwfAttachment(container: HTMLElement, msg: GroupMessage, data?: ArrayBuffer): void {
     const btn = document.createElement('div');
     btn.className = 'execution-button';
     btn.style.cssText = `
@@ -853,11 +994,11 @@ export class GroupChatView {
       btn.style.transform = 'scale(1)';
       btn.style.boxShadow = 'none';
     });
-    btn.addEventListener('click', () => this.executeSwfModal(msg));
+    btn.addEventListener('click', () => this.executeSwfModal(msg, data));
     container.appendChild(btn);
   }
 
-  private executeZipModal(msg: GroupMessage): void {
+  private executeZipModal(msg: GroupMessage, url?: string): void {
     const unregister = registerModal();
     const overlay = document.createElement('div');
     overlay.style.cssText = `
@@ -912,7 +1053,7 @@ export class GroupChatView {
       if (e.target === overlay) destroy();
     });
 
-    executeZipAuto(msg.id, content).catch((err) => {
+    executeZipAuto(msg.id, content, url).catch((err) => {
       console.error('ZIP execution failed:', err);
       content.innerHTML =
         '<div style="padding: 40px; text-align: center; color: var(--text-muted);">' +
@@ -921,7 +1062,7 @@ export class GroupChatView {
     });
   }
 
-  private executeSwfModal(msg: GroupMessage): void {
+  private executeSwfModal(msg: GroupMessage, preloadedData?: ArrayBuffer): void {
     const unregister = registerModal();
     const overlay = document.createElement('div');
     overlay.style.cssText = `
@@ -977,7 +1118,7 @@ export class GroupChatView {
       if (e.target === overlay) destroy();
     });
 
-    executeFlash(msg.id, content).catch((err) => {
+    executeFlash(msg.id, content, undefined, false, preloadedData).catch((err) => {
       console.error('Flash execution failed:', err);
       content.innerHTML =
         '<div style="padding: 40px; text-align: center; color: var(--text-muted);">' +

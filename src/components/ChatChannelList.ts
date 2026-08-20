@@ -41,12 +41,23 @@ export interface ChannelListUser {
   avatar_key?: string | null;
 }
 
+export interface ChannelListServer {
+  id: string;
+  name: string;
+  icon_key?: string | null;
+  unread_count?: number;
+  my_role?: string;
+}
+
 export interface ChatChannelListProps {
   currentUser: ChannelListUser | null;
   activeConversationId?: string | null;
   activeGroupId?: string | null;
+  activeServerId?: string | null;
   onSelectConversation: (convId: string) => void;
   onSelectGroup: (groupId: string) => void;
+  onSelectServer: (serverId: string) => void;
+  onCreateServer?: () => void;
 }
 
 export class ChatChannelList {
@@ -54,6 +65,7 @@ export class ChatChannelList {
   private props: ChatChannelListProps;
   private conversations: ChannelListConversation[] = [];
   private groups: ChannelListGroup[] = [];
+  private servers: ChannelListServer[] = [];
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
   private searchResults: ChannelListUser[] = [];
@@ -94,6 +106,32 @@ export class ChatChannelList {
 
     const body = document.createElement('div');
     body.className = 'channel-list-body';
+
+    // Servers section
+    const serverSection = document.createElement('section');
+    serverSection.className = 'channel-section';
+
+    const serverHead = document.createElement('button');
+    serverHead.className = 'channel-section-head';
+    const serverHeadLabel = document.createElement('span');
+    serverHeadLabel.textContent = t('servers.title').toUpperCase();
+    const serverAdd = document.createElement('span');
+    serverAdd.className = 'channel-section-add';
+    serverAdd.textContent = '+';
+    serverAdd.title = t('servers.create');
+    serverAdd.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.props.onCreateServer?.();
+    });
+    serverHead.appendChild(serverHeadLabel);
+    serverHead.appendChild(serverAdd);
+
+    const serverItems = document.createElement('div');
+    serverItems.id = 'channel-server-items';
+    serverItems.className = 'channel-section-items';
+
+    serverSection.appendChild(serverHead);
+    serverSection.appendChild(serverItems);
 
     // Direct messages section
     const dmSection = document.createElement('section');
@@ -149,6 +187,7 @@ export class ChatChannelList {
     groupSection.appendChild(groupHead);
     groupSection.appendChild(groupItems);
 
+    body.appendChild(serverSection);
     body.appendChild(dmSection);
     body.appendChild(groupSection);
 
@@ -499,8 +538,20 @@ export class ChatChannelList {
   }
 
   private async fetchAll(silent = false): Promise<void> {
-    await Promise.all([this.fetchConversations(silent), this.fetchGroups(silent)]);
+    await Promise.all([this.fetchConversations(silent), this.fetchGroups(silent), this.fetchServers(silent)]);
     this.renderSections();
+  }
+
+  private async fetchServers(silent: boolean): Promise<void> {
+    try {
+      const res = await fetch('/api/servers', { credentials: 'include' });
+      if (res.ok) {
+        const data = (await res.json()) as { servers: ChannelListServer[] };
+        this.servers = data.servers || [];
+      }
+    } catch {
+      if (!silent) showToast(t('messages.load_failed'), true);
+    }
   }
 
   private async fetchConversations(silent: boolean): Promise<void> {
@@ -528,6 +579,19 @@ export class ChatChannelList {
   }
 
   private renderSections(): void {
+    const serverItems = this.element.querySelector('#channel-server-items') as HTMLElement;
+    if (serverItems) {
+      serverItems.innerHTML = '';
+      this.servers.forEach((server) => {
+        serverItems.appendChild(this.createServerItem(server));
+      });
+      if (this.servers.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'channel-section-empty';
+        empty.textContent = t('servers.no_servers');
+        serverItems.appendChild(empty);
+      }
+    }
     const dmItems = this.element.querySelector('#channel-dm-items') as HTMLElement;
     const groupItems = this.element.querySelector('#channel-group-items') as HTMLElement;
     if (dmItems) {
@@ -554,6 +618,55 @@ export class ChatChannelList {
         groupItems.appendChild(empty);
       }
     }
+  }
+
+  private createServerItem(server: ChannelListServer): HTMLElement {
+    const row = document.createElement('button');
+    row.className = 'channel-item' + (server.id === this.props.activeServerId ? ' channel-item--active' : '');
+
+    const icon = document.createElement('div');
+    icon.className = 'chat-avatar-placeholder channel-server-avatar';
+    if (server.icon_key) {
+      const img = document.createElement('img');
+      img.src = `/api/images/${server.icon_key}`;
+      img.loading = 'lazy';
+      img.alt = server.name;
+      img.addEventListener('error', () => {
+        img.remove();
+        icon.textContent = server.name.charAt(0).toUpperCase();
+      });
+      icon.appendChild(img);
+    } else {
+      icon.textContent = server.name.charAt(0).toUpperCase();
+    }
+
+    const info = document.createElement('div');
+    info.className = 'channel-item-info';
+
+    const name = document.createElement('div');
+    name.className = 'channel-item-name';
+    name.textContent = server.name;
+    info.appendChild(name);
+
+    const badge = document.createElement('div');
+    badge.className = 'channel-item-role';
+    badge.textContent =
+      server.my_role === 'owner' ? t('servers.role_owner') : server.my_role === 'admin' ? t('servers.role_admin') : '';
+    info.appendChild(badge);
+
+    row.appendChild(icon);
+    row.appendChild(info);
+
+    const unread = Number(server.unread_count) || 0;
+    if (unread > 0) {
+      const badgeEl = document.createElement('span');
+      badgeEl.className = 'channel-item-badge';
+      badgeEl.textContent = unread >= 99 ? '99+' : String(unread);
+      row.appendChild(badgeEl);
+    }
+
+    row.addEventListener('click', () => this.props.onSelectServer(server.id));
+    return row;
   }
 
   private createConversationItem(conv: ChannelListConversation): HTMLElement {

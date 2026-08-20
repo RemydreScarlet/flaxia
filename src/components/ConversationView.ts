@@ -1,5 +1,12 @@
 import { t } from '../lib/i18n.js';
 import { loadLinkPreview } from '../lib/link-preview.js';
+import {
+  decryptDmText,
+  decryptFileForDm,
+  encryptDmText,
+  encryptFileForDm,
+  unlockIdentityFromSession,
+} from '../lib/messenger-store.js';
 import { registerModal } from '../lib/modal-state.js';
 import { showToast } from '../lib/toast.js';
 import { executeZipAuto } from '../lib/zip-manager.js';
@@ -17,6 +24,9 @@ export interface Message {
   gif_key?: string | null;
   payload_key?: string | null;
   swf_key?: string | null;
+  content_iv?: string | null;
+  enc_version?: number | null;
+  key_version?: number | null;
   created_at: string;
   edited_at?: string | null;
   is_mine: boolean;
@@ -45,13 +55,25 @@ export class ConversationView {
   private hasMore = true;
 
   private selectedFile: File | null = null;
+  private encryptedUpload = false;
   private editingMsgId: string | null = null;
   private pendingEnrich: Promise<void>[] = [];
+  private peerUserId: string | null = null;
+  private keyVersion = 1;
 
   constructor(props: ConversationViewProps) {
     this.props = props;
     this.element = this.createElement();
+    void this.unlockIdentity();
     this.loadConversation();
+  }
+
+  private async unlockIdentity(): Promise<boolean> {
+    try {
+      return await unlockIdentityFromSession();
+    } catch {
+      return false;
+    }
   }
 
   private createElement(): HTMLElement {
@@ -213,6 +235,7 @@ export class ConversationView {
 
   private clearFileSelection(): void {
     this.selectedFile = null;
+    this.encryptedUpload = false;
     const preview = this.element.querySelector('#conv-file-preview') as HTMLElement;
     const input = this.element.querySelector('#conv-file-input') as HTMLInputElement;
     if (preview) preview.style.display = 'none';
@@ -225,9 +248,12 @@ export class ConversationView {
       if (res.ok) {
         const data = (await res.json()) as {
           id: string;
-          other_user: { username: string; display_name: string; avatar_key: string | null };
+          key_version?: number;
+          other_user: { id: string; username: string; display_name: string; avatar_key: string | null };
         };
 
+        this.peerUserId = data.other_user.id;
+        this.keyVersion = data.key_version || 1;
         const avatar = this.element.querySelector('#conv-user-avatar') as HTMLElement;
         const name = this.element.querySelector('#conv-user-name') as HTMLElement;
         if (avatar) {
@@ -404,18 +430,40 @@ export class ConversationView {
     try {
       if (this.editingMsgId) {
         // Edit existing message
+        let body: Record<string, unknown> = { content };
+        if (content && this.peerUserId) {
+          const encrypted = await encryptDmText(this.props.conversationId, this.keyVersion, this.peerUserId, content);
+          if (encrypted) {
+            body = {
+              content: encrypted.ciphertext,
+              contentIv: encrypted.iv,
+              encVersion: 1,
+              keyVersion: this.keyVersion,
+            };
+          }
+        }
         const res = await fetch(`/api/dm/conversations/${this.props.conversationId}/messages/${this.editingMsgId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ content }),
+          body: JSON.stringify(body),
         });
 
         if (res.ok) {
-          const updated = (await res.json()) as { id: string; content: string; edited_at: string };
+          const updated = (await res.json()) as {
+            id: string;
+            content: string;
+            content_iv?: string | null;
+            enc_version?: number | null;
+            key_version?: number | null;
+            edited_at: string;
+          };
           const idx = this.messages.findIndex((m) => m.id === updated.id);
           if (idx !== -1) {
             this.messages[idx].content = updated.content;
+            this.messages[idx].content_iv = updated.content_iv;
+            this.messages[idx].enc_version = updated.enc_version;
+            this.messages[idx].key_version = updated.key_version;
             this.messages[idx].edited_at = updated.edited_at;
           }
           this.renderMessages();
@@ -465,10 +513,27 @@ export class ConversationView {
         payloadKey = prepareData.payloadKey;
         swfKey = prepareData.swfKey;
 
+        // Encrypt the file blob before uploading (E2EE)
+        let uploadBody: Blob = this.selectedFile;
+        if (this.peerUserId && (await this.unlockIdentity())) {
+          const ab = await this.selectedFile.arrayBuffer();
+          const enc = await encryptFileForDm(
+            this.props.conversationId,
+            this.keyVersion,
+            this.peerUserId,
+            prepareData.storageKey,
+            ab,
+          );
+          if (enc) {
+            uploadBody = new Blob([enc.buffer as ArrayBuffer], { type: 'application/octet-stream' });
+            this.encryptedUpload = true;
+          }
+        }
+
         // Upload file
         const uploadRes = await fetch(prepareData.uploadUrl, {
           method: 'PUT',
-          body: this.selectedFile,
+          body: uploadBody,
           credentials: 'include',
         });
 
@@ -480,7 +545,23 @@ export class ConversationView {
 
       // Send message
       const body: Record<string, unknown> = {};
-      if (content) body.content = content;
+      let encryptedMessage = false;
+      if (content && this.peerUserId) {
+        const encrypted = await encryptDmText(this.props.conversationId, this.keyVersion, this.peerUserId, content);
+        if (encrypted) {
+          body.content = encrypted.ciphertext;
+          body.contentIv = encrypted.iv;
+          body.encVersion = 1;
+          body.keyVersion = this.keyVersion;
+          encryptedMessage = true;
+        }
+      }
+      if (this.encryptedUpload) {
+        body.encVersion = 1;
+        body.keyVersion = this.keyVersion;
+        encryptedMessage = true;
+      }
+      if (!encryptedMessage && content) body.content = content;
       if (gifKey) body.gifKey = gifKey;
       if (payloadKey) body.payloadKey = payloadKey;
       if (swfKey) body.swfKey = swfKey;
@@ -500,6 +581,7 @@ export class ConversationView {
         this.scrollToBottom();
         input.value = '';
         this.clearFileSelection();
+        this.encryptedUpload = false;
         this.updateCharCount();
         this.autoGrow();
       } else {
@@ -620,15 +702,23 @@ export class ConversationView {
       if (msg.content) {
         const text = document.createElement('div');
         text.className = 'msg-row-text';
-        text.textContent = msg.content;
-        body.appendChild(text);
-        this.pendingEnrich.push(this.enrichText(text, msg.content));
+        const isEnc = !!msg.enc_version && !!msg.content_iv;
+        if (isEnc) {
+          text.textContent = t('messages.encrypted');
+          text.classList.add('msg-row-encrypted');
+          body.appendChild(text);
+          this.pendingEnrich.push(this.decryptTextInto(text, msg));
+        } else {
+          text.textContent = msg.content;
+          body.appendChild(text);
+          this.pendingEnrich.push(this.enrichText(text, msg.content));
 
-        const previewContainer = document.createElement('div');
-        previewContainer.className = 'post-link-preview-container';
-        previewContainer.style.cssText = 'overflow: hidden;';
-        body.appendChild(previewContainer);
-        loadLinkPreview(msg.content, previewContainer);
+          const previewContainer = document.createElement('div');
+          previewContainer.className = 'post-link-preview-container';
+          previewContainer.style.cssText = 'overflow: hidden;';
+          body.appendChild(previewContainer);
+          loadLinkPreview(msg.content, previewContainer);
+        }
       }
 
       content.appendChild(body);
@@ -683,10 +773,55 @@ export class ConversationView {
     }
   }
 
+  private async decryptTextInto(el: HTMLElement, msg: Message): Promise<void> {
+    if (!this.peerUserId) return;
+    const plain = await decryptDmText(
+      this.props.conversationId,
+      msg.key_version || this.keyVersion,
+      this.peerUserId,
+      msg.content,
+      msg.content_iv || '',
+    );
+    if (!plain) return;
+    if (!el.isConnected) return;
+    el.classList.remove('msg-row-encrypted');
+    el.textContent = plain;
+    await this.enrichText(el, plain);
+  }
+
   private renderAttachment(container: HTMLElement, msg: Message): void {
     const gifKey = msg.gif_key;
     const payloadKey = msg.payload_key;
     const swfKey = msg.swf_key;
+    const key = gifKey || payloadKey || swfKey;
+
+    const isEnc = !!msg.enc_version && this.peerUserId !== null;
+
+    if (isEnc && key) {
+      // E2EE: decrypt the blob first, then render it from an object URL
+      this.decryptAttachment(msg, key).then((res) => {
+        if (!res || !container.isConnected) return;
+        container.innerHTML = '';
+        if (key.startsWith('dm/audio/')) {
+          const player = createAudioPlayer({ gifKey: key, postId: msg.id, src: res.url });
+          player.style.maxWidth = '300px';
+          container.appendChild(player);
+        } else if (key.startsWith('dm/video/')) {
+          const player = createVideoPlayer({ gifKey: key, postId: msg.id, src: res.url });
+          player.style.maxWidth = '100%';
+          container.appendChild(player);
+        } else if (key.startsWith('dm/gif/')) {
+          const preview = createImagePreview({ gifKey: key, postId: msg.id, src: res.url });
+          preview.style.maxWidth = '100%';
+          container.appendChild(preview);
+        } else if (key.startsWith('dm/zip/') || key.startsWith('dm/html/')) {
+          this.renderZipAttachment(container, msg, res.url);
+        } else if (key.startsWith('dm/swf/')) {
+          this.renderSwfAttachment(container, msg, res.data);
+        }
+      });
+      return;
+    }
 
     if (gifKey && gifKey.startsWith('dm/audio/')) {
       const player = createAudioPlayer({
@@ -716,7 +851,31 @@ export class ConversationView {
     }
   }
 
-  private renderZipAttachment(container: HTMLElement, msg: Message): void {
+  private async decryptAttachment(msg: Message, key: string): Promise<{ url: string; data: ArrayBuffer } | null> {
+    if (!this.peerUserId) return null;
+    try {
+      let base = '/api/images/';
+      if (key.startsWith('dm/audio/')) base = '/api/audio/';
+      const res = await fetch(base + key, { credentials: 'include' });
+      if (!res.ok) return null;
+      const data = await res.arrayBuffer();
+      const plain = await decryptFileForDm(
+        this.props.conversationId,
+        msg.key_version || this.keyVersion,
+        this.peerUserId,
+        key,
+        data,
+      );
+      if (!plain) return null;
+      const url = URL.createObjectURL(new Blob([plain]));
+      return { url, data: plain };
+    } catch (err) {
+      console.error('Failed to decrypt attachment:', err);
+      return null;
+    }
+  }
+
+  private renderZipAttachment(container: HTMLElement, msg: Message, url?: string): void {
     const btn = document.createElement('div');
     btn.className = 'execution-button';
     btn.style.cssText = `
@@ -735,11 +894,11 @@ export class ConversationView {
       btn.style.transform = 'scale(1)';
       btn.style.boxShadow = 'none';
     });
-    btn.addEventListener('click', () => this.executeZipModal(msg));
+    btn.addEventListener('click', () => this.executeZipModal(msg, url));
     container.appendChild(btn);
   }
 
-  private renderSwfAttachment(container: HTMLElement, msg: Message): void {
+  private renderSwfAttachment(container: HTMLElement, msg: Message, data?: ArrayBuffer): void {
     const btn = document.createElement('div');
     btn.className = 'execution-button';
     btn.style.cssText = `
@@ -758,11 +917,11 @@ export class ConversationView {
       btn.style.transform = 'scale(1)';
       btn.style.boxShadow = 'none';
     });
-    btn.addEventListener('click', () => this.executeSwfModal(msg));
+    btn.addEventListener('click', () => this.executeSwfModal(msg, data));
     container.appendChild(btn);
   }
 
-  private executeZipModal(msg: Message): void {
+  private executeZipModal(msg: Message, url?: string): void {
     const unregister = registerModal();
     const overlay = document.createElement('div');
     overlay.style.cssText = `
@@ -820,7 +979,7 @@ export class ConversationView {
     });
 
     // Execute ZIP in the modal content (force legacy mode — sandbox WVFS doesn't support DM-prefixed keys)
-    executeZipAuto(msg.id, content).catch((err) => {
+    executeZipAuto(msg.id, content, url).catch((err) => {
       console.error('ZIP execution failed:', err);
       content.innerHTML =
         '<div style="padding: 40px; text-align: center; color: var(--text-muted);">' +
@@ -829,7 +988,7 @@ export class ConversationView {
     });
   }
 
-  private executeSwfModal(msg: Message): void {
+  private executeSwfModal(msg: Message, preloadedData?: ArrayBuffer): void {
     const unregister = registerModal();
     const overlay = document.createElement('div');
     overlay.style.cssText = `
@@ -888,7 +1047,7 @@ export class ConversationView {
     });
 
     // Execute Flash in the modal content
-    executeFlash(msg.id, content).catch((err) => {
+    executeFlash(msg.id, content, undefined, false, preloadedData).catch((err) => {
       console.error('Flash execution failed:', err);
       content.innerHTML =
         '<div style="padding: 40px; text-align: center; color: var(--text-muted);">' +
