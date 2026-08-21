@@ -766,7 +766,7 @@
   "servers.add_channel": "Add channel",
   "servers.new_channel": "Create channel",
   "servers.channel_name": "Channel name",
-  "servers.channel_empty": "No channels",
+  "servers.channel_empty": "No messages yet",
   "servers.category": "Category",
   "servers.category_placeholder": "Category name (optional)",
   "servers.channel_create_failed": "Failed to create channel",

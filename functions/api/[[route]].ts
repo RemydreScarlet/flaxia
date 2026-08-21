@@ -10354,7 +10354,8 @@ app.get('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
 // POST /api/dm/conversations/:id/messages - send a message
 app.post('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
   try {
-    const senderId = c.get('user')?.id || '';
+    const sender = c.get('user')!;
+    const senderId = sender.id;
     const convId = c.req.param('id');
     const { content, gifKey, payloadKey, swfKey, messageId, contentIv, encVersion, keyVersion } =
       (await c.req.json()) as {
@@ -10437,7 +10438,6 @@ app.post('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
 
     // Send push notification to the other participant (E2EE: never include content)
     const otherUserId = conv.user_a_id === senderId ? conv.user_b_id : conv.user_a_id;
-    const sender = c.get('user');
     const senderDisplayName = sender?.display_name || sender?.username || 'Someone';
 
     await sendPushToAll(
@@ -10470,6 +10470,12 @@ app.post('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
       created_at: now,
       edited_at: null,
       is_mine: true,
+      sender: {
+        id: sender.id,
+        username: sender.username,
+        display_name: sender.display_name,
+        avatar_key: sender.avatar_key || null,
+      },
     });
   } catch (error: unknown) {
     const err = error as { message?: string };
@@ -12723,7 +12729,8 @@ app.get('/api/servers/:id/channels/:channelId/messages', requireAuth, async (c) 
 // POST /api/servers/:id/channels/:channelId/messages - send a message (ciphertext only)
 app.post('/api/servers/:id/channels/:channelId/messages', requireAuth, async (c) => {
   try {
-    const senderId = c.get('user')?.id || '';
+    const user = c.get('user')!;
+    const senderId = user.id;
     const serverId = c.req.param('id');
     const channelId = c.req.param('channelId');
     const { content, gifKey, payloadKey, swfKey, messageId, contentIv, encVersion, keyVersion } =
@@ -12825,6 +12832,12 @@ app.post('/api/servers/:id/channels/:channelId/messages', requireAuth, async (c)
       created_at: now,
       edited_at: null,
       is_mine: true,
+      sender: {
+        id: user.id,
+        username: user.username,
+        display_name: user.display_name,
+        avatar_key: user.avatar_key || null,
+      },
     });
   } catch (error: unknown) {
     const err = error as { message?: string };
@@ -13213,14 +13226,42 @@ app.post('/api/test/reset', async (c) => {
       'chat_channels',
       'chat_server_members',
       'chat_servers',
-      'notifications',
-      'reports',
+      'call_participants',
+      'calls',
+      'poll_votes',
+      'poll_options',
+      'polls',
+      'bookmarks',
+      'likes',
+      'shares',
       'reactions',
+      'blocks',
+      'ap_followers',
+      'ap_following',
+      'multiplayer_invites',
+      'multiplayer_scores',
+      'user_game_plays',
+      'arcade_events',
+      'counter_notifications',
+      'notifications',
+      'received_activities',
+      'reports',
+      'post_nsfw_scans',
+      'pending_embeddings',
+      'post_embeddings',
+      'post_translations',
       'freshs',
       'follows',
       'posts',
-      'post_nsfw_scans',
-      'pending_embeddings',
+      'actor_keys',
+      'user_profiles',
+      'push_subscriptions',
+      'device_tokens',
+      'sessions',
+      'ad_interactions',
+      'admin_alerts',
+      'bandit_state',
+      'ads',
       'users',
     ];
     const existing = new Set(

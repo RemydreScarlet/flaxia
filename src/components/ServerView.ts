@@ -1087,12 +1087,12 @@ export class ServerView {
 
       const avatar = document.createElement('div');
       avatar.className = 'msg-row-avatar';
-      if (!grouped && msg.sender.avatar_key) {
+      if (!grouped && msg.sender?.avatar_key) {
         avatar.style.backgroundImage = `url(/api/images/${msg.sender.avatar_key})`;
         avatar.style.backgroundSize = 'cover';
         avatar.textContent = '';
       } else if (!grouped) {
-        avatar.textContent = (msg.sender.display_name || msg.sender.username).charAt(0).toUpperCase();
+        avatar.textContent = (msg.sender?.display_name || msg.sender?.username || '?').charAt(0).toUpperCase();
       }
 
       const content = document.createElement('div');
@@ -1103,7 +1103,7 @@ export class ServerView {
         head.className = 'msg-row-head';
         const username = document.createElement('span');
         username.className = 'msg-row-username';
-        username.textContent = msg.sender.display_name || msg.sender.username;
+        username.textContent = msg.sender?.display_name || msg.sender?.username || '?';
         const time = document.createElement('span');
         time.className = 'msg-row-time';
         time.textContent = this.formatClock(msg.created_at);

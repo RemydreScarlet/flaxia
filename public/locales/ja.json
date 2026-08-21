@@ -766,7 +766,7 @@
   "servers.add_channel": "チャンネルを追加",
   "servers.new_channel": "チャンネルを作成",
   "servers.channel_name": "チャンネル名",
-  "servers.channel_empty": "チャンネルがありません",
+  "servers.channel_empty": "メッセージがまだありません",
   "servers.category": "カテゴリ",
   "servers.category_placeholder": "カテゴリ名（任意）",
   "servers.channel_create_failed": "チャンネルの作成に失敗しました",
