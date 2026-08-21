@@ -775,6 +775,13 @@
   "servers.channel_delete_failed": "Failed to delete channel",
   "servers.placeholder": "Select a channel",
   "servers.e2ee_unavailable": "Unable to decrypt keys. Please sign in again.",
+  "servers.voice_channel": "Voice channel",
+  "servers.join_voice": "Join voice chat",
+  "servers.leave_voice": "Leave voice chat",
+  "servers.voice_connected": "Connected to {channel}",
+  "servers.voice_join_failed": "Failed to join voice chat",
+  "servers.channel_type_text": "Text channel",
+  "servers.channel_type_voice": "Voice channel",
 
   "video_player.play": "Play",
   "video_player.pause": "Pause",

@@ -11989,7 +11989,15 @@ app.post('/api/servers', requireAuth, async (c) => {
       .bind(serverId, userId, now)
       .run();
 
-    return c.json({ id: serverId });
+    // Create the default #general text channel so the server is usable right away.
+    const generalChannelId = nanoid();
+    await c.env.DB.prepare(
+      "INSERT INTO server_channels (id, server_id, name, category, position, type, key_version, created_at) VALUES (?, ?, 'general', NULL, 0, 'text', 1, ?)",
+    )
+      .bind(generalChannelId, serverId, now)
+      .run();
+
+    return c.json({ id: serverId, general_channel_id: generalChannelId });
   } catch (error: unknown) {
     const err = error as { message?: string };
     console.error('Server create error:', error);
@@ -12043,7 +12051,7 @@ app.get('/api/servers/:id', requireAuth, async (c) => {
 
     const channels = await c.env.DB.prepare(`
       SELECT
-        sc.id, sc.name, sc.category, sc.position, sc.key_version, sc.created_at,
+        sc.id, sc.name, sc.category, sc.position, sc.key_version, sc.type, sc.created_at,
         COALESCE(rs.unread_count, 0) as unread_count
       FROM server_channels sc
       LEFT JOIN server_read_states rs ON rs.channel_id = sc.id AND rs.user_id = ?
@@ -12078,6 +12086,7 @@ app.get('/api/servers/:id', requireAuth, async (c) => {
         category: row.category || null,
         position: row.position,
         key_version: row.key_version || 1,
+        type: row.type || 'text',
         unread_count: row.unread_count,
         created_at: row.created_at,
       })),
@@ -12341,10 +12350,11 @@ app.post('/api/servers/:id/channels', requireAuth, async (c) => {
   try {
     const userId = c.get('user')?.id || '';
     const serverId = c.req.param('id');
-    const { name, category, position } = (await c.req.json()) as {
+    const { name, category, position, type } = (await c.req.json()) as {
       name?: string;
       category?: string;
       position?: number;
+      type?: 'text' | 'voice';
     };
 
     if (!name || name.trim().length === 0) {
@@ -12367,14 +12377,15 @@ app.post('/api/servers/:id/channels', requireAuth, async (c) => {
     const id = nanoid();
     const now = new Date().toISOString();
     const pos = position ?? 0;
+    const channelType = type === 'voice' ? 'voice' : 'text';
 
     await c.env.DB.prepare(
-      'INSERT INTO server_channels (id, server_id, name, category, position, key_version, created_at) VALUES (?, ?, ?, ?, ?, 1, ?)',
+      'INSERT INTO server_channels (id, server_id, name, category, position, type, key_version, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?)',
     )
-      .bind(id, serverId, name.trim(), category?.trim() || null, pos, now)
+      .bind(id, serverId, name.trim(), category?.trim() || null, pos, channelType, now)
       .run();
 
-    return c.json({ id, key_version: 1 });
+    return c.json({ id, key_version: 1, type: channelType });
   } catch (error: unknown) {
     const err = error as { message?: string };
     console.error('Server channel create error:', error);
@@ -12388,10 +12399,11 @@ app.put('/api/servers/:id/channels/:channelId', requireAuth, async (c) => {
     const userId = c.get('user')?.id || '';
     const serverId = c.req.param('id');
     const channelId = c.req.param('channelId');
-    const { name, category, position } = (await c.req.json()) as {
+    const { name, category, position, type } = (await c.req.json()) as {
       name?: string;
       category?: string | null;
       position?: number;
+      type?: 'text' | 'voice';
     };
 
     const ch = (await c.env.DB.prepare('SELECT id FROM server_channels WHERE id = ? AND server_id = ?')
@@ -12425,6 +12437,11 @@ app.put('/api/servers/:id/channels/:channelId', requireAuth, async (c) => {
     }
     if (position !== undefined) {
       await c.env.DB.prepare('UPDATE server_channels SET position = ? WHERE id = ?').bind(position, channelId).run();
+    }
+    if (type !== undefined) {
+      await c.env.DB.prepare('UPDATE server_channels SET type = ? WHERE id = ?')
+        .bind(type === 'voice' ? 'voice' : 'text', channelId)
+        .run();
     }
 
     return c.json({ success: true });
@@ -13423,6 +13440,83 @@ app.post('/api/calls/start', requireAuth, async (c) => {
   }
 });
 
+// POST /api/servers/:id/channels/:channelId/call - Start/join a voice call in a server voice channel
+app.post('/api/servers/:id/channels/:channelId/call', requireAuth, async (c) => {
+  try {
+    const user = c.get('user')!;
+    const serverId = c.req.param('id');
+    const channelId = c.req.param('channelId');
+    const { type } = (await c.req.json().catch(() => ({}))) as { type?: 'audio' | 'video' };
+
+    // Verify the user is a member of this server
+    const member = await c.env.DB.prepare(
+      'SELECT 1 FROM server_members WHERE server_id = ? AND user_id = ? AND left_at IS NULL',
+    )
+      .bind(serverId, user.id)
+      .first();
+    if (!member) return c.json({ error: 'Not a member of this server' }, 403);
+
+    // Verify the channel belongs to this server and is a voice channel
+    const channel = (await c.env.DB.prepare(
+      "SELECT id, name FROM server_channels WHERE id = ? AND server_id = ? AND type = 'voice'",
+    )
+      .bind(channelId, serverId)
+      .first()) as { id: string; name: string } | null;
+    if (!channel) return c.json({ error: 'Voice channel not found' }, 404);
+
+    // Check the user is not already in another active call
+    const existingActive = await c.env.DB.prepare(
+      `SELECT c.id FROM calls c JOIN call_participants cp ON cp.call_id = c.id
+       WHERE cp.user_id = ? AND c.status = 'active' LIMIT 1`,
+    )
+      .bind(user.id)
+      .first<{ id: string }>();
+    if (existingActive) {
+      const stillActive = await verifyCallActive(c, existingActive.id, user.id);
+      if (stillActive) {
+        return c.json({ error: 'You are already in an active call' }, 409);
+      }
+      // Stale entry — auto-cleanup
+      const now = new Date().toISOString();
+      await c.env.DB.prepare("UPDATE calls SET status = 'ended', ended_at = ? WHERE id = ?")
+        .bind(now, existingActive.id)
+        .run();
+    }
+
+    // Reuse an active call for this channel, or create one
+    let call = (await c.env.DB.prepare(
+      "SELECT id, type FROM calls WHERE server_channel_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1",
+    )
+      .bind(channelId)
+      .first()) as { id: string; type: string } | null;
+
+    const now = new Date().toISOString();
+    if (!call) {
+      const callType = type === 'video' ? 'video' : 'audio';
+      const callId = nanoid();
+      await c.env.DB.prepare(
+        'INSERT INTO calls (id, server_channel_id, initiator_id, status, type, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+        .bind(callId, channelId, user.id, 'active', callType, now)
+        .run();
+      call = { id: callId, type: callType };
+    }
+
+    // Add/refresh this user as a participant
+    await c.env.DB.prepare(
+      'INSERT OR IGNORE INTO call_participants (call_id, user_id, joined_at, muted) VALUES (?, ?, ?, 0)',
+    )
+      .bind(call.id, user.id, now)
+      .run();
+
+    return c.json({ id: call.id, roomId: call.id, type: call.type, channel_name: channel.name });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Server call start error:', error);
+    return c.json({ error: 'Failed to start call', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
 // POST /api/calls/:id/join - Join an active call
 app.post('/api/calls/:id/join', requireAuth, async (c) => {
   try {
@@ -13465,10 +13559,12 @@ app.post('/api/calls/:id/join', requireAuth, async (c) => {
       .first();
 
     if (!isMember) {
-      // Check DM or group membership
-      const fullCall = (await c.env.DB.prepare('SELECT conversation_id, group_id FROM calls WHERE id = ?')
+      // Check DM, group, or server channel membership
+      const fullCall = (await c.env.DB.prepare(
+        'SELECT conversation_id, group_id, server_channel_id FROM calls WHERE id = ?',
+      )
         .bind(callId)
-        .first()) as { conversation_id: string | null; group_id: string | null };
+        .first()) as { conversation_id: string | null; group_id: string | null; server_channel_id: string | null };
       let authorized = false;
       if (fullCall.conversation_id) {
         const conv = await c.env.DB.prepare(
@@ -13480,6 +13576,15 @@ app.post('/api/calls/:id/join', requireAuth, async (c) => {
       } else if (fullCall.group_id) {
         const member = await c.env.DB.prepare('SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ?')
           .bind(fullCall.group_id, user.id)
+          .first();
+        authorized = !!member;
+      } else if (fullCall.server_channel_id) {
+        const member = await c.env.DB.prepare(
+          `SELECT 1 FROM server_channels sc
+           JOIN server_members sm ON sm.server_id = sc.server_id AND sm.user_id = ? AND sm.left_at IS NULL
+           WHERE sc.id = ?`,
+        )
+          .bind(user.id, fullCall.server_channel_id)
           .first();
         authorized = !!member;
       }

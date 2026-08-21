@@ -3062,6 +3062,53 @@ document.addEventListener('DOMContentLoaded', async () => {
       })();
     }) as EventListener);
 
+    window.addEventListener('startServerCall', ((e: CustomEvent) => {
+      const { serverId, channelId } = e.detail;
+      if (!serverId || !channelId) return;
+      (async () => {
+        // Destroy any existing call UI first
+        if (callUI) {
+          callUI.destroy();
+          callUI = null;
+        }
+        currentCallId = null;
+
+        try {
+          const res = await fetch(`/api/servers/${serverId}/channels/${channelId}/call`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ type: 'audio' }),
+          });
+          const data: any = await res.json();
+          if (data.error) {
+            console.error('Failed to join server voice channel:', data.error);
+            return;
+          }
+          const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          const wsUrl = `${wsProtocol}//${window.location.host}/api/ws/call?roomId=${data.roomId}&token=`;
+          const { createCallUI } = await import('./components/CallUI.js');
+          const ui = createCallUI({
+            roomId: data.roomId,
+            wsUrl,
+            currentUser: currentUser || { id: '', username: '' },
+            onEnded: () => {
+              if (callUI) {
+                callUI.destroy();
+                callUI = null;
+              }
+              currentCallId = null;
+            },
+          });
+          callUI = ui;
+          currentCallId = data.roomId;
+          document.body.appendChild(ui.element);
+        } catch (e) {
+          console.error('Failed to join server voice channel:', e);
+        }
+      })();
+    }) as EventListener);
+
     // Initial navigation
     console.log('DOM Content Loaded, starting initial routing...');
 

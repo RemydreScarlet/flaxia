@@ -7121,6 +7121,24 @@ html {
   color: var(--accent);
 }
 
+/* Voice channel join panel */
+.server-voice-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 100%;
+}
+.server-voice-panel-icon {
+  font-size: 3rem;
+}
+.server-voice-panel-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
 .server-channel-item {
   display: flex;
   align-items: center;

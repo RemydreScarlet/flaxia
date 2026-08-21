@@ -775,6 +775,13 @@
   "servers.channel_delete_failed": "チャンネルの削除に失敗しました",
   "servers.placeholder": "チャンネルを選択してください",
   "servers.e2ee_unavailable": "暗号化キーを復号できませんでした。ログインし直してください。",
+  "servers.voice_channel": "ボイスチャンネル",
+  "servers.join_voice": "ボイスチャットに参加",
+  "servers.leave_voice": "ボイスチャットから退出",
+  "servers.voice_connected": "{channel} に接続中",
+  "servers.voice_join_failed": "ボイスチャットへの参加に失敗しました",
+  "servers.channel_type_text": "テキストチャンネル",
+  "servers.channel_type_voice": "ボイスチャンネル",
 
   "video_player.play": "再生",
   "video_player.pause": "一時停止",

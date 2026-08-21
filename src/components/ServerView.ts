@@ -26,6 +26,7 @@ export interface ServerChannel {
   category: string | null;
   position: number;
   key_version: number;
+  type: 'text' | 'voice';
   unread_count: number;
   created_at: string;
 }
@@ -159,6 +160,18 @@ export class ServerView {
     topic.appendChild(topicName);
     topic.appendChild(topicMeta);
 
+    const callBtn = document.createElement('button');
+    callBtn.id = 'server-call-btn';
+    callBtn.className = 'group-call-btn chat-header-call';
+    callBtn.title = t('servers.join_voice');
+    callBtn.style.display = 'none';
+    callBtn.innerHTML =
+      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
+    callBtn.addEventListener('click', () => {
+      const ch = this.channels.find((c) => c.id === this.activeChannelId);
+      if (ch && ch.type === 'voice') this.joinVoiceChannel(ch);
+    });
+
     const membersBtn = document.createElement('button');
     membersBtn.className = 'server-members-toggle';
     membersBtn.textContent = t('servers.members');
@@ -166,6 +179,7 @@ export class ServerView {
 
     header.appendChild(backBtn);
     header.appendChild(topic);
+    header.appendChild(callBtn);
     header.appendChild(membersBtn);
 
     const messagesArea = document.createElement('div');
@@ -363,8 +377,9 @@ export class ServerView {
     const renderRow = (ch: ServerChannel) => {
       const row = document.createElement('div');
       row.className = 'chat-channel-item server-channel-item' + (ch.id === this.activeChannelId ? ' active' : '');
-      row.textContent = `# ${ch.name}`;
-      row.title = `# ${ch.name}`;
+      const isVoice = ch.type === 'voice';
+      row.textContent = `${isVoice ? '🔊' : '#'} ${ch.name}`;
+      row.title = `${isVoice ? '🔊' : '#'} ${ch.name}`;
       row.addEventListener('click', () => void this.openChannel(ch.id));
       if (ch.unread_count > 0) {
         const badge = document.createElement('span');
@@ -418,9 +433,24 @@ export class ServerView {
 
     const ch = this.channels.find((c) => c.id === channelId);
     const nameEl = this.element.querySelector('#server-channel-name') as HTMLElement;
-    if (nameEl) nameEl.textContent = ch ? `# ${ch.name}` : '';
+    if (nameEl) nameEl.textContent = ch ? `${ch.type === 'voice' ? '🔊' : '#'} ${ch.name}` : '';
     const metaEl = this.element.querySelector('#server-channel-meta') as HTMLElement;
     if (metaEl) metaEl.textContent = this.server.name;
+
+    const callBtn = this.element.querySelector('#server-call-btn') as HTMLElement;
+    const inputArea = this.element.querySelector('.server-input-area') as HTMLElement;
+
+    if (ch && ch.type === 'voice') {
+      // Voice channel: no message history or input — show a join panel instead.
+      if (callBtn) callBtn.style.display = '';
+      if (inputArea) inputArea.style.display = 'none';
+      this.loading = false;
+      this.renderVoicePanel(ch);
+      return;
+    }
+
+    if (callBtn) callBtn.style.display = 'none';
+    if (inputArea) inputArea.style.display = '';
 
     if (ch) await this.ensureChannelReady(ch);
 
@@ -428,6 +458,42 @@ export class ServerView {
     void this.markRead();
 
     this.startPolling();
+  }
+
+  // Show a join screen for a voice channel.
+  private renderVoicePanel(ch: ServerChannel): void {
+    const area = this.element.querySelector('#server-messages-area') as HTMLElement;
+    if (!area) return;
+    area.innerHTML = '';
+
+    const wrap = document.createElement('div');
+    wrap.className = 'chat-empty server-voice-panel';
+
+    const icon = document.createElement('div');
+    icon.className = 'server-voice-panel-icon';
+    icon.textContent = '🔊';
+
+    const label = document.createElement('div');
+    label.className = 'server-voice-panel-label';
+    label.textContent = t('servers.voice_channel');
+
+    const joinBtn = document.createElement('button');
+    joinBtn.className = 'chat-btn chat-btn--primary';
+    joinBtn.textContent = t('servers.join_voice');
+    joinBtn.addEventListener('click', () => this.joinVoiceChannel(ch));
+
+    wrap.appendChild(icon);
+    wrap.appendChild(label);
+    wrap.appendChild(joinBtn);
+    area.appendChild(wrap);
+  }
+
+  private joinVoiceChannel(ch: ServerChannel): void {
+    window.dispatchEvent(
+      new CustomEvent('startServerCall', {
+        detail: { serverId: this.props.serverId, channelId: ch.id },
+      }),
+    );
   }
 
   // Ensure the current user has a box for this channel. If none exists and we
@@ -484,52 +550,95 @@ export class ServerView {
   }
 
   private async createChannel(): Promise<void> {
+    const type = await this.chooseChannelType();
+    if (!type) return;
     const name = await this.promptText(
       t('servers.new_channel'),
       t('servers.channel_name'),
-      t('servers.general'),
-      t('servers.category'),
+      type === 'voice' ? '' : t('servers.general'),
+      '',
     );
     if (!name) return;
-    const category = await this.promptText(t('servers.category'), t('servers.category_placeholder'), '', '');
+    const category =
+      type === 'text' ? await this.promptText(t('servers.category'), t('servers.category_placeholder'), '', '') : null;
     try {
       const res = await fetch(`/api/servers/${this.props.serverId}/channels`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ name, category: category || null, position: this.channels.length }),
+        body: JSON.stringify({ name, category: category || null, position: this.channels.length, type }),
       });
       if (!res.ok) {
         const err = (await res.json()) as { error?: string };
         showToast(err.error || t('servers.channel_create_failed'), true);
         return;
       }
-      const data = (await res.json()) as { id: string; key_version: number };
+      const data = (await res.json()) as { id: string; key_version: number; type?: 'text' | 'voice' };
       const ch: ServerChannel = {
         id: data.id,
         name,
         category: category || null,
         position: this.channels.length,
         key_version: data.key_version,
+        type: data.type || type,
         unread_count: 0,
         created_at: new Date().toISOString(),
       };
       this.channels.push(ch);
-      const memberPublicKeys = await fetchUserPublicKeys(this.members.map((m) => m.id));
-      const channelKey = await createNewChannelKey();
-      const boxes = await wrapKeyForMembers(channelKey, memberPublicKeys);
-      if (boxes.length > 0) {
-        await fetch(`/api/servers/${this.props.serverId}/keys`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ channelId: ch.id, keyVersion: ch.key_version, boxes }),
-        });
+      if (ch.type === 'text') {
+        const memberPublicKeys = await fetchUserPublicKeys(this.members.map((m) => m.id));
+        const channelKey = await createNewChannelKey();
+        const boxes = await wrapKeyForMembers(channelKey, memberPublicKeys);
+        if (boxes.length > 0) {
+          await fetch(`/api/servers/${this.props.serverId}/keys`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ channelId: ch.id, keyVersion: ch.key_version, boxes }),
+          });
+        }
       }
       await this.openChannel(ch.id);
     } catch {
       showToast(t('servers.channel_create_failed'), true);
     }
+  }
+
+  private chooseChannelType(): Promise<'text' | 'voice' | null> {
+    return new Promise((resolve) => {
+      const unregister = registerModal();
+      const overlay = document.createElement('div');
+      overlay.className = 'chat-modal-overlay';
+      const dialog = document.createElement('div');
+      dialog.className = 'chat-modal-dialog';
+      const head = document.createElement('h3');
+      head.className = 'chat-modal-title';
+      head.textContent = t('servers.new_channel');
+      const row = document.createElement('div');
+      row.className = 'chat-modal-row';
+      const textBtn = document.createElement('button');
+      textBtn.className = 'chat-btn chat-btn--primary';
+      textBtn.textContent = '# ' + t('servers.channel_type_text');
+      const voiceBtn = document.createElement('button');
+      voiceBtn.className = 'chat-btn chat-btn--ghost';
+      voiceBtn.textContent = '🔊 ' + t('servers.channel_type_voice');
+      row.appendChild(textBtn);
+      row.appendChild(voiceBtn);
+      dialog.appendChild(head);
+      dialog.appendChild(row);
+      overlay.appendChild(dialog);
+      document.body.appendChild(overlay);
+      const destroy = (result: 'text' | 'voice' | null) => {
+        unregister();
+        overlay.remove();
+        resolve(result);
+      };
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) destroy(null);
+      });
+      textBtn.addEventListener('click', () => destroy('text'));
+      voiceBtn.addEventListener('click', () => destroy('voice'));
+    });
   }
 
   private promptText(title: string, placeholder: string, initial = '', extraPlaceholder = ''): Promise<string | null> {
