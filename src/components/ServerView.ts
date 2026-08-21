@@ -113,25 +113,6 @@ export class ServerView {
     const container = document.createElement('div');
     container.className = 'server-chat-view';
 
-    // ── Channel (left) panel ──
-    const channelPanel = document.createElement('aside');
-    channelPanel.className = 'server-channel-panel chat-channel-panel';
-    channelPanel.id = 'server-channel-panel';
-
-    const channelHeader = document.createElement('div');
-    channelHeader.className = 'server-channel-header chat-channel-header';
-    const channelHeaderName = document.createElement('div');
-    channelHeaderName.id = 'server-name-heading';
-    channelHeaderName.className = 'chat-server-name';
-    channelHeader.appendChild(channelHeaderName);
-
-    const channelList = document.createElement('div');
-    channelList.id = 'server-channel-list';
-    channelList.className = 'chat-channel-list';
-
-    channelPanel.appendChild(channelHeader);
-    channelPanel.appendChild(channelList);
-
     // ── Main (message) panel ──
     const main = document.createElement('div');
     main.className = 'server-chat-main chat-message-panel';
@@ -279,7 +260,6 @@ export class ServerView {
     memberPanelTitle.textContent = t('servers.members').toUpperCase();
     memberPanel.appendChild(memberPanelTitle);
 
-    container.appendChild(channelPanel);
     container.appendChild(main);
     container.appendChild(memberPanel);
     return container;
@@ -352,81 +332,10 @@ export class ServerView {
     this.channels = data.channels || [];
     this.members = data.members || [];
 
-    const heading = this.element.querySelector('#server-name-heading') as HTMLElement;
-    if (heading) heading.textContent = data.name;
-
-    this.renderChannelList();
-
     const fallback = this.channels[0] || null;
     const activeId = this.activeChannelId || fallback?.id || null;
     if (activeId) await this.openChannel(activeId);
     else this.renderMessages();
-  }
-
-  private renderChannelList(): void {
-    const list = this.element.querySelector('#server-channel-list') as HTMLElement;
-    if (!list) return;
-    list.innerHTML = '';
-
-    const categories = new Map<string, ServerChannel[]>();
-    const uncategorized: ServerChannel[] = [];
-    for (const ch of [...this.channels].sort(
-      (a, b) => a.position - b.position || a.created_at.localeCompare(b.created_at),
-    )) {
-      if (ch.category) {
-        const arr = categories.get(ch.category) || [];
-        arr.push(ch);
-        categories.set(ch.category, arr);
-      } else {
-        uncategorized.push(ch);
-      }
-    }
-
-    const renderRow = (ch: ServerChannel) => {
-      const row = document.createElement('div');
-      row.className = 'chat-channel-item server-channel-item' + (ch.id === this.activeChannelId ? ' active' : '');
-      const isVoice = ch.type === 'voice';
-      row.textContent = `${isVoice ? '🔊' : '#'} ${ch.name}`;
-      row.title = `${isVoice ? '🔊' : '#'} ${ch.name}`;
-      row.addEventListener('click', () => void this.openChannel(ch.id));
-      if (ch.unread_count > 0) {
-        const badge = document.createElement('span');
-        badge.className = 'chat-server-badge';
-        badge.textContent = String(ch.unread_count);
-        row.appendChild(badge);
-      }
-      if (this.canManage()) {
-        const delBtn = document.createElement('button');
-        delBtn.className = 'server-channel-delete';
-        delBtn.textContent = '✕';
-        delBtn.title = t('common.delete');
-        delBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          this.deleteChannel(ch);
-        });
-        row.appendChild(delBtn);
-      }
-      list.appendChild(row);
-    };
-
-    if (uncategorized.length > 0) {
-      for (const ch of uncategorized) renderRow(ch);
-    }
-    for (const [category, arr] of categories.entries()) {
-      const head = document.createElement('div');
-      head.className = 'server-channel-category';
-      head.textContent = category.toUpperCase();
-      list.appendChild(head);
-      for (const ch of arr) renderRow(ch);
-    }
-
-    if (this.canManage()) {
-      const addBtn = document.createElement('div');
-      addBtn.className = 'server-channel-add';
-      addBtn.textContent = '+ ' + t('servers.add_channel');
-      addBtn.addEventListener('click', () => this.createChannel());
-      list.appendChild(addBtn);
-    }
   }
 
   public async openChannel(channelId: string): Promise<void> {
@@ -437,7 +346,6 @@ export class ServerView {
     this.loading = true;
     this.editingMsgId = null;
     this.cancelEdit();
-    this.renderChannelList();
 
     const ch = this.channels.find((c) => c.id === channelId);
     const nameEl = this.element.querySelector('#server-channel-name') as HTMLElement;
@@ -554,7 +462,6 @@ export class ServerView {
         /* best effort */
       }
     }
-    this.renderChannelList();
   }
 
   private async createChannel(): Promise<void> {
@@ -722,7 +629,6 @@ export class ServerView {
             this.activeChannelId = null;
             this.messages = [];
             this.renderMessages();
-            this.renderChannelList();
           }
         } else {
           const err = (await res.json()) as { error?: string };
@@ -1548,7 +1454,6 @@ export class ServerView {
       };
       this.channels = data.channels || [];
       this.members = data.members || [];
-      this.renderChannelList();
     }
   }
 

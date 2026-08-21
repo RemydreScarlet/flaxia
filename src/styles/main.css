@@ -4476,15 +4476,6 @@ html {
   gap: 8px;
 }
 
-.chat-server-name {
-  color: var(--text-primary);
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .chat-channel-name {
   color: var(--text-primary);
 }
@@ -7037,84 +7028,6 @@ html {
   background: var(--bg-primary);
 }
 
-/* --- Channel list inside server --- */
-.server-channel-panel {
-  width: 240px;
-  flex-shrink: 0;
-  background: var(--bg-primary);
-  display: flex;
-  flex-direction: column;
-  border-right: 1px solid var(--border);
-  overflow: hidden;
-}
-
-.server-channel-header {
-  padding: 16px;
-  font-weight: 700;
-  font-size: 1rem;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-}
-
-.server-channel-panel .server-channel-delete {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 0.9rem;
-  padding: 2px 6px;
-  border-radius: 6px;
-  opacity: 0;
-  transition:
-    opacity 0.15s,
-    background 0.15s,
-    color 0.15s;
-}
-.server-channel-panel .server-channel-item:hover .server-channel-delete {
-  opacity: 1;
-}
-.server-channel-panel .server-channel-delete:hover {
-  color: var(--danger, #ef4444);
-  background: var(--bg-secondary);
-}
-
-.server-channel-category {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 12px 4px;
-  font-size: 0.68rem;
-  font-weight: 700;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  gap: 4px;
-}
-
-.server-channel-add {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 1rem;
-  padding: 0 4px;
-  border-radius: 6px;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-.server-channel-category:hover .server-channel-add,
-.server-channel-item:hover .server-channel-add {
-  opacity: 1;
-}
-.server-channel-add:hover {
-  color: var(--accent);
-}
-
 /* Voice channel join panel */
 .server-voice-panel {
   display: flex;
@@ -7131,29 +7044,6 @@ html {
   font-size: 0.95rem;
   font-weight: 600;
   color: var(--text-muted);
-}
-
-.server-channel-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  border-radius: 8px;
-  cursor: pointer;
-  color: var(--text-muted);
-  font-size: 0.9rem;
-  transition: background 0.15s;
-  user-select: none;
-  gap: 6px;
-  min-width: 0;
-}
-.server-channel-item:hover {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-}
-.server-channel-item.active {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
 }
 
 /* --- Message main area --- */
@@ -7609,11 +7499,6 @@ html {
    Mobile tweaks for server single-screen view
    ============================================================ */
 @media (max-width: 768px) {
-  /* Internal channel panel is redundant on mobile — use the sidebar accordion */
-  .server-chat-view .server-channel-panel {
-    display: none;
-  }
-
   /* Member panel becomes a right-side overlay */
   .server-member-panel {
     position: fixed;
