@@ -737,6 +737,7 @@
   "servers.home": "ホーム（メッセージ）",
   "servers.title": "サーバー",
   "servers.no_servers": "サーバーがありません",
+  "servers.no_channels": "チャンネルがありません",
   "servers.role_owner": "所有者",
   "servers.role_admin": "管理者",
   "servers.create": "サーバーを作成",

@@ -737,6 +737,7 @@
   "servers.home": "Home (Messages)",
   "servers.title": "Servers",
   "servers.no_servers": "No servers",
+  "servers.no_channels": "No channels",
   "servers.role_owner": "Owner",
   "servers.role_admin": "Admin",
   "servers.create": "Create Server",

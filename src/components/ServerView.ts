@@ -68,6 +68,7 @@ export interface ServerViewProps {
   serverId: string;
   currentUser: { id: string; username: string; display_name?: string; avatar_key?: string } | null;
   onBack: () => void;
+  onMenu?: () => void;
   onOpenCreateChannel?: () => void;
 }
 
@@ -97,8 +98,6 @@ export class ServerView {
   private selectedFile: File | null = null;
   private editingMsgId: string | null = null;
   private memberPanelOpen = !window.matchMedia('(max-width: 768px)').matches;
-  private railDrawerOpen = false;
-  private railOverlay: HTMLElement | null = null;
 
   constructor(props: ServerViewProps) {
     this.props = props;
@@ -108,29 +107,6 @@ export class ServerView {
 
   private canManage(): boolean {
     return this.server.my_role === 'owner' || this.server.my_role === 'admin';
-  }
-
-  private isMobileView(): boolean {
-    return window.matchMedia('(max-width: 768px)').matches;
-  }
-
-  // Discord-mobile style: slide the server rail in/out as a drawer.
-  private toggleRailDrawer(open?: boolean): void {
-    this.railDrawerOpen = open ?? !this.railDrawerOpen;
-    const root = this.element.closest('.main-container--server');
-    if (root) root.classList.toggle('server-drawer-open', this.railDrawerOpen);
-    if (this.railDrawerOpen) {
-      if (!this.railOverlay) {
-        const ov = document.createElement('div');
-        ov.className = 'server-rail-overlay';
-        ov.addEventListener('click', () => this.toggleRailDrawer(false));
-        document.body.appendChild(ov);
-        this.railOverlay = ov;
-      }
-      this.railOverlay.style.display = 'block';
-    } else if (this.railOverlay) {
-      this.railOverlay.style.display = 'none';
-    }
   }
 
   private createElement(): HTMLElement {
@@ -147,14 +123,6 @@ export class ServerView {
     const channelHeaderName = document.createElement('div');
     channelHeaderName.id = 'server-name-heading';
     channelHeaderName.className = 'chat-server-name';
-
-    const menuBtn = document.createElement('button');
-    menuBtn.className = 'server-channel-menu';
-    menuBtn.textContent = '☰';
-    menuBtn.title = t('servers.title');
-    menuBtn.addEventListener('click', () => this.toggleRailDrawer());
-
-    channelHeader.appendChild(menuBtn);
     channelHeader.appendChild(channelHeaderName);
 
     const channelList = document.createElement('div');
@@ -171,16 +139,18 @@ export class ServerView {
     const header = document.createElement('div');
     header.className = 'server-chat-header chat-header';
 
+    const menuBtn = document.createElement('button');
+    menuBtn.className = 'chat-header-menu';
+    menuBtn.textContent = '≡';
+    menuBtn.title = t('messages.menu');
+    menuBtn.addEventListener('click', () => this.props.onMenu?.());
+
     const backBtn = document.createElement('button');
     backBtn.className = 'server-chat-back';
     backBtn.textContent = '←';
     backBtn.title = t('common.back');
     backBtn.addEventListener('click', () => {
       this.stopPolling();
-      if (this.isMobileView() && this.element.classList.contains('server-channel-open')) {
-        this.element.classList.remove('server-channel-open');
-        return;
-      }
       this.props.onBack();
     });
 
@@ -214,6 +184,7 @@ export class ServerView {
     membersBtn.textContent = t('servers.members');
     membersBtn.addEventListener('click', () => this.toggleMemberPanel());
 
+    header.appendChild(menuBtn);
     header.appendChild(backBtn);
     header.appendChild(topic);
     header.appendChild(callBtn);
@@ -467,7 +438,6 @@ export class ServerView {
     this.editingMsgId = null;
     this.cancelEdit();
     this.renderChannelList();
-    if (this.isMobileView()) this.element.classList.add('server-channel-open');
 
     const ch = this.channels.find((c) => c.id === channelId);
     const nameEl = this.element.querySelector('#server-channel-name') as HTMLElement;

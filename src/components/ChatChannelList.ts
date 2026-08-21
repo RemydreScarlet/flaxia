@@ -49,14 +49,22 @@ export interface ChannelListServer {
   my_role?: string;
 }
 
+export interface ChannelListServerChannel {
+  id: string;
+  name: string;
+  type?: 'text' | 'voice';
+  unread_count?: number;
+}
+
 export interface ChatChannelListProps {
   currentUser: ChannelListUser | null;
   activeConversationId?: string | null;
   activeGroupId?: string | null;
   activeServerId?: string | null;
+  activeServerChannelId?: string | null;
   onSelectConversation: (convId: string) => void;
   onSelectGroup: (groupId: string) => void;
-  onSelectServer: (serverId: string) => void;
+  onOpenServerChannel: (serverId: string, channelId: string) => void;
   onCreateServer?: () => void;
 }
 
@@ -76,6 +84,9 @@ export class ChatChannelList {
   private selectedMemberNames: Map<string, string> = new Map();
   private groupSearchResults: ChannelListUser[] = [];
   private mobileOverlay: HTMLElement | null = null;
+  private expandedServerId: string | null = null;
+  private serverChannels: Map<string, ChannelListServerChannel[]> = new Map();
+  private loadingServerChannels: Set<string> = new Set();
 
   constructor(props: ChatChannelListProps) {
     this.props = props;
@@ -268,10 +279,23 @@ export class ChatChannelList {
     return aside;
   }
 
-  public setActive(conversationId: string | null, groupId: string | null): void {
+  public setActive(
+    conversationId: string | null,
+    groupId: string | null,
+    serverId?: string | null,
+    serverChannelId?: string | null,
+  ): void {
     this.props.activeConversationId = conversationId;
     this.props.activeGroupId = groupId;
+    this.props.activeServerId = serverId ?? null;
+    this.props.activeServerChannelId = serverChannelId ?? null;
     this.renderSections();
+  }
+
+  // Ensure the given server's channel list is expanded (no-op if already open).
+  public async expandServer(serverId: string): Promise<void> {
+    if (this.expandedServerId === serverId) return;
+    await this.toggleServerExpand(serverId);
   }
 
   public setMobileOpen(open: boolean): void {
@@ -621,6 +645,9 @@ export class ChatChannelList {
   }
 
   private createServerItem(server: ChannelListServer): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.className = 'channel-server-group';
+
     const row = document.createElement('button');
     row.className = 'channel-item' + (server.id === this.props.activeServerId ? ' channel-item--active' : '');
 
@@ -665,7 +692,87 @@ export class ChatChannelList {
       row.appendChild(badgeEl);
     }
 
-    row.addEventListener('click', () => this.props.onSelectServer(server.id));
+    // Chevron indicating expand/collapse
+    const expanded = this.expandedServerId === server.id;
+    const chevron = document.createElement('span');
+    chevron.className = 'channel-server-chevron' + (expanded ? ' channel-server-chevron--open' : '');
+    chevron.textContent = '▸';
+    row.appendChild(chevron);
+
+    row.addEventListener('click', () => void this.toggleServerExpand(server.id));
+    wrap.appendChild(row);
+
+    if (expanded) {
+      const channelsBox = document.createElement('div');
+      channelsBox.className = 'channel-server-channels';
+      const channels = this.serverChannels.get(server.id);
+      if (!channels && this.loadingServerChannels.has(server.id)) {
+        const loading = document.createElement('div');
+        loading.className = 'channel-section-empty';
+        loading.textContent = '…';
+        channelsBox.appendChild(loading);
+      } else if (channels) {
+        for (const ch of channels) {
+          channelsBox.appendChild(this.createServerChannelItem(server.id, ch));
+        }
+        if (channels.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'channel-section-empty';
+          empty.textContent = t('servers.no_channels');
+          channelsBox.appendChild(empty);
+        }
+      }
+      wrap.appendChild(channelsBox);
+    }
+
+    return wrap;
+  }
+
+  private async toggleServerExpand(serverId: string): Promise<void> {
+    if (this.expandedServerId === serverId) {
+      this.expandedServerId = null;
+      this.renderSections();
+      return;
+    }
+    this.expandedServerId = serverId;
+    if (!this.serverChannels.has(serverId)) {
+      this.loadingServerChannels.add(serverId);
+      this.renderSections();
+      try {
+        const res = await fetch(`/api/servers/${serverId}`, { credentials: 'include' });
+        if (res.ok) {
+          const data = (await res.json()) as { channels?: ChannelListServerChannel[] };
+          this.serverChannels.set(serverId, data.channels || []);
+        } else {
+          this.serverChannels.set(serverId, []);
+        }
+      } catch {
+        this.serverChannels.set(serverId, []);
+      } finally {
+        this.loadingServerChannels.delete(serverId);
+      }
+    }
+    this.renderSections();
+  }
+
+  private createServerChannelItem(serverId: string, ch: ChannelListServerChannel): HTMLElement {
+    const row = document.createElement('button');
+    row.className =
+      'channel-item channel-sub-item' +
+      (ch.id === this.props.activeServerChannelId && serverId === this.props.activeServerId
+        ? ' channel-item--active'
+        : '');
+    row.textContent = `${ch.type === 'voice' ? '🔊' : '#'} ${ch.name}`;
+
+    const unread = Number(ch.unread_count) || 0;
+    if (unread > 0) {
+      const badgeEl = document.createElement('span');
+      badgeEl.className = 'channel-item-badge';
+      badgeEl.textContent = unread >= 99 ? '99+' : String(unread);
+      row.appendChild(badgeEl);
+    }
+
+    row.addEventListener('click', () => this.props.onOpenServerChannel(serverId, ch.id));
     return row;
   }
 
