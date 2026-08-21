@@ -1212,6 +1212,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Close mobile nav if open
       closeLeftNav();
 
+      // Remove stale server rail drawer overlays
+      document.querySelectorAll('.server-rail-overlay').forEach((el) => {
+        el.remove();
+      });
+
       // For auth routes, proceed directly
       if (view === 'login' || view === 'register') {
         // Cleanup current view
