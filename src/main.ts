@@ -1,5 +1,6 @@
 import type { ArcadePageHandle } from './components/ArcadePage.js';
 import { BookmarksPage } from './components/BookmarksPage.js';
+import { BottomNav, createBottomNav } from './components/BottomNav.js';
 import { ChatChannelList } from './components/ChatChannelList.js';
 import { ConversationView } from './components/ConversationView.js';
 import { ExplorePage } from './components/ExplorePage.js';
@@ -95,6 +96,77 @@ document.addEventListener('DOMContentLoaded', async () => {
     let adminUsersTab: PageComponent | null = null;
     let adminAdsTab: PageComponent | null = null;
     const leftNavInstances: Set<LeftNav> = new Set();
+    let bottomNav: BottomNav | null = null;
+
+    /** Map a top-level view to the matching bottom-nav item id ('' = none). */
+    const viewToBottomNavId = (view: string): string => {
+      switch (view) {
+        case 'timeline':
+        case 'thread':
+          return 'home';
+        case 'explore':
+        case 'search':
+          return 'explore';
+        case 'arcade':
+          return 'arcade';
+        case 'messages':
+        case 'groups':
+        case 'servers':
+        case 'call':
+          return 'messages';
+        case 'profile':
+        case 'settings':
+        case 'bookmarks':
+        case 'notifications':
+          return 'account';
+        default:
+          return '';
+      }
+    };
+
+    /** Shared navigation handler for the mobile bottom bar. */
+    const handleBottomNavNavigate = (item: string): void => {
+      if (item === 'home') {
+        window.history.pushState({}, '', '/home');
+        navigateTo('timeline');
+      } else if (item === 'explore') {
+        window.history.pushState({}, '', '/explore');
+        navigateTo('explore');
+      } else if (item === 'arcade') {
+        window.history.pushState({}, '', '/arcade');
+        navigateTo('arcade');
+      } else if (item === 'messages') {
+        window.history.pushState({}, '', '/messages');
+        navigateTo('messages');
+      } else if (item === 'account') {
+        if (!currentUser) {
+          window.history.pushState({}, '', '/login');
+          navigateTo('login');
+          return;
+        }
+        window.history.pushState({}, '', `/profile/${currentUser.username}`);
+        navigateTo('profile', undefined, currentUser.username);
+      }
+    };
+
+    /** Create the single global bottom-nav instance once and mount it. */
+    const ensureBottomNav = (): void => {
+      if (bottomNav) return;
+      bottomNav = createBottomNav({
+        activeItem: 'home',
+        currentUser: currentUser || undefined,
+        onNavigate: handleBottomNavNavigate,
+        onSignIn: () => {
+          window.history.pushState({}, '', '/login');
+          navigateTo('login');
+        },
+        onSignUp: () => {
+          window.history.pushState({}, '', '/register');
+          navigateTo('register');
+        },
+      });
+      document.body.appendChild(bottomNav.getElement());
+    };
     let currentUser: { username: string; id: string; display_name?: string; avatar_key?: string } | null = null;
     let unreadNotificationCount = 0;
     let unreadDmCount = 0;
@@ -513,6 +585,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             updateLeftNavUser(leftNav, currentUser);
           });
 
+          // Create/update the mobile bottom nav with the signed-in user
+          ensureBottomNav();
+          bottomNav?.updateUser(currentUser);
+
           // 初回の未読通知数を取得（以降は WebSocket でリアルタイム更新）
           startNotificationPolling();
 
@@ -533,6 +609,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       leftNavInstances.forEach((leftNav) => {
         updateLeftNavUser(leftNav, null);
       });
+
+      // Create/update the mobile bottom nav for the guest state
+      ensureBottomNav();
+      bottomNav?.updateUser(null);
 
       // If user was logged in and now is not, they were logged out
       if (wasLoggedIn) {
@@ -591,6 +671,9 @@ document.addEventListener('DOMContentLoaded', async () => {
               ln.setUnreadDmCount(unreadDmCount);
             }
           });
+          if (bottomNav && typeof bottomNav.setUnreadDmCount === 'function') {
+            bottomNav.setUnreadDmCount(unreadDmCount);
+          }
         }
       } catch {
         // ignore
@@ -608,6 +691,9 @@ document.addEventListener('DOMContentLoaded', async () => {
               ln.setUnreadGroupCount(unreadGroupCount);
             }
           });
+          if (bottomNav && typeof bottomNav.setUnreadGroupCount === 'function') {
+            bottomNav.setUnreadGroupCount(unreadGroupCount);
+          }
         }
       } catch {
         // ignore
@@ -1210,6 +1296,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // Close mobile nav if open
       closeLeftNav();
+
+      // Sync active item on the mobile bottom nav
+      if (bottomNav) {
+        const navId = viewToBottomNavId(view);
+        if (navId) bottomNav.setActiveItem(navId);
+      }
 
       // For auth routes, proceed directly
       if (view === 'login' || view === 'register') {

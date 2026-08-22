@@ -1,22 +1,28 @@
 import {
   BarChart3,
+  Bell,
   Bookmark,
   Copy,
   createElement,
   Eye,
   Gamepad2,
+  Home,
   type IconNode,
   ImagePlus,
+  Key,
   Leaf,
   MessageCircle,
   Music2,
   Quote,
   Save,
+  Search,
   Send,
+  Settings,
   Share2,
   SmilePlus,
   StickyNote,
   Upload,
+  User,
   X,
 } from 'lucide';
 
@@ -37,7 +43,13 @@ export type IconName =
   | 'smile-plus'
   | 'image-video'
   | 'audio'
-  | 'game';
+  | 'game'
+  | 'home'
+  | 'search'
+  | 'key'
+  | 'bell'
+  | 'user'
+  | 'settings';
 
 const ICON_NODES: Record<IconName, IconNode> = {
   fresh: Leaf,
@@ -57,6 +69,12 @@ const ICON_NODES: Record<IconName, IconNode> = {
   'image-video': ImagePlus,
   audio: Music2,
   game: Gamepad2,
+  home: Home,
+  search: Search,
+  key: Key,
+  bell: Bell,
+  user: User,
+  settings: Settings,
 };
 
 export function icon(name: IconName, attrs: Record<string, string> = {}): SVGElement {
