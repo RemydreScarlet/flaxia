@@ -3494,7 +3494,7 @@ app.get('/api/users/:username', async (c) => {
     }
 
     const user = await c.env.DB.prepare(`
-      SELECT id, username, display_name, bio, avatar_key, created_at 
+      SELECT id, username, display_name, bio, avatar_key, created_at, pinned_post_id 
       FROM users 
       WHERE username = ? COLLATE NOCASE
     `)
@@ -3539,6 +3539,112 @@ app.get('/api/users/:username', async (c) => {
   } catch (error: unknown) {
     console.error('Get user error:', error);
     return c.json({ error: 'Failed to get user' }, 500);
+  }
+});
+
+// GET /api/users/:username/pinned - get the pinned post for a user (public)
+app.get('/api/users/:username/pinned', async (c) => {
+  try {
+    const username = c.req.param('username');
+    if (!username) {
+      return c.json({ error: 'Username required' }, 400);
+    }
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500);
+    }
+
+    const user = await c.env.DB.prepare('SELECT id, pinned_post_id FROM users WHERE username = ? COLLATE NOCASE')
+      .bind(username)
+      .first<{ id: string; pinned_post_id: string | null }>();
+
+    if (!user) {
+      return c.json({ error: 'User not found' }, 404);
+    }
+
+    if (!user.pinned_post_id) {
+      return c.json({ post: null });
+    }
+
+    const token = getSessionToken(c.req.raw);
+    const sessionData = token ? await getMeWithSession(c.env, token) : null;
+    const currentUserId = sessionData?.user.id ?? null;
+
+    const row = await c.env.DB.prepare(
+      `${RECOMMENDED_SELECT} FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.id = ? AND p.status = 'published' AND p.hidden = 0`,
+    )
+      .bind(user.pinned_post_id)
+      .first();
+
+    if (!row) {
+      return c.json({ post: null });
+    }
+
+    const posts = [row as unknown as PostRow];
+    await enrichPostsWithReactions(posts, c.env.DB, currentUserId);
+
+    return c.json({ post: posts[0] });
+  } catch (error: unknown) {
+    console.error('Get pinned post error:', error);
+    return c.json({ error: 'Failed to get pinned post' }, 500);
+  }
+});
+
+// POST /api/profile/pin - pin a post to the current user's profile (protected)
+app.post('/api/profile/pin', requireAuth, async (c) => {
+  try {
+    const token = getSessionToken(c.req.raw);
+    const sessionData = token ? await getMeWithSession(c.env, token) : null;
+    if (!sessionData) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500);
+    }
+
+    const body = (await c.req.json<{ postId?: string | null }>().catch(() => ({}))) as {
+      postId?: string | null;
+    };
+    const postId = body.postId ?? null;
+
+    if (postId) {
+      const post = await c.env.DB.prepare(
+        "SELECT id, user_id FROM posts WHERE id = ? AND status = 'published' AND hidden = 0",
+      )
+        .bind(postId)
+        .first<{ id: string; user_id: string }>();
+
+      if (!post || post.user_id !== sessionData.user.id) {
+        return c.json({ error: 'Post not found or not owned by you' }, 403);
+      }
+    }
+
+    await c.env.DB.prepare('UPDATE users SET pinned_post_id = ? WHERE id = ?').bind(postId, sessionData.user.id).run();
+
+    return c.json({ ok: true, pinned_post_id: postId });
+  } catch (error: unknown) {
+    console.error('Pin post error:', error);
+    return c.json({ error: 'Failed to pin post' }, 500);
+  }
+});
+
+// DELETE /api/profile/pin - unpin the current user's profile post (protected)
+app.delete('/api/profile/pin', requireAuth, async (c) => {
+  try {
+    const token = getSessionToken(c.req.raw);
+    const sessionData = token ? await getMeWithSession(c.env, token) : null;
+    if (!sessionData) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+    if (!c.env.DB) {
+      return c.json({ error: 'Database not available' }, 500);
+    }
+
+    await c.env.DB.prepare('UPDATE users SET pinned_post_id = NULL WHERE id = ?').bind(sessionData.user.id).run();
+
+    return c.json({ ok: true, pinned_post_id: null });
+  } catch (error: unknown) {
+    console.error('Unpin post error:', error);
+    return c.json({ error: 'Failed to unpin post' }, 500);
   }
 });
 
@@ -7503,6 +7609,80 @@ app.get('/api/bookmarks', requireAuth, async (c) => {
     return c.json({ posts, nextCursor });
   } catch (error: unknown) {
     console.error('Bookmarks fetch error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// GET /api/freshs - get current user's Freshed (liked) posts (protected)
+app.get('/api/freshs', requireAuth, async (c) => {
+  try {
+    const cursor = c.req.query('cursor');
+    const limit = Math.min(Number(c.req.query('limit') || '20'), 50);
+    const userId = c.get('user')?.id || '';
+
+    let query: string;
+    const params: Array<unknown> = [userId];
+
+    if (cursor) {
+      params.push(cursor);
+      query = `
+        SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, u.language as author_language, p.text, p.hashtags, p.mentions, p.gif_key, p.payload_key, p.swf_key, p.thumbnail_key, p.fresh_count, COALESCE(p.bookmark_count, 0) as bookmark_count,
+        COALESCE(p.reply_count, 0) as reply_count,
+        COALESCE(p.impressions, 0) as impressions, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at
+        FROM posts p
+        LEFT JOIN users u ON p.user_id = u.id
+        INNER JOIN freshs f ON f.post_id = p.id AND f.user_id = ?
+        WHERE p.status = 'published' AND p.hidden = 0 AND p.created_at < ?
+        ORDER BY p.created_at DESC
+        LIMIT ?
+      `;
+      params.push(limit);
+    } else {
+      query = `
+        SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, u.language as author_language, p.text, p.hashtags, p.mentions, p.gif_key, p.payload_key, p.swf_key, p.thumbnail_key, p.fresh_count, COALESCE(p.bookmark_count, 0) as bookmark_count,
+        COALESCE(p.reply_count, 0) as reply_count,
+        COALESCE(p.impressions, 0) as impressions, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at
+        FROM posts p
+        LEFT JOIN users u ON p.user_id = u.id
+        INNER JOIN freshs f ON f.post_id = p.id AND f.user_id = ?
+        WHERE p.status = 'published' AND p.hidden = 0
+        ORDER BY p.created_at DESC
+        LIMIT ?
+      `;
+      params.push(limit);
+    }
+
+    const result = await c.env.DB.prepare(query)
+      .bind(...params)
+      .all();
+    const posts = result.results || [];
+
+    // All posts fetched here are by definition freshed by the current user
+    posts.forEach((post: Record<string, unknown>) => {
+      post.is_freshed = true;
+    });
+
+    // Enrich bookmark state for these posts
+    if (posts.length > 0) {
+      const postIds = posts.map((p: Record<string, unknown>) => p.id);
+      const bmResult = await c.env.DB.prepare(
+        `SELECT post_id FROM bookmarks WHERE user_id = ? AND post_id IN (${postIds.map(() => '?').join(',')})`,
+      )
+        .bind(userId, ...postIds)
+        .all<{ post_id: string }>();
+      const bookmarked = new Set((bmResult.results || []).map((r) => r.post_id));
+      posts.forEach((post: Record<string, unknown>) => {
+        post.is_bookmarked = bookmarked.has(post.id as string);
+      });
+    }
+
+    await enrichPostsWithReactions(posts as PostRow[], c.env.DB, userId);
+
+    const nextCursor = posts.length === limit ? posts[posts.length - 1].created_at : null;
+
+    return c.json({ posts, nextCursor });
+  } catch (error: unknown) {
+    console.error('Freshs fetch error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });

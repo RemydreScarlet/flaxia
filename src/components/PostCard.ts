@@ -42,6 +42,7 @@ export class PostCard {
   private replyComposer?: ReplyComposer;
   private isReplyComposerOpen: boolean = false;
   private menuDropdown?: HTMLElement;
+  private onPinChanged?: (e: Event) => void;
   private freshLoading: boolean = false;
   private bookmarkLoading: boolean = false;
   private originalText: string;
@@ -66,6 +67,14 @@ export class PostCard {
     this.reactions = props.post.reactions || [];
     this.element = this.createElement();
     this.setupEventListeners();
+
+    if (this.props.showPinOption) {
+      this.onPinChanged = (e: Event) => {
+        const detail = (e as CustomEvent<{ pinnedId: string | null }>).detail;
+        this.props.pinned = detail?.pinnedId === this.props.post.id;
+      };
+      window.addEventListener('profilePinChanged', this.onPinChanged);
+    }
   }
 
   private createElement(): HTMLElement {
@@ -1104,6 +1113,36 @@ export class PostCard {
     `;
 
     if (isOwnPost) {
+      if (this.props.showPinOption) {
+        const pinItem = document.createElement('button');
+        pinItem.style.cssText = `
+          display: block;
+          width: 100%;
+          padding: 10px 16px;
+          background: none;
+          border: none;
+          color: var(--text-primary);
+          text-align: left;
+          cursor: pointer;
+          font-size: 14px;
+          transition: background 0.2s;
+        `;
+        pinItem.textContent = this.props.pinned ? t('post.menu_unpin') : t('post.menu_pin');
+        pinItem.addEventListener('mouseenter', () => {
+          pinItem.style.background = 'var(--bg-secondary)';
+        });
+        pinItem.addEventListener('mouseleave', () => {
+          pinItem.style.background = 'none';
+        });
+        pinItem.addEventListener('click', (e) => {
+          e.stopPropagation();
+          dropdown.remove();
+          this.menuDropdown = undefined;
+          this.props.onTogglePin?.(this.props.post.id);
+        });
+        dropdown.appendChild(pinItem);
+      }
+
       if (this.props.post.hidden === 1) {
         const counterItem = document.createElement('button');
         counterItem.style.cssText = `
@@ -1882,6 +1921,12 @@ export class PostCard {
   }
 
   public destroy(): void {
+    // Remove pin change listener
+    if (this.onPinChanged) {
+      window.removeEventListener('profilePinChanged', this.onPinChanged);
+      this.onPinChanged = undefined;
+    }
+
     // Cancel any pending sandbox bridge retry
     if (this.sandboxBridgeTimer) {
       clearTimeout(this.sandboxBridgeTimer);

@@ -95,6 +95,9 @@ export interface PostCardProps {
   enablePostRefs?: boolean;
   disableNavigation?: boolean;
   stripLeadingPostRef?: boolean;
+  showPinOption?: boolean;
+  pinned?: boolean;
+  onTogglePin?: (postId: string) => void;
 }
 
 export interface PostHeaderProps {

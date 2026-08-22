@@ -7,6 +7,7 @@ import { openPostModal } from '../lib/post-modal.js';
 import { Post } from '../types/post.js';
 import { createEditProfileModal } from './EditProfileModal.js';
 import { createFollowerListModal } from './FollowerListModal.js';
+import { createPostCard } from './PostCard.js';
 import { linkifyHashtags, linkifyUrls, processText, renderMathElements } from './PostText.js';
 import { showSignInPrompt } from './SignInPrompt.js';
 import { CurrentUser, createUserPostList } from './UserPostList.js';
@@ -23,6 +24,7 @@ interface ProfileUserData {
   bio?: string;
   avatar_key?: string | null;
   created_at?: string;
+  pinned_post_id?: string | null;
   posts_count?: number;
   followers_count?: number;
   following_count?: number;
@@ -157,48 +159,217 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
   statsRow.appendChild(followersStat);
   statsRow.appendChild(followingStat);
 
-  // Action buttons
-  const actionsRow = document.createElement('div');
-  actionsRow.className = 'profile-actions';
+  const own = currentUser?.username === username;
 
-  // Edit Profile button (only for own profile)
+  let userData: ProfileUserData | null = null;
+
+  // Edit / Logout menu items (only for own profile)
   const editButton = document.createElement('button');
-  editButton.className = 'profile-button profile-button--primary';
+  editButton.className = 'profile-menu-item';
   editButton.textContent = t('profile.edit');
-  editButton.style.display = currentUser?.username === username ? 'block' : 'none';
 
-  // Logout button (only for own profile)
   const logoutButton = document.createElement('button');
-  logoutButton.className = 'profile-button profile-button--secondary';
+  logoutButton.className = 'profile-menu-item';
   logoutButton.textContent = t('profile.log_out');
-  logoutButton.style.display = currentUser?.username === username ? 'block' : 'none';
-  logoutButton.style.marginTop = '0.5rem';
 
   // Follow/Unfollow button (only for others' profiles)
   const followButton = document.createElement('button');
   followButton.className = 'profile-button profile-button--secondary';
   followButton.textContent = t('profile.follow');
-  followButton.style.display = currentUser?.username === username ? 'none' : 'block';
+  followButton.style.display = own ? 'none' : 'block';
 
-  actionsRow.appendChild(editButton);
-  if (currentUser?.username === username) {
-    actionsRow.appendChild(logoutButton);
-  }
+  // Action buttons row (follow button, only for others' profiles)
+  const actionsRow = document.createElement('div');
+  actionsRow.className = 'profile-actions';
   actionsRow.appendChild(followButton);
 
   // Assemble page
   container.appendChild(header);
   container.appendChild(statsRow);
-  container.appendChild(document.createElement('hr'));
-  container.appendChild(actionsRow);
 
-  // Add user post list
+  if (!own) {
+    container.appendChild(document.createElement('hr'));
+    container.appendChild(actionsRow);
+  }
+
+  // Pinned post container (shown above the tabs for everyone)
+  const pinnedContainer = document.createElement('div');
+  pinnedContainer.className = 'profile-pinned';
+  pinnedContainer.style.display = 'none';
+
+  // User post list (投稿 tab)
   const postList = createUserPostList({
     username: username,
     sandboxOrigin: sandboxOrigin,
     currentUser: currentUser,
+    showPinOption: own,
+    onTogglePin: own ? togglePin : undefined,
   });
-  container.appendChild(postList.getElement());
+
+  // Profile tabs (own profile: 投稿 / いいね / ブックマーク)
+  const tabBar = document.createElement('div');
+  tabBar.className = 'profile-tabs';
+  tabBar.style.display = own ? 'flex' : 'none';
+
+  type ProfileTabKey = 'posts' | 'freshs' | 'bookmarks';
+  const tabDefs: { key: ProfileTabKey; label: string }[] = [
+    { key: 'posts', label: own ? t('profile.your_posts') : t('profile.posts_label') },
+    { key: 'freshs', label: t('profile.view_likes') },
+    { key: 'bookmarks', label: t('profile.view_bookmarks') },
+  ];
+
+  let activeTab: ProfileTabKey = 'posts';
+  const tabEls: Partial<Record<ProfileTabKey, HTMLElement>> = {};
+
+  const tabContent = document.createElement('div');
+  tabContent.className = 'profile-tab-content';
+
+  const selectTab = (key: ProfileTabKey) => {
+    if (key === activeTab) return;
+
+    const current = tabEls[activeTab];
+    if (current) current.style.display = 'none';
+
+    let next = tabEls[key];
+    if (!next) {
+      next = createUserPostList({
+        username,
+        sandboxOrigin,
+        currentUser,
+        source: key,
+      }).getElement();
+      tabEls[key] = next;
+      tabContent.appendChild(next);
+    }
+
+    next.style.display = '';
+    activeTab = key;
+
+    tabBar.querySelectorAll<HTMLElement>('.profile-tab').forEach((el) => {
+      el.classList.toggle('profile-tab--active', el.dataset.tab === key);
+    });
+  };
+
+  tabDefs.forEach((def) => {
+    const tab = document.createElement('button');
+    tab.className = 'profile-tab';
+    tab.dataset.tab = def.key;
+    tab.textContent = def.label;
+    if (def.key === activeTab) tab.classList.add('profile-tab--active');
+    tab.addEventListener('click', () => selectTab(def.key));
+    tabBar.appendChild(tab);
+  });
+
+  // Posts tab wraps the pinned post (top) + the user's posts list
+  const postsTabContent = document.createElement('div');
+  postsTabContent.className = 'profile-posts-tab';
+  postsTabContent.appendChild(pinnedContainer);
+  postsTabContent.appendChild(postList.getElement());
+  tabEls.posts = postsTabContent;
+  tabContent.appendChild(postsTabContent);
+
+  container.appendChild(tabBar);
+  container.appendChild(tabContent);
+
+  // Pinned post logic
+  let pinnedPostCache: Post | null = null;
+
+  const renderPinned = () => {
+    pinnedContainer.innerHTML = '';
+
+    if (!userData?.pinned_post_id) {
+      pinnedContainer.style.display = 'none';
+      return;
+    }
+
+    pinnedContainer.style.display = '';
+
+    const label = document.createElement('div');
+    label.className = 'profile-pinned-label';
+    label.textContent = t('profile.pinned_label');
+    pinnedContainer.appendChild(label);
+
+    const pinnedPost = pinnedPostCache;
+    if (!pinnedPost) return;
+
+    const card = createPostCard({
+      post: pinnedPost,
+      sandboxOrigin,
+      currentUser,
+      depth: pinnedPost.depth,
+      enablePostRefs: true,
+      showPinOption: own,
+      pinned: own,
+      onTogglePin: own ? togglePin : undefined,
+    });
+    pinnedContainer.appendChild(card.getElement());
+  };
+
+  const loadPinned = async () => {
+    try {
+      const res = await fetch(`/api/users/${username}/pinned`, { credentials: 'include' });
+      if (!res.ok) return;
+      const data = (await res.json()) as { post: Post | null };
+      pinnedPostCache = data.post ?? null;
+      renderPinned();
+    } catch (error) {
+      console.error('Failed to load pinned post:', error);
+    }
+  };
+
+  async function togglePin(postId: string) {
+    if (!currentUser) return;
+    const currentlyPinned = userData?.pinned_post_id === postId;
+    try {
+      const res = currentlyPinned
+        ? await fetch('/api/profile/pin', { method: 'DELETE', credentials: 'include' })
+        : await fetch('/api/profile/pin', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ postId }),
+          });
+      if (!res.ok) return;
+      const newPinnedId = currentlyPinned ? null : postId;
+      userData = userData ? { ...userData, pinned_post_id: newPinnedId } : userData;
+      await loadPinned();
+      window.dispatchEvent(new CustomEvent('profilePinChanged', { detail: { pinnedId: newPinnedId } }));
+    } catch (error) {
+      console.error('Failed to toggle pin:', error);
+    }
+  }
+
+  // Kebab menu (own profile) in the top bar
+  if (own) {
+    const menu = document.createElement('div');
+    menu.className = 'profile-kebab-menu';
+    menu.appendChild(editButton);
+    menu.appendChild(logoutButton);
+
+    const kebab = document.createElement('button');
+    kebab.className = 'profile-kebab-button';
+    kebab.textContent = '⋯';
+    kebab.setAttribute('aria-label', t('common.menu'));
+
+    kebab.addEventListener('click', (e) => {
+      e.stopPropagation();
+      menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    });
+    menu.addEventListener('click', (e) => e.stopPropagation());
+    window.addEventListener('click', () => {
+      menu.style.display = 'none';
+    });
+
+    editButton.addEventListener('click', () => {
+      menu.style.display = 'none';
+    });
+    logoutButton.addEventListener('click', () => {
+      menu.style.display = 'none';
+    });
+
+    topBar.appendChild(kebab);
+    topBar.appendChild(menu);
+  }
 
   let fabButton: HTMLElement | null = null;
   if (currentUser) {
@@ -216,7 +387,6 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
     container.appendChild(fabButton);
   }
 
-  let userData: ProfileUserData | null = null;
   const _isEditing = false;
   let isFollowing = false;
 
@@ -227,6 +397,12 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
       if (response.ok) {
         const data = (await response.json()) as { user: ProfileUserData };
         userData = data.user;
+
+        // Load the pinned post and sync pin state on visible cards
+        loadPinned();
+        window.dispatchEvent(
+          new CustomEvent('profilePinChanged', { detail: { pinnedId: userData.pinned_post_id ?? null } }),
+        );
 
         // Update UI
         displayName.textContent = userData.display_name ?? null;

@@ -371,6 +371,107 @@ p {
   border-bottom: 1px solid var(--border);
 }
 
+.profile-top-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.profile-kebab-button {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+}
+
+.profile-kebab-button:hover {
+  color: var(--accent);
+  background: var(--accent-soft, rgba(0, 200, 100, 0.1));
+}
+
+.profile-kebab-menu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  min-width: 12rem;
+  background: var(--bg-secondary, #fff);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  z-index: 1500;
+  overflow: hidden;
+}
+
+.profile-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.75rem 1rem;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.profile-menu-item:hover {
+  background: var(--accent-soft, rgba(0, 200, 100, 0.1));
+  color: var(--accent);
+}
+
+.profile-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+
+.profile-tab {
+  flex: 1;
+  padding: 0.85rem 0.5rem;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.profile-tab:hover {
+  color: var(--text);
+}
+
+.profile-tab--active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.profile-tab-content {
+  min-height: 4rem;
+}
+
+.profile-pinned {
+  border-bottom: 1px solid var(--border);
+  background: var(--accent-soft, rgba(0, 200, 100, 0.06));
+}
+
+.profile-pinned-label {
+  padding: 0.5rem 1rem 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
 .profile-button {
   padding: 0.5rem 1rem;
   border-radius: 0.25rem;
@@ -2088,6 +2189,10 @@ h1 {
 
 .action-button--active {
   color: var(--accent);
+}
+
+.action-button--bookmark.action-button--active svg {
+  fill: var(--accent);
 }
 
 .action-button--fresh.action-button--active {
