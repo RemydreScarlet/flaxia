@@ -1,9 +1,10 @@
-// Serve the browser node SDK from a pinned, immutable version. 0.3.3 fixes the
-// mobile Chrome crash: it forces single-threaded wasm (no worker-per-core swarm)
-// and makes storage/UUID access crash-safe, so Android Chrome can safely act as
-// a node. The versioned path segment in client imports (e.g. /api/crowd/v0.3.3-0)
-// is a cache-busting prefix stripped below.
-const UPSTREAM = 'https://unpkg.com/@flaxia/node@0.3.3/dist';
+// Serve the browser node SDK from a pinned, immutable version. 0.3.4 gates heavy
+// WASM workloads behind a real measured WebAssembly.Memory probe: devices that
+// cannot actually commit >= 2GB now register with empty capabilities, so the
+// orchestrator routes nothing to them and the worker rejects every task before
+// any model is loaded. The versioned path segment in client imports
+// (e.g. /api/crowd/v0.3.4-0) is a cache-busting prefix stripped below.
+const UPSTREAM = 'https://unpkg.com/@flaxia/node@0.3.4/dist';
 const MIME: Record<string, string> = {
   js: 'application/javascript',
   wasm: 'application/wasm',

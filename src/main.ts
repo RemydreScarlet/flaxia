@@ -3092,11 +3092,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         //
         // NOTE: `navigator.deviceMemory` IS reported by Android Chrome (a quantized
         // value, e.g. a 3 GB phone reports 4), so Android Chrome passes the numeric
-        // check below and is allowed to run as a node. @flaxia/node >= 0.3.3 makes
-        // that safe — it runs inference single-threaded and self-limits on low
-        // memory, so the previous mobile crashes no longer happen. Platforms that
-        // don't expose deviceMemory (iOS WebViews, some browsers) stay blocked.
-        // Requiring a KNOWN value >= 4 GB is a conservative safety margin.
+        // check below and is allowed to run as a node. @flaxia/node >= 0.3.4 makes
+        // that safe: it runs inference single-threaded AND gates heavy WASM behind a
+        // real measured WebAssembly.Memory probe — devices that cannot actually
+        // commit >= 2GB register with empty capabilities and reject every task
+        // before any model is loaded, so the previous mobile crashes/overheat-kills
+        // no longer happen. Platforms that don't expose deviceMemory (iOS WebViews,
+        // some browsers) stay blocked. Requiring a KNOWN value >= 4 GB is a
+        // conservative safety margin; the node re-checks with a real probe.
         const isCapacitorNative =
           typeof window !== 'undefined' &&
           typeof window.Capacitor !== 'undefined' &&
@@ -3115,7 +3118,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!canRunCrowdNode()) return;
 
       // @ts-expect-error - dynamic import of local path
-      const { initFlaxiaNode } = await import('/api/crowd/v0.3.3-0/index.js');
+      const { initFlaxiaNode } = await import('/api/crowd/v0.3.4-0/index.js');
       initFlaxiaNode({
         orchestratorUrl: 'https://crowd.flaxia.app',
         siteId: 'flaxia',
