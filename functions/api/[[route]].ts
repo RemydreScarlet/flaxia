@@ -22,8 +22,11 @@ import {
   loginUser,
   registerUser,
   setSessionCookie,
+  startSrpLogin,
   User,
+  upgradeSrp,
   verifyPassword,
+  verifySrpLogin,
 } from '../lib/auth';
 import { validateImageDimensions } from '../lib/image-dimensions';
 import {
@@ -2219,10 +2222,10 @@ app.post('/api/games/dwell', async (c) => {
 // POST /api/auth/register - user registration
 app.post('/api/auth/register', async (c) => {
   try {
-    const { email, password, username, display_name } = await c.req.json();
+    const { email, password, username, display_name, srp_salt, srp_verifier, srp_group } = await c.req.json();
 
     // Validation
-    if (!email || !password || !username || !display_name) {
+    if (!email || !username || !display_name) {
       return c.json({ error: 'Missing required fields' }, 400);
     }
 
@@ -2230,11 +2233,6 @@ app.post('/api/auth/register', async (c) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       return c.json({ error: 'Invalid email format' }, 400);
-    }
-
-    // Password validation
-    if (password.length < 8 || password.length > 128) {
-      return c.json({ error: 'Password must be 8-128 characters' }, 400);
     }
 
     // Username validation
@@ -2248,12 +2246,28 @@ app.post('/api/auth/register', async (c) => {
       return c.json({ error: 'Display name must be ≤50 characters' }, 400);
     }
 
+    // Either legacy password or SRP verifier must be provided.
+    const srp =
+      srp_salt && srp_verifier && srp_group
+        ? { salt: srp_salt as string, verifier: srp_verifier as string, group: srp_group as string }
+        : undefined;
+
+    if (!srp) {
+      if (!password) {
+        return c.json({ error: 'Password or SRP verifier required' }, 400);
+      }
+      if (password.length < 8 || password.length > 128) {
+        return c.json({ error: 'Password must be 8-128 characters' }, 400);
+      }
+    }
+
     // Register user with custom auth
     const user = await registerUser(c.env, {
       email,
       password,
       username,
       display_name,
+      srp,
     });
 
     // Create session and set cookie so user is logged in after registration
@@ -2269,7 +2283,8 @@ app.post('/api/auth/register', async (c) => {
   }
 });
 
-// POST /api/auth/login - user login
+// POST /api/auth/login - legacy (plaintext password) login. Kept for fallback
+// and for accounts that have not yet upgraded to SRP.
 app.post('/api/auth/login', async (c) => {
   try {
     const { email, password } = await c.req.json();
@@ -2289,6 +2304,64 @@ app.post('/api/auth/login', async (c) => {
   } catch (error: unknown) {
     console.error('Login error:', error);
     return c.json({ error: 'Invalid credentials' }, 401);
+  }
+});
+
+// POST /api/auth/login/start - begin SRP login. Returns the server ephemeral B
+// and the user's salt; or { srp: false } to signal legacy fallback.
+app.post('/api/auth/login/start', async (c) => {
+  try {
+    const { email } = await c.req.json();
+    if (!email) return c.json({ error: 'Email required' }, 400);
+
+    const hs = await startSrpLogin(c.env, email);
+    if (!hs) return c.json({ srp: false });
+
+    return c.json({ srp: true, challenge_id: hs.challengeId, salt: hs.salt, B: hs.B });
+  } catch (error: unknown) {
+    console.error('SRP login/start error:', error);
+    return c.json({ error: 'Login failed' }, 500);
+  }
+});
+
+// POST /api/auth/login/verify - finish SRP login with the client proof M1.
+app.post('/api/auth/login/verify', async (c) => {
+  try {
+    const { email, challenge_id, A, M1 } = await c.req.json();
+    if (!email || !challenge_id || !A || !M1) {
+      return c.json({ error: 'Missing SRP parameters' }, 400);
+    }
+
+    const result = await verifySrpLogin(c.env, email, challenge_id, A, M1);
+    if (!result) return c.json({ error: 'Invalid credentials' }, 401);
+
+    const response = c.json({ user: result.user, M2: result.M2 });
+    setSessionCookie(response, result.session.id);
+    return response;
+  } catch (error: unknown) {
+    console.error('SRP login/verify error:', error);
+    return c.json({ error: 'Invalid credentials' }, 401);
+  }
+});
+
+// POST /api/auth/upgrade-srp - store an SRP verifier for the logged-in user.
+app.post('/api/auth/upgrade-srp', requireAuth, async (c) => {
+  try {
+    const { srp_salt, srp_verifier, srp_group } = await c.req.json();
+    if (!srp_salt || !srp_verifier || !srp_group) {
+      return c.json({ error: 'Missing SRP parameters' }, 400);
+    }
+    const userId = c.get('user')?.id;
+    if (!userId) return c.json({ error: 'Unauthorized' }, 401);
+    await upgradeSrp(c.env, userId, {
+      salt: srp_salt,
+      verifier: srp_verifier,
+      group: srp_group,
+    });
+    return c.json({ success: true });
+  } catch (error: unknown) {
+    console.error('SRP upgrade error:', error);
+    return c.json({ error: 'Upgrade failed' }, 400);
   }
 });
 
@@ -4049,14 +4122,21 @@ app.patch('/api/users/me/password', requireAuth, async (c) => {
       return c.json({ error: 'Database not available' }, 500);
     }
 
-    const { current_password, new_password } = await c.req.json();
+    const { current_password, new_password, srp_salt, srp_verifier, srp_group } = await c.req.json();
+
+    const srp =
+      srp_salt && srp_verifier && srp_group
+        ? { salted: true as const, salt: srp_salt, verifier: srp_verifier, group: srp_group }
+        : null;
 
     // Validation
-    if (!current_password || !new_password) {
-      return c.json({ error: 'Current password and new password are required' }, 400);
+    if (!current_password) {
+      return c.json({ error: 'Current password is required' }, 400);
     }
-
-    if (new_password.length < 8 || new_password.length > 128) {
+    if (!new_password && !srp) {
+      return c.json({ error: 'New password or SRP verifier required' }, 400);
+    }
+    if (new_password && (new_password.length < 8 || new_password.length > 128)) {
       return c.json({ error: 'Password must be 8-128 characters' }, 400);
     }
 
@@ -4073,18 +4153,33 @@ app.patch('/api/users/me/password', requireAuth, async (c) => {
       return c.json({ error: 'User not found' }, 404);
     }
 
-    // Verify current password using the same method as auth
-    const isValid = await verifyPassword(current_password, userWithPassword.password_hash);
-    if (!isValid) {
-      return c.json({ error: 'Current password is incorrect' }, 401);
+    // Verify current password using the legacy hash when available. SRP-only
+    // accounts (no legacy hash) rely on the session being proof of auth.
+    if (userWithPassword.password_hash) {
+      const isValid = await verifyPassword(current_password, userWithPassword.password_hash);
+      if (!isValid) {
+        return c.json({ error: 'Current password is incorrect' }, 401);
+      }
     }
 
-    // Hash new password using the same method as registration
-    const newPasswordHash = await hashPassword(new_password);
+    // Build the update. Both legacy hash and SRP verifier can be refreshed.
+    const newPasswordHash = new_password ? await hashPassword(new_password) : null;
 
-    // Update password
-    const result = await c.env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?')
-      .bind(newPasswordHash, userId)
+    const sets: string[] = [];
+    const binds: unknown[] = [];
+    if (newPasswordHash) {
+      sets.push('password_hash = ?');
+      binds.push(newPasswordHash);
+    }
+    if (srp) {
+      if (srp.group !== '2048') return c.json({ error: 'Unsupported SRP group' }, 400);
+      sets.push('srp_salt = ?, srp_verifier = ?, srp_group = ?');
+      binds.push(srp.salt, srp.verifier, srp.group);
+    }
+    binds.push(userId);
+
+    const result = await c.env.DB.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`)
+      .bind(...binds)
       .run();
 
     if (!result.success) {
@@ -10294,6 +10389,7 @@ app.get('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
         SELECT m.id, m.conversation_id, m.sender_id, m.content, m.created_at,
                m.gif_key, m.payload_key, m.swf_key, m.edited_at,
                m.content_iv, m.enc_version, m.key_version,
+               m.ratchet_pub, m.ratchet_pn, m.ratchet_n,
                u.username as sender_username, u.display_name as sender_display_name
         FROM dm_messages m
         JOIN users u ON m.sender_id = u.id
@@ -10308,6 +10404,7 @@ app.get('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
         SELECT m.id, m.conversation_id, m.sender_id, m.content, m.created_at,
                m.gif_key, m.payload_key, m.swf_key, m.edited_at,
                m.content_iv, m.enc_version, m.key_version,
+               m.ratchet_pub, m.ratchet_pn, m.ratchet_n,
                u.username as sender_username, u.display_name as sender_display_name
         FROM dm_messages m
         JOIN users u ON m.sender_id = u.id
@@ -10334,6 +10431,9 @@ app.get('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
         content_iv: row.content_iv || null,
         enc_version: row.enc_version || null,
         key_version: row.key_version || null,
+        ratchet_pub: row.ratchet_pub || null,
+        ratchet_pn: row.ratchet_pn ?? null,
+        ratchet_n: row.ratchet_n ?? null,
         created_at: row.created_at,
         edited_at: row.edited_at || null,
         is_mine: row.sender_id === userId,
@@ -10357,17 +10457,31 @@ app.post('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
     const sender = c.get('user')!;
     const senderId = sender.id;
     const convId = c.req.param('id');
-    const { content, gifKey, payloadKey, swfKey, messageId, contentIv, encVersion, keyVersion } =
-      (await c.req.json()) as {
-        content?: string;
-        gifKey?: string;
-        payloadKey?: string;
-        swfKey?: string;
-        messageId?: string;
-        contentIv?: string;
-        encVersion?: number;
-        keyVersion?: number;
-      };
+    const {
+      content,
+      gifKey,
+      payloadKey,
+      swfKey,
+      messageId,
+      contentIv,
+      encVersion,
+      keyVersion,
+      ratchetPub,
+      ratchetPn,
+      ratchetN,
+    } = (await c.req.json()) as {
+      content?: string;
+      gifKey?: string;
+      payloadKey?: string;
+      swfKey?: string;
+      messageId?: string;
+      contentIv?: string;
+      encVersion?: number;
+      keyVersion?: number;
+      ratchetPub?: string;
+      ratchetPn?: number;
+      ratchetN?: number;
+    };
 
     const trimmed = content?.trim() || '';
     if (!trimmed && !gifKey && !payloadKey && !swfKey) {
@@ -10397,7 +10511,7 @@ app.post('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
 
     // Insert message with optional attachment keys
     await c.env.DB.prepare(
-      'INSERT INTO dm_messages (id, conversation_id, sender_id, content, created_at, gif_key, payload_key, swf_key, content_iv, enc_version, key_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO dm_messages (id, conversation_id, sender_id, content, created_at, gif_key, payload_key, swf_key, content_iv, enc_version, key_version, ratchet_pub, ratchet_pn, ratchet_n) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     )
       .bind(
         msgId,
@@ -10411,6 +10525,9 @@ app.post('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
         contentIv || null,
         isEncrypted ? encVersion : null,
         keyVersion || 1,
+        ratchetPub || null,
+        typeof ratchetPn === 'number' ? ratchetPn : null,
+        typeof ratchetN === 'number' ? ratchetN : null,
       )
       .run();
 
@@ -10467,6 +10584,9 @@ app.post('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
       content_iv: contentIv || null,
       enc_version: isEncrypted ? encVersion : null,
       key_version: isEncrypted ? keyVersion || 1 : null,
+      ratchet_pub: ratchetPub || null,
+      ratchet_pn: typeof ratchetPn === 'number' ? ratchetPn : null,
+      ratchet_n: typeof ratchetN === 'number' ? ratchetN : null,
       created_at: now,
       edited_at: null,
       is_mine: true,
@@ -10663,11 +10783,14 @@ app.put('/api/dm/conversations/:id/messages/:msgId', requireAuth, async (c) => {
     const userId = c.get('user')?.id || '';
     const convId = c.req.param('id');
     const msgId = c.req.param('msgId');
-    const { content, contentIv, encVersion, keyVersion } = (await c.req.json()) as {
+    const { content, contentIv, encVersion, keyVersion, ratchetPub, ratchetPn, ratchetN } = (await c.req.json()) as {
       content?: string;
       contentIv?: string;
       encVersion?: number;
       keyVersion?: number;
+      ratchetPub?: string;
+      ratchetPn?: number;
+      ratchetN?: number;
     };
 
     if (!content || typeof content !== 'string' || content.trim().length === 0) {
@@ -10701,7 +10824,7 @@ app.put('/api/dm/conversations/:id/messages/:msgId', requireAuth, async (c) => {
     const now = new Date().toISOString();
 
     await c.env.DB.prepare(
-      'UPDATE dm_messages SET content = ?, edited_at = ?, content_iv = ?, enc_version = ?, key_version = ? WHERE id = ?',
+      'UPDATE dm_messages SET content = ?, edited_at = ?, content_iv = ?, enc_version = ?, key_version = ?, ratchet_pub = ?, ratchet_pn = ?, ratchet_n = ? WHERE id = ?',
     )
       .bind(
         trimmed,
@@ -10709,6 +10832,9 @@ app.put('/api/dm/conversations/:id/messages/:msgId', requireAuth, async (c) => {
         contentIv || msg.content_iv || null,
         isEncrypted ? encVersion : msg.enc_version || null,
         keyVersion || msg.key_version || 1,
+        typeof ratchetPub === 'string' ? ratchetPub : null,
+        typeof ratchetPn === 'number' ? ratchetPn : null,
+        typeof ratchetN === 'number' ? ratchetN : null,
         msgId,
       )
       .run();
@@ -10729,6 +10855,9 @@ app.put('/api/dm/conversations/:id/messages/:msgId', requireAuth, async (c) => {
       content_iv: contentIv || null,
       enc_version: isEncrypted ? encVersion : null,
       key_version: keyVersion || null,
+      ratchet_pub: typeof ratchetPub === 'string' ? ratchetPub : null,
+      ratchet_pn: typeof ratchetPn === 'number' ? ratchetPn : null,
+      ratchet_n: typeof ratchetN === 'number' ? ratchetN : null,
       edited_at: now,
     });
   } catch (error: unknown) {
@@ -11238,6 +11367,7 @@ app.get('/api/groups/:id/messages', requireAuth, async (c) => {
         SELECT m.id, m.group_id, m.sender_id, m.content, m.created_at,
                m.gif_key, m.payload_key, m.swf_key, m.edited_at,
                m.content_iv, m.enc_version, m.key_version,
+               m.ratchet_pub, m.ratchet_pn, m.ratchet_n,
                u.username as sender_username, u.display_name as sender_display_name,
                u.avatar_key as sender_avatar_key
         FROM group_messages m
@@ -11253,6 +11383,7 @@ app.get('/api/groups/:id/messages', requireAuth, async (c) => {
         SELECT m.id, m.group_id, m.sender_id, m.content, m.created_at,
                m.gif_key, m.payload_key, m.swf_key, m.edited_at,
                m.content_iv, m.enc_version, m.key_version,
+               m.ratchet_pub, m.ratchet_pn, m.ratchet_n,
                u.username as sender_username, u.display_name as sender_display_name,
                u.avatar_key as sender_avatar_key
         FROM group_messages m
@@ -11896,6 +12027,283 @@ app.post('/api/messenger/keys/bulk', requireAuth, async (c) => {
     const err = error as { message?: string };
     console.error('Messenger keys bulk error:', error);
     return c.json({ error: 'Failed to fetch keys', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
+// ─── Messenger E2EE v2: X3DH prekey bundles (forward secrecy) ──────────────────
+
+// GET /api/messenger/identity-v2 - fetch my own v2 identity (private material is
+// AES-GCM encrypted; the client unwraps it with the password-derived KEK).
+app.get('/api/messenger/identity-v2', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id || '';
+    const row = (await c.env.DB.prepare(
+      `SELECT identity_sign_pub, identity_sign_priv_enc, identity_dh_pub, identity_dh_priv_enc,
+              spk_pub, spk_priv_enc, spk_sig, enc_salt, enc_iv, enc_version
+       FROM messenger_identity_v2 WHERE user_id = ?`,
+    )
+      .bind(userId)
+      .first()) as Record<string, unknown> | null;
+    if (!row) return c.json({ exists: false });
+    return c.json({
+      exists: true,
+      identitySignPub: row.identity_sign_pub,
+      identitySignPrivEnc: row.identity_sign_priv_enc,
+      identityDhPub: row.identity_dh_pub,
+      identityDhPrivEnc: row.identity_dh_priv_enc,
+      spkPub: row.spk_pub,
+      spkPrivEnc: row.spk_priv_enc,
+      spkSig: row.spk_sig,
+      encSalt: row.enc_salt,
+      encIv: row.enc_iv,
+      encVersion: row.enc_version || 2,
+    });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Messenger identity-v2 get error:', error);
+    return c.json({ error: 'Failed to fetch identity', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
+// GET /api/messenger/prekeys?userId=... - fetch a public prekey bundle for X3DH.
+// Consumes (deletes) one one-time prekey so it cannot be reused.
+app.get('/api/messenger/prekeys', requireAuth, async (c) => {
+  try {
+    const userId = c.req.query('userId');
+    if (!userId) return c.json({ error: 'userId is required' }, 400);
+
+    const ident = (await c.env.DB.prepare(
+      `SELECT identity_sign_pub, identity_dh_pub, spk_pub, spk_sig, spk_rotated_at
+       FROM messenger_identity_v2 WHERE user_id = ?`,
+    )
+      .bind(userId)
+      .first()) as Record<string, unknown> | null;
+    if (!ident) return c.json({ error: 'No identity registered' }, 404);
+
+    const opk = (await c.env.DB.prepare(
+      `SELECT id, pub FROM messenger_opks WHERE user_id = ? ORDER BY created_at LIMIT 1`,
+    )
+      .bind(userId)
+      .first()) as Record<string, unknown> | null;
+
+    if (opk) {
+      await c.env.DB.prepare('DELETE FROM messenger_opks WHERE id = ?')
+        .bind(opk.id as string)
+        .run();
+    }
+
+    return c.json({
+      identitySignPub: ident.identity_sign_pub,
+      identityDhPub: ident.identity_dh_pub,
+      signedPreKeyPub: ident.spk_pub,
+      signedPreKeySignature: ident.spk_sig,
+      signedPreKeyRotatedAt: ident.spk_rotated_at,
+      preKeyPub: opk?.pub ?? null,
+      preKeyId: opk?.id ?? null,
+    });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Messenger prekeys get error:', error);
+    return c.json({ error: 'Failed to fetch prekeys', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
+// POST /api/messenger/opks/consume - fetch one of MY one-time prekeys' private
+// material and delete it, so it can never be reused. Called by the responder
+// during X3DH to recover the OPK private that the initiator consumed.
+app.post('/api/messenger/opks/consume', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id || '';
+    const body = (await c.req.json()) as { opkId?: string };
+    if (!body.opkId) return c.json({ error: 'opkId is required' }, 400);
+
+    const opk = (await c.env.DB.prepare(`SELECT priv_enc FROM messenger_opks WHERE id = ? AND user_id = ?`)
+      .bind(body.opkId, userId)
+      .first()) as Record<string, unknown> | null;
+    if (!opk) return c.json({ error: 'OPK not found' }, 404);
+
+    const ident = (await c.env.DB.prepare(`SELECT enc_iv FROM messenger_identity_v2 WHERE user_id = ?`)
+      .bind(userId)
+      .first()) as Record<string, unknown> | null;
+
+    await c.env.DB.prepare('DELETE FROM messenger_opks WHERE id = ? AND user_id = ?').bind(body.opkId, userId).run();
+
+    return c.json({ privEnc: opk.priv_enc, encIv: ident?.enc_iv ?? null });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Messenger opks consume error:', error);
+    return c.json({ error: 'Failed to consume OPK', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
+// PUT /api/messenger/identity-v2 - register identity + signed prekey + OPKs.
+// Private material is already AES-GCM encrypted client-side with the password KEK.
+app.put('/api/messenger/identity-v2', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id || '';
+    const body = (await c.req.json()) as {
+      identitySignPub?: string;
+      identitySignPrivEnc?: string;
+      identityDhPub?: string;
+      identityDhPrivEnc?: string;
+      spkPub?: string;
+      spkPrivEnc?: string;
+      spkSig?: string;
+      opks?: Array<{ id: string; pub: string; privEnc: string }>;
+      encSalt?: string;
+      encIv?: string;
+    };
+    if (
+      !body.identitySignPub ||
+      !body.identitySignPrivEnc ||
+      !body.identityDhPub ||
+      !body.identityDhPrivEnc ||
+      !body.spkPub ||
+      !body.spkPrivEnc ||
+      !body.spkSig ||
+      !body.encSalt ||
+      !body.encIv
+    ) {
+      return c.json({ error: 'Missing identity fields' }, 400);
+    }
+
+    const now = new Date().toISOString();
+    await c.env.DB.prepare(
+      `INSERT INTO messenger_identity_v2
+        (user_id, identity_sign_pub, identity_sign_priv_enc, identity_dh_pub, identity_dh_priv_enc,
+         spk_pub, spk_priv_enc, spk_sig, enc_salt, enc_iv, enc_version, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET
+         identity_sign_pub = excluded.identity_sign_pub,
+         identity_sign_priv_enc = excluded.identity_sign_priv_enc,
+         identity_dh_pub = excluded.identity_dh_pub,
+         identity_dh_priv_enc = excluded.identity_dh_priv_enc,
+         spk_pub = excluded.spk_pub,
+         spk_priv_enc = excluded.spk_priv_enc,
+         spk_sig = excluded.spk_sig,
+         spk_rotated_at = excluded.updated_at,
+         enc_salt = excluded.enc_salt,
+         enc_iv = excluded.enc_iv,
+         updated_at = excluded.updated_at`,
+    )
+      .bind(
+        userId,
+        body.identitySignPub,
+        body.identitySignPrivEnc,
+        body.identityDhPub,
+        body.identityDhPrivEnc,
+        body.spkPub,
+        body.spkPrivEnc,
+        body.spkSig,
+        body.encSalt,
+        body.encIv,
+        now,
+        now,
+      )
+      .run();
+
+    if (body.opks && body.opks.length > 0) {
+      const insert = c.env.DB.prepare(
+        'INSERT OR REPLACE INTO messenger_opks (id, user_id, pub, priv_enc) VALUES (?, ?, ?, ?)',
+      );
+      const batch = body.opks.map((o) => insert.bind(o.id, userId, o.pub, o.privEnc));
+      await c.env.DB.batch(batch);
+    }
+
+    return c.json({ success: true });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Messenger identity-v2 put error:', error);
+    return c.json({ error: 'Failed to save identity', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
+// PUT /api/messenger/ratchet-session - persist a KEK-wrapped Double Ratchet
+// session so it survives reloads / multiple devices. The server only stores
+// ciphertext; the KEK never leaves the client.
+app.put('/api/messenger/ratchet-session', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id;
+    const { conversation_id, session_enc, session_iv } = (await c.req.json()) as {
+      conversation_id?: string;
+      session_enc?: string;
+      session_iv?: string;
+    };
+    if (!userId || !conversation_id || !session_enc || !session_iv) {
+      return c.json({ error: 'Missing session fields' }, 400);
+    }
+    const now = new Date().toISOString();
+    const result = await c.env.DB.prepare(
+      `INSERT INTO messenger_ratchet_sessions (user_id, conversation_id, session_enc, session_iv, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(user_id, conversation_id) DO UPDATE SET
+         session_enc = excluded.session_enc,
+         session_iv = excluded.session_iv,
+         updated_at = excluded.updated_at`,
+    )
+      .bind(userId, conversation_id, session_enc, session_iv, now)
+      .run();
+    if (!result.success) return c.json({ error: 'Failed to save session' }, 500);
+    return c.json({ success: true });
+  } catch (error: unknown) {
+    console.error('Ratchet session put error:', error);
+    return c.json({ error: 'Failed to save session' }, 500);
+  }
+});
+
+// GET /api/messenger/ratchet-session?conversation_id=... - fetch the persisted
+// KEK-wrapped ratchet session for the current user + conversation.
+app.get('/api/messenger/ratchet-session', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id;
+    const convId = c.req.query('conversation_id');
+    if (!userId || !convId) return c.json({ error: 'conversation_id required' }, 400);
+    const row = (await c.env.DB.prepare(
+      'SELECT session_enc, session_iv FROM messenger_ratchet_sessions WHERE user_id = ? AND conversation_id = ?',
+    )
+      .bind(userId, convId)
+      .first()) as { session_enc: string; session_iv: string } | null;
+    if (!row) return c.json({ exists: false });
+    return c.json({ exists: true, session_enc: row.session_enc, session_iv: row.session_iv });
+  } catch (error: unknown) {
+    console.error('Ratchet session get error:', error);
+    return c.json({ error: 'Failed to fetch session' }, 500);
+  }
+});
+
+// DELETE /api/messenger/ratchet-session?conversation_id=... - drop a persisted
+// ratchet session (e.g. on logout).
+app.delete('/api/messenger/ratchet-session', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id;
+    const convId = c.req.query('conversation_id');
+    if (!userId || !convId) return c.json({ error: 'conversation_id required' }, 400);
+    await c.env.DB.prepare('DELETE FROM messenger_ratchet_sessions WHERE user_id = ? AND conversation_id = ?')
+      .bind(userId, convId)
+      .run();
+    return c.json({ success: true });
+  } catch (error: unknown) {
+    console.error('Ratchet session delete error:', error);
+    return c.json({ error: 'Failed to delete session' }, 500);
+  }
+});
+
+// POST /api/messenger/opks - replenish one-time prekeys without re-registering identity.
+app.post('/api/messenger/opks', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id || '';
+    const { opks } = (await c.req.json()) as { opks?: Array<{ id: string; pub: string; privEnc: string }> };
+    if (!opks || opks.length === 0) return c.json({ error: 'opks required' }, 400);
+    const insert = c.env.DB.prepare(
+      'INSERT OR REPLACE INTO messenger_opks (id, user_id, pub, priv_enc) VALUES (?, ?, ?, ?)',
+    );
+    const batch = opks.map((o) => insert.bind(o.id, userId, o.pub, o.privEnc));
+    await c.env.DB.batch(batch);
+    return c.json({ success: true, added: opks.length });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Messenger opks post error:', error);
+    return c.json({ error: 'Failed to add opks', details: err.message || 'Unknown error' }, 500);
   }
 });
 
@@ -12662,7 +13070,8 @@ app.get('/api/servers/:id/channels/:channelId/messages', requireAuth, async (c) 
       messages = await c.env.DB.prepare(`
         SELECT m.id, m.channel_id, m.sender_id, m.content, m.created_at,
                m.gif_key, m.payload_key, m.swf_key, m.edited_at,
-               m.content_iv, m.enc_version, m.key_version, m.reply_to_id, m.pinned,
+               m.content_iv, m.enc_version, m.key_version,
+               m.ratchet_pub, m.ratchet_pn, m.ratchet_n, m.reply_to_id, m.pinned,
                u.username as sender_username, u.display_name as sender_display_name,
                u.avatar_key as sender_avatar_key
         FROM server_messages m
@@ -12677,7 +13086,8 @@ app.get('/api/servers/:id/channels/:channelId/messages', requireAuth, async (c) 
       messages = await c.env.DB.prepare(`
         SELECT m.id, m.channel_id, m.sender_id, m.content, m.created_at,
                m.gif_key, m.payload_key, m.swf_key, m.edited_at,
-               m.content_iv, m.enc_version, m.key_version, m.reply_to_id, m.pinned,
+               m.content_iv, m.enc_version, m.key_version,
+               m.ratchet_pub, m.ratchet_pn, m.ratchet_n, m.reply_to_id, m.pinned,
                u.username as sender_username, u.display_name as sender_display_name,
                u.avatar_key as sender_avatar_key
         FROM server_messages m

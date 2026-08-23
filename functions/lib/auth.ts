@@ -1,4 +1,5 @@
 import { nanoid } from 'nanoid';
+import { serverStep1, serverStep2 } from './srp';
 
 export interface User {
   id: string;
@@ -170,17 +171,25 @@ export async function deleteSession(env: Env, token: string): Promise<boolean> {
   return result.success;
 }
 
-// Register user
+export interface SrpRegistration {
+  salt: string; // base64 (16 bytes)
+  verifier: string; // base64 (256 bytes)
+  group: string; // '2048'
+}
+
+// Register user. Supports either legacy password-based registration or
+// SRP-based registration where the client computes the verifier locally.
 export async function registerUser(
   env: Env,
   userData: {
     email: string;
-    password: string;
+    password?: string;
     username: string;
     display_name: string;
+    srp?: SrpRegistration;
   },
 ): Promise<User> {
-  const { email, password, username, display_name } = userData;
+  const { email, password, username, display_name, srp } = userData;
 
   // Check if email already exists
   const existingEmail = await env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
@@ -199,15 +208,34 @@ export async function registerUser(
   // Generate user ID
   const userId = nanoid();
 
-  // Hash password
-  const passwordHash = await hashPassword(password);
+  let passwordHash: string = '';
+  let srpSalt: string | null = null;
+  let srpVerifier: string | null = null;
+  let srpGroup: string | null = null;
+
+  if (srp) {
+    if (srp.group !== '2048') throw new Error('Unsupported SRP group');
+    // Basic length sanity checks (16-byte salt, 256-byte verifier).
+    if (base64ToUint8Array(srp.salt).length !== 16) throw new Error('Invalid SRP salt');
+    if (base64ToUint8Array(srp.verifier).length !== 256) throw new Error('Invalid SRP verifier');
+    srpSalt = srp.salt;
+    srpVerifier = srp.verifier;
+    srpGroup = srp.group;
+    // SRP-only accounts have no legacy hash; store empty string so the NOT
+    // NULL column is satisfied and legacy login correctly fails.
+    passwordHash = '';
+  } else if (password) {
+    passwordHash = await hashPassword(password);
+  } else {
+    throw new Error('Password or SRP verifier required');
+  }
 
   // Create user
   const result = await env.DB.prepare(`
-    INSERT INTO users (id, email, password_hash, username, display_name, bio)
-    VALUES (?, ?, ?, ?, ?, '')
+    INSERT INTO users (id, email, password_hash, username, display_name, bio, srp_salt, srp_verifier, srp_group)
+    VALUES (?, ?, ?, ?, ?, '', ?, ?, ?)
   `)
-    .bind(userId, email, passwordHash, username, display_name)
+    .bind(userId, email, passwordHash, username, display_name, srpSalt, srpVerifier, srpGroup)
     .run();
 
   if (!result.success) {
@@ -223,6 +251,100 @@ export async function registerUser(
     .first()) as User;
 
   return user;
+}
+
+// Begin an SRP login: returns the server ephemeral B and the user's salt.
+// Returns null if the user has no SRP verifier (client should fall back to legacy).
+export async function startSrpLogin(
+  env: Env,
+  email: string,
+): Promise<{ challengeId: string; salt: string; B: string } | null> {
+  const user = (await env.DB.prepare('SELECT id, srp_salt, srp_verifier FROM users WHERE email = ?')
+    .bind(email)
+    .first()) as { id: string; srp_salt: string | null; srp_verifier: string | null } | null;
+
+  if (!user || !user.srp_verifier || !user.srp_salt) return null;
+
+  const salt = base64ToUint8Array(user.srp_salt);
+  const v = base64ToUint8Array(user.srp_verifier);
+  const { B, b } = await serverStep1(salt, v);
+  const challengeId = nanoid(32);
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+
+  const insert = await env.DB.prepare(
+    'INSERT INTO srp_handshakes (id, user_id, b_scalar, b_pub, expires_at) VALUES (?, ?, ?, ?, ?)',
+  )
+    .bind(challengeId, user.id, b.toString(), uint8ArrayToBase64(B), expiresAt)
+    .run();
+  if (!insert.success) throw new Error('Failed to store SRP handshake');
+
+  return { challengeId, salt: user.srp_salt, B: uint8ArrayToBase64(B) };
+}
+
+// Finish an SRP login: validates M1 and returns the session on success.
+export async function verifySrpLogin(
+  env: Env,
+  email: string,
+  challengeId: string,
+  A: string,
+  M1: string,
+): Promise<{ user: User; session: Session; M2: string } | null> {
+  const hs = (await env.DB.prepare("SELECT * FROM srp_handshakes WHERE id = ? AND expires_at > datetime('now')")
+    .bind(challengeId)
+    .first()) as { user_id: string; b_scalar: string; b_pub: string } | null;
+  if (!hs) return null;
+
+  const user = (await env.DB.prepare(`
+    SELECT id, email, srp_salt, srp_verifier, username, display_name, bio, avatar_key, created_at
+    FROM users WHERE id = ?
+  `)
+    .bind(hs.user_id)
+    .first()) as {
+    id: string;
+    email: string;
+    srp_salt: string | null;
+    srp_verifier: string | null;
+    username: string;
+    display_name: string;
+    bio: string;
+    avatar_key: string | null;
+    created_at: string;
+  } | null;
+  if (!user || !user.srp_verifier || !user.srp_salt) return null;
+
+  const v = base64ToUint8Array(user.srp_verifier);
+  const B = base64ToUint8Array(hs.b_pub);
+  const A_bytes = base64ToUint8Array(A);
+  const M1_bytes = base64ToUint8Array(M1);
+
+  const result = await serverStep2(A_bytes, B, BigInt(hs.b_scalar), v, M1_bytes);
+  if (!result) return null;
+
+  await env.DB.prepare('DELETE FROM srp_handshakes WHERE id = ?').bind(challengeId).run();
+
+  const session = await createSession(env, user.id);
+  const safeUser: User = {
+    id: user.id,
+    email: user.email,
+    username: user.username,
+    display_name: user.display_name,
+    bio: user.bio,
+    avatar_key: user.avatar_key ?? undefined,
+    created_at: user.created_at,
+  };
+  return { user: safeUser, session, M2: uint8ArrayToBase64(result.M2) };
+}
+
+// Store (or replace) the SRP verifier for an already-authenticated user.
+// Used to upgrade a legacy account to SRP.
+export async function upgradeSrp(env: Env, userId: string, srp: SrpRegistration): Promise<void> {
+  if (srp.group !== '2048') throw new Error('Unsupported SRP group');
+  if (base64ToUint8Array(srp.salt).length !== 16) throw new Error('Invalid SRP salt');
+  if (base64ToUint8Array(srp.verifier).length !== 256) throw new Error('Invalid SRP verifier');
+  const result = await env.DB.prepare('UPDATE users SET srp_salt = ?, srp_verifier = ?, srp_group = ? WHERE id = ?')
+    .bind(srp.salt, srp.verifier, srp.group, userId)
+    .run();
+  if (!result.success) throw new Error('Failed to upgrade SRP');
 }
 
 // Login user

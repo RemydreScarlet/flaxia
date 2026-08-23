@@ -13,6 +13,9 @@ export interface ApiMessage {
   content_iv?: string | null;
   enc_version?: number | null;
   key_version?: number | null;
+  ratchet_pub?: string | null;
+  ratchet_pn?: number | null;
+  ratchet_n?: number | null;
   reply_to_id?: string | null;
   pinned?: number | null;
   created_at: string;
@@ -49,6 +52,9 @@ export function mapMessage(raw: ApiMessage, scope: MessageScope, contextId: stri
     content_iv: raw.content_iv ?? null,
     enc_version: raw.enc_version ?? null,
     key_version: raw.key_version ?? null,
+    ratchet_pub: raw.ratchet_pub ?? null,
+    ratchet_pn: raw.ratchet_pn ?? null,
+    ratchet_n: raw.ratchet_n ?? null,
     reply_to_id: raw.reply_to_id ?? null,
     pinned: raw.pinned ?? null,
     created_at: raw.created_at,

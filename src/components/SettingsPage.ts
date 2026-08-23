@@ -1,8 +1,17 @@
 import { clearMeCache } from '../lib/auth-cache';
+import { storeSrpSalt } from '../lib/auth-srp.js';
 import { createConfirmDialog } from '../lib/confirm-dialog.js';
 import { getLocale, setLocale, t } from '../lib/i18n.js';
+import { rewrapE2EEIdentityV2 } from '../lib/messenger-identity-v2.js';
 import { getReplyStyle, getShowNsfw, ReplyStyle, setReplyStyle, setShowNsfw } from '../lib/settings.js';
+import { computeVerifier, generateSalt } from '../lib/srp.js';
 import { getTheme, setTheme, Theme } from '../lib/theme.js';
+
+function b64(b: Uint8Array): string {
+  let binary = '';
+  for (const x of b) binary += String.fromCharCode(x);
+  return btoa(binary);
+}
 
 interface SettingsPageProps {
   currentUser?: {
@@ -1018,15 +1027,28 @@ export function createSettingsPage({ currentUser }: SettingsPageProps) {
     passwordSaveButton.style.opacity = '0.6';
 
     try {
+      // Derive a fresh SRP verifier from the new password so the single account
+      // password also protects E2EE after the change.
+      const salt = generateSalt();
+      const verifier = await computeVerifier(newPassword, salt);
       const response = await fetch('/api/users/me/password', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword,
+          srp_salt: b64(salt),
+          srp_verifier: b64(verifier),
+          srp_group: '2048',
+        }),
       });
 
       if (response.ok) {
+        storeSrpSalt(salt);
+        // Re-wrap the E2EE identity with the new KEK (keeps identity keys).
+        await rewrapE2EEIdentityV2(newPassword, salt);
         passwordMessage.textContent = t('settings.password_saved');
         passwordMessage.style.color = 'var(--success, #10b981)';
         currentPasswordInput2.value = '';

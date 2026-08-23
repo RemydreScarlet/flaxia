@@ -1,4 +1,12 @@
+import { getStoredSrpSalt } from '../../lib/auth-srp.js';
 import { t } from '../../lib/i18n.js';
+import { decryptDmMessageV2, encryptDmMessageV2 } from '../../lib/messenger-dm-session.js';
+import {
+  ensureE2EEIdentityV2,
+  isIdentityV2Unlocked,
+  unlockIdentityV2FromSession,
+  unlockOrCreateIdentityV2,
+} from '../../lib/messenger-identity-v2.js';
 import {
   decryptDmText,
   decryptFileForDm,
@@ -31,6 +39,25 @@ export class DmTransport implements MessageTransport {
   private async unlock(): Promise<boolean> {
     try {
       return await unlockIdentityFromSession();
+    } catch {
+      return false;
+    }
+  }
+
+  private async unlockV2(): Promise<boolean> {
+    try {
+      if (isIdentityV2Unlocked()) return true;
+      if (await unlockIdentityV2FromSession()) return true;
+      // Last-resort re-prompt (e.g. storage cleared). Derive the KEK from the
+      // account password + the stored SRP salt so it stays consistent with the
+      // login-time E2EE setup, rather than creating a divergent key.
+      const pw = globalThis.prompt?.('Enter your account password to enable end-to-end encrypted messages');
+      if (!pw) return false;
+      const salt = getStoredSrpSalt();
+      if (salt && (await ensureE2EEIdentityV2(pw, salt))) return true;
+      if (await unlockOrCreateIdentityV2(pw)) return true;
+      showToast('Could not enable E2EE identity', true);
+      return false;
     } catch {
       return false;
     }
@@ -132,13 +159,28 @@ export class DmTransport implements MessageTransport {
     const body: Record<string, unknown> = {};
     let encryptedMessage = false;
     if (content && this.peerUserId) {
-      const encrypted = await encryptDmText(this.conversationId, this.keyVersion, this.peerUserId, content);
-      if (encrypted) {
-        body.content = encrypted.ciphertext;
-        body.contentIv = encrypted.iv;
-        body.encVersion = 1;
-        body.keyVersion = this.keyVersion;
-        encryptedMessage = true;
+      if (await this.unlockV2()) {
+        try {
+          const env = await encryptDmMessageV2(this.conversationId, this.peerUserId, content);
+          body.content = JSON.stringify({ ct: env.ciphertext, x3dh: env.x3dh ?? undefined });
+          body.encVersion = 2;
+          body.ratchetPub = env.header.ratchetPub;
+          body.ratchetPn = env.header.pn;
+          body.ratchetN = env.header.n;
+          encryptedMessage = true;
+        } catch {
+          /* fall back to v1 */
+        }
+      }
+      if (!encryptedMessage) {
+        const encrypted = await encryptDmText(this.conversationId, this.keyVersion, this.peerUserId, content);
+        if (encrypted) {
+          body.content = encrypted.ciphertext;
+          body.contentIv = encrypted.iv;
+          body.encVersion = 1;
+          body.keyVersion = this.keyVersion;
+          encryptedMessage = true;
+        }
       }
     }
     if (encryptedUpload) {
@@ -169,14 +211,30 @@ export class DmTransport implements MessageTransport {
   async editMessage(messageId: string, content: string): Promise<Partial<ChatMessage> | null> {
     let body: Record<string, unknown> = { content };
     if (content && this.peerUserId) {
-      const encrypted = await encryptDmText(this.conversationId, this.keyVersion, this.peerUserId, content);
-      if (encrypted) {
-        body = {
-          content: encrypted.ciphertext,
-          contentIv: encrypted.iv,
-          encVersion: 1,
-          keyVersion: this.keyVersion,
-        };
+      if (await this.unlockV2()) {
+        try {
+          const env = await encryptDmMessageV2(this.conversationId, this.peerUserId, content);
+          body = {
+            content: JSON.stringify({ ct: env.ciphertext, x3dh: env.x3dh ?? undefined }),
+            encVersion: 2,
+            ratchetPub: env.header.ratchetPub,
+            ratchetPn: env.header.pn,
+            ratchetN: env.header.n,
+          };
+        } catch {
+          /* fall back to v1 */
+        }
+      }
+      if (!body.encVersion) {
+        const encrypted = await encryptDmText(this.conversationId, this.keyVersion, this.peerUserId, content);
+        if (encrypted) {
+          body = {
+            content: encrypted.ciphertext,
+            contentIv: encrypted.iv,
+            encVersion: 1,
+            keyVersion: this.keyVersion,
+          };
+        }
       }
     }
     const res = await fetch(`/api/dm/conversations/${this.conversationId}/messages/${messageId}`, {
@@ -196,6 +254,9 @@ export class DmTransport implements MessageTransport {
       content_iv?: string | null;
       enc_version?: number | null;
       key_version?: number | null;
+      ratchet_pub?: string | null;
+      ratchet_pn?: number | null;
+      ratchet_n?: number | null;
       edited_at: string;
     };
     return {
@@ -203,6 +264,9 @@ export class DmTransport implements MessageTransport {
       content_iv: updated.content_iv ?? null,
       enc_version: updated.enc_version ?? null,
       key_version: updated.key_version ?? null,
+      ratchet_pub: updated.ratchet_pub ?? null,
+      ratchet_pn: updated.ratchet_pn ?? null,
+      ratchet_n: updated.ratchet_n ?? null,
       edited_at: updated.edited_at,
     };
   }
@@ -213,6 +277,23 @@ export class DmTransport implements MessageTransport {
 
   async decryptTextInto(el: HTMLElement, msg: ChatMessage): Promise<void> {
     if (!this.peerUserId) return;
+    if (msg.enc_version === 2 && msg.ratchet_pub) {
+      try {
+        const plain = await decryptDmMessageV2(this.conversationId, this.peerUserId, msg.content, {
+          ratchetPub: msg.ratchet_pub,
+          pn: msg.ratchet_pn || 0,
+          n: msg.ratchet_n || 0,
+        });
+        if (plain && el.isConnected) {
+          el.classList.remove('msg-row-encrypted');
+          el.textContent = plain;
+          await this.enrichText(el, plain);
+        }
+      } catch {
+        /* leave encrypted placeholder */
+      }
+      return;
+    }
     const plain = await decryptDmText(
       this.conversationId,
       msg.key_version || this.keyVersion,
