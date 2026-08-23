@@ -15,14 +15,16 @@ export interface PreKeyBundleResponse {
 export interface PublishIdentityParams {
   identitySignPub: string;
   identitySignPrivEnc: string;
+  identitySignPrivIv: string;
   identityDhPub: string;
   identityDhPrivEnc: string;
+  identityDhPrivIv: string;
   spkPub: string;
   spkPrivEnc: string;
+  spkPrivIv: string;
   spkSig: string;
-  opks: Array<{ id: string; pub: string; privEnc: string }>;
+  opks: Array<{ id: string; pub: string; privEnc: string; privIv: string }>;
   encSalt: string;
-  encIv: string;
 }
 
 export async function publishIdentityV2(params: PublishIdentityParams): Promise<boolean> {
@@ -39,7 +41,9 @@ export async function publishIdentityV2(params: PublishIdentityParams): Promise<
   }
 }
 
-export async function replenishOpks(opks: Array<{ id: string; pub: string; privEnc: string }>): Promise<boolean> {
+export async function replenishOpks(
+  opks: Array<{ id: string; pub: string; privEnc: string; privIv: string }>,
+): Promise<boolean> {
   try {
     const res = await fetch('/api/messenger/opks', {
       method: 'POST',

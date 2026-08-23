@@ -152,17 +152,13 @@ export async function generateAndPublishIdentityV2(password: string): Promise<bo
     const kek = await deriveKek(password, salt);
     kekCache = kek;
 
-    // All identity secrets are wrapped with a single shared IV so they can be
-    // decrypted later using the one stored `enc_iv`.
-    const iv = new Uint8Array(12);
-    globalThis.crypto.getRandomValues(iv);
-    const signPrivEnc = await wrapBytes(kek, base64ToBuf(id.signPriv), iv);
-    const dhPrivEnc = await wrapBytes(kek, base64ToBuf(id.dhPriv), iv);
-    const spkPrivEnc = await wrapBytes(kek, base64ToBuf(spk.priv), iv);
-    const opkWrapped: Array<{ id: string; pub: string; privEnc: string }> = [];
+    const signPrivEnc = await wrapBytes(kek, base64ToBuf(id.signPriv));
+    const dhPrivEnc = await wrapBytes(kek, base64ToBuf(id.dhPriv));
+    const spkPrivEnc = await wrapBytes(kek, base64ToBuf(spk.priv));
+    const opkWrapped: Array<{ id: string; pub: string; privEnc: string; privIv: string }> = [];
     for (const o of opks) {
-      const w = await wrapBytes(kek, base64ToBuf(o.priv), iv);
-      opkWrapped.push({ id: o.id, pub: o.pub, privEnc: w.enc });
+      const w = await wrapBytes(kek, base64ToBuf(o.priv));
+      opkWrapped.push({ id: o.id, pub: o.pub, privEnc: w.enc, privIv: w.iv });
     }
 
     const res = await fetch('/api/messenger/identity-v2', {
@@ -172,14 +168,16 @@ export async function generateAndPublishIdentityV2(password: string): Promise<bo
       body: JSON.stringify({
         identitySignPub: id.signPub,
         identitySignPrivEnc: signPrivEnc.enc,
+        identitySignPrivIv: signPrivEnc.iv,
         identityDhPub: id.dhPub,
         identityDhPrivEnc: dhPrivEnc.enc,
+        identityDhPrivIv: dhPrivEnc.iv,
         spkPub: spk.pub,
         spkPrivEnc: spkPrivEnc.enc,
+        spkPrivIv: spkPrivEnc.iv,
         spkSig: spk.signature,
         opks: opkWrapped,
         encSalt: bufToBase64(salt),
-        encIv: signPrivEnc.iv,
       }),
     });
     if (!res.ok) return false;
@@ -217,21 +215,23 @@ async function applyUnlocked(kek: CryptoKey): Promise<boolean> {
       exists?: boolean;
       identitySignPub?: string;
       identitySignPrivEnc?: string;
+      identitySignPrivIv?: string;
       identityDhPub?: string;
       identityDhPrivEnc?: string;
+      identityDhPrivIv?: string;
       spkPub?: string;
       spkPrivEnc?: string;
+      spkPrivIv?: string;
       spkSig?: string;
-      encIv?: string;
     };
-    if (!data.exists || !data.identitySignPrivEnc || !data.encIv) return false;
+    if (!data.exists || !data.identitySignPrivEnc || !data.identitySignPrivIv) return false;
     cached = {
       identitySignPub: data.identitySignPub || '',
-      identitySignPriv: await unwrapBytes(kek, data.identitySignPrivEnc, data.encIv),
+      identitySignPriv: await unwrapBytes(kek, data.identitySignPrivEnc, data.identitySignPrivIv),
       identityDhPub: data.identityDhPub || '',
-      identityDhPriv: await unwrapBytes(kek, data.identityDhPrivEnc || '', data.encIv),
+      identityDhPriv: await unwrapBytes(kek, data.identityDhPrivEnc || '', data.identityDhPrivIv || ''),
       spkPub: data.spkPub || '',
-      spkPriv: await unwrapBytes(kek, data.spkPrivEnc || '', data.encIv),
+      spkPriv: await unwrapBytes(kek, data.spkPrivEnc || '', data.spkPrivIv || ''),
       spkSig: data.spkSig || '',
     };
     return true;
@@ -247,8 +247,8 @@ export async function unlockIdentityV2WithPassword(password: string): Promise<bo
   try {
     const res = await fetch('/api/messenger/identity-v2', { credentials: 'include' });
     if (!res.ok) return false;
-    const data = (await res.json()) as { exists?: boolean; encSalt?: string; encIv?: string };
-    if (!data.exists || !data.encSalt || !data.encIv) return false;
+    const data = (await res.json()) as { exists?: boolean; encSalt?: string };
+    if (!data.exists || !data.encSalt) return false;
     const kek = await deriveKek(password, base64ToBuf(data.encSalt));
     if (!(await applyUnlocked(kek))) return false;
     kekCache = kek;
@@ -272,8 +272,8 @@ export async function ensureE2EEIdentityV2(password: string, salt: Uint8Array): 
 
     const res = await fetch('/api/messenger/identity-v2', { credentials: 'include' });
     if (!res.ok) return false;
-    const data = (await res.json()) as { exists?: boolean; encIv?: string };
-    if (data.exists && data.encIv) {
+    const data = (await res.json()) as { exists?: boolean };
+    if (data.exists) {
       const ok = await applyUnlocked(kek);
       if (ok) {
         await persistKek(kek);
@@ -288,17 +288,13 @@ export async function ensureE2EEIdentityV2(password: string, salt: Uint8Array): 
     const spk: SignedPreKey = generateSignedPreKey(id.signPriv);
     const opks = generateOneTimePreKeys(OPK_COUNT);
 
-    // All identity secrets are wrapped with a single shared IV so they can be
-    // decrypted later using the one stored `enc_iv`.
-    const iv = new Uint8Array(12);
-    globalThis.crypto.getRandomValues(iv);
-    const signPrivEnc = await wrapBytes(kek, base64ToBuf(id.signPriv), iv);
-    const dhPrivEnc = await wrapBytes(kek, base64ToBuf(id.dhPriv), iv);
-    const spkPrivEnc = await wrapBytes(kek, base64ToBuf(spk.priv), iv);
-    const opkWrapped: Array<{ id: string; pub: string; privEnc: string }> = [];
+    const signPrivEnc = await wrapBytes(kek, base64ToBuf(id.signPriv));
+    const dhPrivEnc = await wrapBytes(kek, base64ToBuf(id.dhPriv));
+    const spkPrivEnc = await wrapBytes(kek, base64ToBuf(spk.priv));
+    const opkWrapped: Array<{ id: string; pub: string; privEnc: string; privIv: string }> = [];
     for (const o of opks) {
-      const w = await wrapBytes(kek, base64ToBuf(o.priv), iv);
-      opkWrapped.push({ id: o.id, pub: o.pub, privEnc: w.enc });
+      const w = await wrapBytes(kek, base64ToBuf(o.priv));
+      opkWrapped.push({ id: o.id, pub: o.pub, privEnc: w.enc, privIv: w.iv });
     }
 
     const pub = await fetch('/api/messenger/identity-v2', {
@@ -308,14 +304,16 @@ export async function ensureE2EEIdentityV2(password: string, salt: Uint8Array): 
       body: JSON.stringify({
         identitySignPub: id.signPub,
         identitySignPrivEnc: signPrivEnc.enc,
+        identitySignPrivIv: signPrivEnc.iv,
         identityDhPub: id.dhPub,
         identityDhPrivEnc: dhPrivEnc.enc,
+        identityDhPrivIv: dhPrivEnc.iv,
         spkPub: spk.pub,
         spkPrivEnc: spkPrivEnc.enc,
+        spkPrivIv: spkPrivEnc.iv,
         spkSig: spk.signature,
         opks: opkWrapped,
         encSalt: bufToBase64(salt),
-        encIv: signPrivEnc.iv,
       }),
     });
     if (!pub.ok) return false;
@@ -343,18 +341,14 @@ export async function rewrapE2EEIdentityV2(password: string, salt: Uint8Array): 
   if (!cached) return false;
   try {
     const newKek = await deriveKek(password, salt);
-    // Re-wrap all identity secrets with a single shared IV so they can be
-    // decrypted later using the one stored `enc_iv`.
-    const iv = new Uint8Array(12);
-    globalThis.crypto.getRandomValues(iv);
-    const signPrivEnc = await wrapBytes(newKek, cached.identitySignPriv, iv);
-    const dhPrivEnc = await wrapBytes(newKek, cached.identityDhPriv, iv);
-    const spkPrivEnc = await wrapBytes(newKek, cached.spkPriv, iv);
+    const signPrivEnc = await wrapBytes(newKek, cached.identitySignPriv);
+    const dhPrivEnc = await wrapBytes(newKek, cached.identityDhPriv);
+    const spkPrivEnc = await wrapBytes(newKek, cached.spkPriv);
     const opks = generateOneTimePreKeys(OPK_COUNT);
-    const opkWrapped: Array<{ id: string; pub: string; privEnc: string }> = [];
+    const opkWrapped: Array<{ id: string; pub: string; privEnc: string; privIv: string }> = [];
     for (const o of opks) {
-      const w = await wrapBytes(newKek, base64ToBuf(o.priv), iv);
-      opkWrapped.push({ id: o.id, pub: o.pub, privEnc: w.enc });
+      const w = await wrapBytes(newKek, base64ToBuf(o.priv));
+      opkWrapped.push({ id: o.id, pub: o.pub, privEnc: w.enc, privIv: w.iv });
     }
     const res = await fetch('/api/messenger/identity-v2', {
       method: 'PUT',
@@ -363,14 +357,16 @@ export async function rewrapE2EEIdentityV2(password: string, salt: Uint8Array): 
       body: JSON.stringify({
         identitySignPub: cached.identitySignPub,
         identitySignPrivEnc: signPrivEnc.enc,
+        identitySignPrivIv: signPrivEnc.iv,
         identityDhPub: cached.identityDhPub,
         identityDhPrivEnc: dhPrivEnc.enc,
+        identityDhPrivIv: dhPrivEnc.iv,
         spkPub: cached.spkPub,
         spkPrivEnc: spkPrivEnc.enc,
+        spkPrivIv: spkPrivEnc.iv,
         spkSig: cached.spkSig,
         opks: opkWrapped,
         encSalt: bufToBase64(salt),
-        encIv: signPrivEnc.iv,
       }),
     });
     if (!res.ok) return false;
@@ -428,9 +424,9 @@ export async function consumeOwnOpkPriv(opkId: string): Promise<Uint8Array | nul
       body: JSON.stringify({ opkId }),
     });
     if (!res.ok) return null;
-    const data = (await res.json()) as { privEnc?: string; encIv?: string };
-    if (!data.privEnc || !data.encIv) return null;
-    return unwrapBytes(kekCache, data.privEnc, data.encIv);
+    const data = (await res.json()) as { privEnc?: string; privIv?: string };
+    if (!data.privEnc || !data.privIv) return null;
+    return unwrapBytes(kekCache, data.privEnc, data.privIv);
   } catch {
     return null;
   }

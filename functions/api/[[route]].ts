@@ -12064,8 +12064,9 @@ app.get('/api/messenger/identity-v2', requireAuth, async (c) => {
   try {
     const userId = c.get('user')?.id || '';
     const row = (await c.env.DB.prepare(
-      `SELECT identity_sign_pub, identity_sign_priv_enc, identity_dh_pub, identity_dh_priv_enc,
-              spk_pub, spk_priv_enc, spk_sig, enc_salt, enc_iv, enc_version
+      `SELECT identity_sign_pub, identity_sign_priv_enc, identity_sign_priv_iv,
+              identity_dh_pub, identity_dh_priv_enc, identity_dh_priv_iv,
+              spk_pub, spk_priv_enc, spk_priv_iv, spk_sig, enc_salt, enc_version
        FROM messenger_identity_v2 WHERE user_id = ?`,
     )
       .bind(userId)
@@ -12075,13 +12076,15 @@ app.get('/api/messenger/identity-v2', requireAuth, async (c) => {
       exists: true,
       identitySignPub: row.identity_sign_pub,
       identitySignPrivEnc: row.identity_sign_priv_enc,
+      identitySignPrivIv: row.identity_sign_priv_iv,
       identityDhPub: row.identity_dh_pub,
       identityDhPrivEnc: row.identity_dh_priv_enc,
+      identityDhPrivIv: row.identity_dh_priv_iv,
       spkPub: row.spk_pub,
       spkPrivEnc: row.spk_priv_enc,
+      spkPrivIv: row.spk_priv_iv,
       spkSig: row.spk_sig,
       encSalt: row.enc_salt,
-      encIv: row.enc_iv,
       encVersion: row.enc_version || 2,
     });
   } catch (error: unknown) {
@@ -12143,18 +12146,14 @@ app.post('/api/messenger/opks/consume', requireAuth, async (c) => {
     const body = (await c.req.json()) as { opkId?: string };
     if (!body.opkId) return c.json({ error: 'opkId is required' }, 400);
 
-    const opk = (await c.env.DB.prepare(`SELECT priv_enc FROM messenger_opks WHERE id = ? AND user_id = ?`)
+    const opk = (await c.env.DB.prepare(`SELECT priv_enc, priv_iv FROM messenger_opks WHERE id = ? AND user_id = ?`)
       .bind(body.opkId, userId)
       .first()) as Record<string, unknown> | null;
     if (!opk) return c.json({ error: 'OPK not found' }, 404);
 
-    const ident = (await c.env.DB.prepare(`SELECT enc_iv FROM messenger_identity_v2 WHERE user_id = ?`)
-      .bind(userId)
-      .first()) as Record<string, unknown> | null;
-
     await c.env.DB.prepare('DELETE FROM messenger_opks WHERE id = ? AND user_id = ?').bind(body.opkId, userId).run();
 
-    return c.json({ privEnc: opk.priv_enc, encIv: ident?.enc_iv ?? null });
+    return c.json({ privEnc: opk.priv_enc, privIv: opk.priv_iv ?? null });
   } catch (error: unknown) {
     const err = error as { message?: string };
     console.error('Messenger opks consume error:', error);
@@ -12170,25 +12169,29 @@ app.put('/api/messenger/identity-v2', requireAuth, async (c) => {
     const body = (await c.req.json()) as {
       identitySignPub?: string;
       identitySignPrivEnc?: string;
+      identitySignPrivIv?: string;
       identityDhPub?: string;
       identityDhPrivEnc?: string;
+      identityDhPrivIv?: string;
       spkPub?: string;
       spkPrivEnc?: string;
+      spkPrivIv?: string;
       spkSig?: string;
-      opks?: Array<{ id: string; pub: string; privEnc: string }>;
+      opks?: Array<{ id: string; pub: string; privEnc: string; privIv: string }>;
       encSalt?: string;
-      encIv?: string;
     };
     if (
       !body.identitySignPub ||
       !body.identitySignPrivEnc ||
+      !body.identitySignPrivIv ||
       !body.identityDhPub ||
       !body.identityDhPrivEnc ||
+      !body.identityDhPrivIv ||
       !body.spkPub ||
       !body.spkPrivEnc ||
+      !body.spkPrivIv ||
       !body.spkSig ||
-      !body.encSalt ||
-      !body.encIv
+      !body.encSalt
     ) {
       return c.json({ error: 'Missing identity fields' }, 400);
     }
@@ -12196,33 +12199,38 @@ app.put('/api/messenger/identity-v2', requireAuth, async (c) => {
     const now = new Date().toISOString();
     await c.env.DB.prepare(
       `INSERT INTO messenger_identity_v2
-        (user_id, identity_sign_pub, identity_sign_priv_enc, identity_dh_pub, identity_dh_priv_enc,
-         spk_pub, spk_priv_enc, spk_sig, enc_salt, enc_iv, enc_version, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2, ?, ?)
+        (user_id, identity_sign_pub, identity_sign_priv_enc, identity_sign_priv_iv,
+         identity_dh_pub, identity_dh_priv_enc, identity_dh_priv_iv,
+         spk_pub, spk_priv_enc, spk_priv_iv, spk_sig, enc_salt, enc_version, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 3, ?, ?)
        ON CONFLICT(user_id) DO UPDATE SET
          identity_sign_pub = excluded.identity_sign_pub,
          identity_sign_priv_enc = excluded.identity_sign_priv_enc,
+         identity_sign_priv_iv = excluded.identity_sign_priv_iv,
          identity_dh_pub = excluded.identity_dh_pub,
          identity_dh_priv_enc = excluded.identity_dh_priv_enc,
+         identity_dh_priv_iv = excluded.identity_dh_priv_iv,
          spk_pub = excluded.spk_pub,
          spk_priv_enc = excluded.spk_priv_enc,
+         spk_priv_iv = excluded.spk_priv_iv,
          spk_sig = excluded.spk_sig,
          spk_rotated_at = excluded.updated_at,
          enc_salt = excluded.enc_salt,
-         enc_iv = excluded.enc_iv,
          updated_at = excluded.updated_at`,
     )
       .bind(
         userId,
         body.identitySignPub,
         body.identitySignPrivEnc,
+        body.identitySignPrivIv,
         body.identityDhPub,
         body.identityDhPrivEnc,
+        body.identityDhPrivIv,
         body.spkPub,
         body.spkPrivEnc,
+        body.spkPrivIv,
         body.spkSig,
         body.encSalt,
-        body.encIv,
         now,
         now,
       )
@@ -12230,9 +12238,9 @@ app.put('/api/messenger/identity-v2', requireAuth, async (c) => {
 
     if (body.opks && body.opks.length > 0) {
       const insert = c.env.DB.prepare(
-        'INSERT OR REPLACE INTO messenger_opks (id, user_id, pub, priv_enc) VALUES (?, ?, ?, ?)',
+        'INSERT OR REPLACE INTO messenger_opks (id, user_id, pub, priv_enc, priv_iv) VALUES (?, ?, ?, ?, ?)',
       );
-      const batch = body.opks.map((o) => insert.bind(o.id, userId, o.pub, o.privEnc));
+      const batch = body.opks.map((o) => insert.bind(o.id, userId, o.pub, o.privEnc, o.privIv));
       await c.env.DB.batch(batch);
     }
 
@@ -12318,12 +12326,14 @@ app.delete('/api/messenger/ratchet-session', requireAuth, async (c) => {
 app.post('/api/messenger/opks', requireAuth, async (c) => {
   try {
     const userId = c.get('user')?.id || '';
-    const { opks } = (await c.req.json()) as { opks?: Array<{ id: string; pub: string; privEnc: string }> };
+    const { opks } = (await c.req.json()) as {
+      opks?: Array<{ id: string; pub: string; privEnc: string; privIv: string }>;
+    };
     if (!opks || opks.length === 0) return c.json({ error: 'opks required' }, 400);
     const insert = c.env.DB.prepare(
-      'INSERT OR REPLACE INTO messenger_opks (id, user_id, pub, priv_enc) VALUES (?, ?, ?, ?)',
+      'INSERT OR REPLACE INTO messenger_opks (id, user_id, pub, priv_enc, priv_iv) VALUES (?, ?, ?, ?, ?)',
     );
-    const batch = opks.map((o) => insert.bind(o.id, userId, o.pub, o.privEnc));
+    const batch = opks.map((o) => insert.bind(o.id, userId, o.pub, o.privEnc, o.privIv));
     await c.env.DB.batch(batch);
     return c.json({ success: true, added: opks.length });
   } catch (error: unknown) {
