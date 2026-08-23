@@ -27,6 +27,7 @@ import {
   upgradeSrp,
   verifyPassword,
   verifySrpLogin,
+  verifySrpPassword,
 } from '../lib/auth';
 import { validateImageDimensions } from '../lib/image-dimensions';
 import {
@@ -2344,6 +2345,22 @@ app.post('/api/auth/login/verify', async (c) => {
   }
 });
 
+// POST /api/auth/reauth/start - begin an SRP proof of the CURRENT password for
+// the logged-in user. Used by the password-change flow so SRP-only accounts
+// (which have no legacy password hash) can still prove their current password.
+app.post('/api/auth/reauth/start', requireAuth, async (c) => {
+  try {
+    const user = c.get('user');
+    if (!user?.email) return c.json({ error: 'Unauthorized' }, 401);
+    const hs = await startSrpLogin(c.env, user.email);
+    if (!hs) return c.json({ error: 'SRP not available' }, 400);
+    return c.json({ challenge_id: hs.challengeId, salt: hs.salt, B: hs.B });
+  } catch (error: unknown) {
+    console.error('SRP reauth/start error:', error);
+    return c.json({ error: 'Re-auth failed' }, 500);
+  }
+});
+
 // POST /api/auth/upgrade-srp - store an SRP verifier for the logged-in user.
 app.post('/api/auth/upgrade-srp', requireAuth, async (c) => {
   try {
@@ -4122,7 +4139,7 @@ app.patch('/api/users/me/password', requireAuth, async (c) => {
       return c.json({ error: 'Database not available' }, 500);
     }
 
-    const { current_password, new_password, srp_salt, srp_verifier, srp_group } = await c.req.json();
+    const { current_password, new_password, srp_salt, srp_verifier, srp_group, current_srp } = await c.req.json();
 
     const srp =
       srp_salt && srp_verifier && srp_group
@@ -4130,7 +4147,7 @@ app.patch('/api/users/me/password', requireAuth, async (c) => {
         : null;
 
     // Validation
-    if (!current_password) {
+    if (!current_password && !current_srp) {
       return c.json({ error: 'Current password is required' }, 400);
     }
     if (!new_password && !srp) {
@@ -4142,24 +4159,33 @@ app.patch('/api/users/me/password', requireAuth, async (c) => {
 
     const userId = sessionData.user.id;
 
-    // Get user with password hash to verify current password
+    // Fetch both the legacy hash and SRP verifier so we can verify the current
+    // password for any account type.
     const userWithPassword = (await c.env.DB.prepare(`
-      SELECT password_hash FROM users WHERE id = ?
+      SELECT password_hash, srp_verifier FROM users WHERE id = ?
     `)
       .bind(userId)
-      .first()) as { password_hash: string } | null;
+      .first()) as { password_hash: string; srp_verifier: string | null } | null;
 
     if (!userWithPassword) {
       return c.json({ error: 'User not found' }, 404);
     }
 
-    // Verify current password using the legacy hash when available. SRP-only
-    // accounts (no legacy hash) rely on the session being proof of auth.
-    if (userWithPassword.password_hash) {
-      const isValid = await verifyPassword(current_password, userWithPassword.password_hash);
-      if (!isValid) {
-        return c.json({ error: 'Current password is incorrect' }, 401);
+    // Verify the current password. SRP accounts (no legacy hash) prove it via an
+    // SRP handshake (M1); legacy accounts verify the PBKDF2 hash. Either valid
+    // proof is sufficient.
+    let verified = false;
+    if (userWithPassword.password_hash && current_password) {
+      if (await verifyPassword(current_password, userWithPassword.password_hash)) verified = true;
+    }
+    if (!verified && userWithPassword.srp_verifier && current_srp) {
+      const { challenge_id, A, M1 } = current_srp as { challenge_id?: string; A?: string; M1?: string };
+      if (challenge_id && A && M1 && (await verifySrpPassword(c.env, userId, challenge_id, A, M1))) {
+        verified = true;
       }
+    }
+    if (!verified) {
+      return c.json({ error: 'Current password is incorrect' }, 401);
     }
 
     // Build the update. Both legacy hash and SRP verifier can be refreshed.

@@ -347,6 +347,37 @@ export async function upgradeSrp(env: Env, userId: string, srp: SrpRegistration)
   if (!result.success) throw new Error('Failed to upgrade SRP');
 }
 
+// Verify an SRP proof of the CURRENT password without creating a session. Used by
+// the password-change flow so SRP-only accounts (no legacy password hash) still
+// have to prove knowledge of the current password before it can be changed.
+export async function verifySrpPassword(
+  env: Env,
+  userId: string,
+  challengeId: string,
+  A: string,
+  M1: string,
+): Promise<boolean> {
+  const hs = (await env.DB.prepare("SELECT * FROM srp_handshakes WHERE id = ? AND expires_at > datetime('now')")
+    .bind(challengeId)
+    .first()) as { user_id: string; b_scalar: string; b_pub: string } | null;
+  if (!hs || hs.user_id !== userId) return false;
+
+  const user = (await env.DB.prepare('SELECT srp_salt, srp_verifier FROM users WHERE id = ?').bind(userId).first()) as {
+    srp_salt: string | null;
+    srp_verifier: string | null;
+  } | null;
+  if (!user || !user.srp_verifier || !user.srp_salt) return false;
+
+  const v = base64ToUint8Array(user.srp_verifier);
+  const B = base64ToUint8Array(hs.b_pub);
+  const A_bytes = base64ToUint8Array(A);
+  const M1_bytes = base64ToUint8Array(M1);
+
+  const result = await serverStep2(A_bytes, B, BigInt(hs.b_scalar), v, M1_bytes);
+  await env.DB.prepare('DELETE FROM srp_handshakes WHERE id = ?').bind(challengeId).run();
+  return !!result;
+}
+
 // Login user
 export async function loginUser(env: Env, email: string, password: string): Promise<{ user: User; session: Session }> {
   // Get user with password hash

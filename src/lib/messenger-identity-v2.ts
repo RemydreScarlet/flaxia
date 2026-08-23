@@ -76,15 +76,15 @@ async function deriveKek(password: string, salt: Uint8Array): Promise<CryptoKey>
   );
 }
 
-async function wrapBytes(kek: CryptoKey, bytes: Uint8Array): Promise<{ enc: string; iv: string }> {
-  const iv = new Uint8Array(12);
-  globalThis.crypto.getRandomValues(iv);
+async function wrapBytes(kek: CryptoKey, bytes: Uint8Array, iv?: Uint8Array): Promise<{ enc: string; iv: string }> {
+  const usedIv = iv ?? new Uint8Array(12);
+  if (!iv) globalThis.crypto.getRandomValues(usedIv);
   const ct = await subtle.encrypt(
-    { name: 'AES-GCM', iv: iv as BufferSource, tagLength: 128 },
+    { name: 'AES-GCM', iv: usedIv as BufferSource, tagLength: 128 },
     kek,
     bytes as BufferSource,
   );
-  return { enc: bufToBase64(ct), iv: bufToBase64(iv) };
+  return { enc: bufToBase64(ct), iv: bufToBase64(usedIv) };
 }
 
 async function unwrapBytes(kek: CryptoKey, encB64: string, ivB64: string): Promise<Uint8Array> {
@@ -152,12 +152,16 @@ export async function generateAndPublishIdentityV2(password: string): Promise<bo
     const kek = await deriveKek(password, salt);
     kekCache = kek;
 
-    const signPrivEnc = await wrapBytes(kek, base64ToBuf(id.signPriv));
-    const dhPrivEnc = await wrapBytes(kek, base64ToBuf(id.dhPriv));
-    const spkPrivEnc = await wrapBytes(kek, base64ToBuf(spk.priv));
+    // All identity secrets are wrapped with a single shared IV so they can be
+    // decrypted later using the one stored `enc_iv`.
+    const iv = new Uint8Array(12);
+    globalThis.crypto.getRandomValues(iv);
+    const signPrivEnc = await wrapBytes(kek, base64ToBuf(id.signPriv), iv);
+    const dhPrivEnc = await wrapBytes(kek, base64ToBuf(id.dhPriv), iv);
+    const spkPrivEnc = await wrapBytes(kek, base64ToBuf(spk.priv), iv);
     const opkWrapped: Array<{ id: string; pub: string; privEnc: string }> = [];
     for (const o of opks) {
-      const w = await wrapBytes(kek, base64ToBuf(o.priv));
+      const w = await wrapBytes(kek, base64ToBuf(o.priv), iv);
       opkWrapped.push({ id: o.id, pub: o.pub, privEnc: w.enc });
     }
 
@@ -284,12 +288,16 @@ export async function ensureE2EEIdentityV2(password: string, salt: Uint8Array): 
     const spk: SignedPreKey = generateSignedPreKey(id.signPriv);
     const opks = generateOneTimePreKeys(OPK_COUNT);
 
-    const signPrivEnc = await wrapBytes(kek, base64ToBuf(id.signPriv));
-    const dhPrivEnc = await wrapBytes(kek, base64ToBuf(id.dhPriv));
-    const spkPrivEnc = await wrapBytes(kek, base64ToBuf(spk.priv));
+    // All identity secrets are wrapped with a single shared IV so they can be
+    // decrypted later using the one stored `enc_iv`.
+    const iv = new Uint8Array(12);
+    globalThis.crypto.getRandomValues(iv);
+    const signPrivEnc = await wrapBytes(kek, base64ToBuf(id.signPriv), iv);
+    const dhPrivEnc = await wrapBytes(kek, base64ToBuf(id.dhPriv), iv);
+    const spkPrivEnc = await wrapBytes(kek, base64ToBuf(spk.priv), iv);
     const opkWrapped: Array<{ id: string; pub: string; privEnc: string }> = [];
     for (const o of opks) {
-      const w = await wrapBytes(kek, base64ToBuf(o.priv));
+      const w = await wrapBytes(kek, base64ToBuf(o.priv), iv);
       opkWrapped.push({ id: o.id, pub: o.pub, privEnc: w.enc });
     }
 
@@ -335,13 +343,17 @@ export async function rewrapE2EEIdentityV2(password: string, salt: Uint8Array): 
   if (!cached) return false;
   try {
     const newKek = await deriveKek(password, salt);
-    const signPrivEnc = await wrapBytes(newKek, cached.identitySignPriv);
-    const dhPrivEnc = await wrapBytes(newKek, cached.identityDhPriv);
-    const spkPrivEnc = await wrapBytes(newKek, cached.spkPriv);
+    // Re-wrap all identity secrets with a single shared IV so they can be
+    // decrypted later using the one stored `enc_iv`.
+    const iv = new Uint8Array(12);
+    globalThis.crypto.getRandomValues(iv);
+    const signPrivEnc = await wrapBytes(newKek, cached.identitySignPriv, iv);
+    const dhPrivEnc = await wrapBytes(newKek, cached.identityDhPriv, iv);
+    const spkPrivEnc = await wrapBytes(newKek, cached.spkPriv, iv);
     const opks = generateOneTimePreKeys(OPK_COUNT);
     const opkWrapped: Array<{ id: string; pub: string; privEnc: string }> = [];
     for (const o of opks) {
-      const w = await wrapBytes(newKek, base64ToBuf(o.priv));
+      const w = await wrapBytes(newKek, base64ToBuf(o.priv), iv);
       opkWrapped.push({ id: o.id, pub: o.pub, privEnc: w.enc });
     }
     const res = await fetch('/api/messenger/identity-v2', {
