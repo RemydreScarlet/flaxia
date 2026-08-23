@@ -23,6 +23,7 @@ interface ProfileUserData {
   display_name?: string;
   bio?: string;
   avatar_key?: string | null;
+  header_key?: string | null;
   created_at?: string;
   pinned_post_id?: string | null;
   posts_count?: number;
@@ -81,6 +82,15 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
   topBar.appendChild(topTitle);
 
   container.appendChild(topBar);
+
+  // Profile header banner (header image)
+  const bannerEl = document.createElement('div');
+  bannerEl.className = 'profile-banner';
+
+  const bannerOverlay = document.createElement('div');
+  bannerOverlay.className = 'profile-banner-overlay';
+  bannerOverlay.textContent = t('profile.change_header');
+  bannerEl.appendChild(bannerOverlay);
 
   // Profile header
   const header = document.createElement('div');
@@ -185,6 +195,7 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
 
   // Assemble page
   container.appendChild(header);
+  container.insertBefore(bannerEl, header);
   container.appendChild(statsRow);
 
   if (!own) {
@@ -367,6 +378,9 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
       menu.style.display = 'none';
     });
 
+    bannerEl.classList.add('profile-banner--editable');
+    bannerEl.addEventListener('click', () => startEdit());
+
     topBar.appendChild(kebab);
     topBar.appendChild(menu);
   }
@@ -445,6 +459,12 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
           avatar.textContent = '';
         }
 
+        if (userData.header_key) {
+          bannerEl.style.backgroundImage = `url(/api/images/${userData.header_key})`;
+        } else {
+          bannerEl.style.backgroundImage = '';
+        }
+
         // Update counts
         postsCountSpan.textContent = formatCount(userData.posts_count || 0);
         followersCountSpan.textContent = formatCount(userData.followers_count || 0);
@@ -474,7 +494,13 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
     if (!userData) return;
 
     const modal = createEditProfileModal({
-      currentUser: userData as { username: string; display_name?: string; bio?: string; avatar_key?: string },
+      currentUser: userData as {
+        username: string;
+        display_name?: string;
+        bio?: string;
+        avatar_key?: string;
+        header_key?: string | null;
+      },
       onSave: async () => {
         // Reload user data after save
         await loadUserData();

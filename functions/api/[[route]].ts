@@ -3494,7 +3494,7 @@ app.get('/api/users/:username', async (c) => {
     }
 
     const user = await c.env.DB.prepare(`
-      SELECT id, username, display_name, bio, avatar_key, created_at, pinned_post_id 
+      SELECT id, username, display_name, bio, avatar_key, header_key, created_at, pinned_post_id 
       FROM users 
       WHERE username = ? COLLATE NOCASE
     `)
@@ -3903,15 +3903,19 @@ app.patch('/api/users/me', requireAuth, async (c) => {
     let language: string | undefined;
     let ng_words: string[] | undefined;
     let avatarFile: File | undefined;
+    let headerFile: File | undefined;
+    let removeHeader = false;
 
     const contentType = c.req.header('content-type');
 
     if (contentType?.includes('multipart/form-data')) {
-      // Handle multipart/form-data (for avatar uploads)
+      // Handle multipart/form-data (for avatar/header uploads)
       const formData = await c.req.formData();
       display_name = (formData.get('display_name') as string | null) || undefined;
       bio = (formData.get('bio') as string | null) || undefined;
       avatarFile = (formData.get('avatar') as File | null) || undefined;
+      headerFile = (formData.get('header') as File | null) || undefined;
+      removeHeader = formData.get('remove_header') === '1' || formData.get('remove_header') === 'true';
 
       // Handle avatar upload if present
       if (avatarFile && avatarFile.size > 0) {
@@ -3921,9 +3925,9 @@ app.patch('/api/users/me', requireAuth, async (c) => {
           return c.json({ error: 'Only JPEG, PNG, GIF, and WebP images are allowed' }, 400);
         }
 
-        // Validate file size (1MB)
-        if (avatarFile.size > 1024 * 1024) {
-          return c.json({ error: 'Avatar must be ≤1MB' }, 413);
+        // Validate file size (5MB)
+        if (avatarFile.size > 5 * 1024 * 1024) {
+          return c.json({ error: 'Avatar must be ≤5MB' }, 413);
         }
 
         if (!c.env.BUCKET) {
@@ -3964,6 +3968,54 @@ app.patch('/api/users/me', requireAuth, async (c) => {
 
         // Update avatar_key in database
         await c.env.DB.prepare('UPDATE users SET avatar_key = ? WHERE id = ?').bind(avatarKey, userId).run();
+      }
+
+      // Handle header (banner) image upload if present
+      if (headerFile && headerFile.size > 0) {
+        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+        if (!allowedTypes.includes(headerFile.type)) {
+          return c.json({ error: 'Only JPEG, PNG, GIF, and WebP images are allowed' }, 400);
+        }
+
+        // Validate file size (5MB)
+        const maxHeaderSize = 5 * 1024 * 1024;
+        if (headerFile.size > maxHeaderSize) {
+          return c.json({ error: 'Header image must be ≤5MB' }, 413);
+        }
+
+        if (!c.env.BUCKET) {
+          return c.json({ error: 'Storage not available' }, 500);
+        }
+
+        const fileBuffer = await headerFile.arrayBuffer();
+        const detected = detectMimeType(fileBuffer);
+        if (!isAllowedImageMime(detected)) {
+          return c.json({ error: 'File content does not match allowed image types' }, 400);
+        }
+        const hashBuffer = await crypto.subtle.digest('SHA-256', fileBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+
+        const existingKey = `header/${hashHex}`;
+        const existingObject = await c.env.BUCKET.head(existingKey);
+
+        let headerKey: string;
+        if (existingObject) {
+          headerKey = existingKey;
+          console.log('Reusing existing header file:', headerKey);
+        } else {
+          headerKey = existingKey;
+          await c.env.BUCKET.put(headerKey, fileBuffer, {
+            httpMetadata: {
+              contentType: headerFile.type,
+            },
+          });
+          console.log('Uploaded new header file:', headerKey);
+        }
+
+        await c.env.DB.prepare('UPDATE users SET header_key = ? WHERE id = ?').bind(headerKey, userId).run();
+      } else if (removeHeader) {
+        await c.env.DB.prepare('UPDATE users SET header_key = NULL WHERE id = ?').bind(userId).run();
       }
     } else {
       // Handle JSON request (for text-only updates)
@@ -4050,13 +4102,14 @@ app.patch('/api/users/me', requireAuth, async (c) => {
       display_name: string | null;
       bio: string | null;
       avatar_key: string | null;
+      header_key: string | null;
       language: string | null;
       ng_words: string | null;
       created_at: string;
     };
 
     const updatedUser = await c.env.DB.prepare(`
-      SELECT id, email, username, display_name, bio, avatar_key, language, ng_words, created_at 
+      SELECT id, email, username, display_name, bio, avatar_key, header_key, language, ng_words, created_at 
       FROM users 
       WHERE id = ?
     `)
@@ -4257,10 +4310,10 @@ app.post('/api/users/me/avatar', requireAuth, async (c) => {
       return c.json({ error: 'Only JPEG, PNG, GIF, and WebP images are allowed' }, 400);
     }
 
-    // Check file size limit (1MB = 1024 * 1024 bytes)
-    const maxSize = 1024 * 1024;
+    // Check file size limit (5MB = 5 * 1024 * 1024 bytes)
+    const maxSize = 5 * 1024 * 1024;
     if (Number(contentLength) > maxSize) {
-      return c.json({ error: 'Avatar must be ≤1MB' }, 413);
+      return c.json({ error: 'Avatar must be ≤5MB' }, 413);
     }
 
     if (!c.env.BUCKET) {
@@ -4274,7 +4327,7 @@ app.post('/api/users/me/avatar', requireAuth, async (c) => {
 
     // Double-check file size after reading
     if (fileData.byteLength > maxSize) {
-      return c.json({ error: 'Avatar must be ≤1MB' }, 413);
+      return c.json({ error: 'Avatar must be ≤5MB' }, 413);
     }
 
     // Validate magic bytes to prevent MIME spoofing
