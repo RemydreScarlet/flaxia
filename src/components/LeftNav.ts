@@ -77,7 +77,8 @@ export class LeftNav {
         { id: 'home', label: t('nav.home'), icon: '🏠' },
         { id: 'explore', label: t('nav.explore'), icon: '🔍' },
         { id: 'arcade', label: t('nav.arcade'), icon: '🕹️' },
-        { id: 'messages', label: t('nav.messages'), icon: '💬' },
+        // TODO: メッセージ機能を一時的に非表示中。戻すときは次行のコメントを外す
+        // { id: 'messages', label: t('nav.messages'), icon: '💬' },
         { id: 'notifications', label: t('nav.notifications'), icon: '🔔' },
       ] as const;
 
@@ -97,26 +98,27 @@ export class LeftNav {
         navItem.appendChild(labelSpan);
 
         // Combined unread badge for messages (DM + groups)
-        if (item.id === 'messages') {
-          const totalUnread = (this.props.unreadDmCount || 0) + (this.props.unreadGroupCount || 0);
-          if (totalUnread > 0) {
-            const badge = document.createElement('span');
-            badge.className = 'nav-dm-badge';
-            badge.style.cssText = `
-              margin-left: auto;
-              background: var(--accent);
-              color: #000;
-              font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-              font-size: 0.75rem;
-              padding: 2px 8px;
-              border-radius: 9999px;
-              min-width: 20px;
-              text-align: center;
-            `;
-            badge.textContent = totalUnread >= 99 ? '99+' : String(totalUnread);
-            navItem.appendChild(badge);
-          }
-        }
+        // TODO: メッセージ機能を一時的に非表示中。戻すときは次のブロックのコメントを外す
+        // if (item.id === 'messages') {
+        //   const totalUnread = (this.props.unreadDmCount || 0) + (this.props.unreadGroupCount || 0);
+        //   if (totalUnread > 0) {
+        //     const badge = document.createElement('span');
+        //     badge.className = 'nav-dm-badge';
+        //     badge.style.cssText = `
+        //       margin-left: auto;
+        //       background: var(--accent);
+        //       color: #000;
+        //       font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        //       font-size: 0.75rem;
+        //       padding: 2px 8px;
+        //       border-radius: 9999px;
+        //       min-width: 20px;
+        //       text-align: center;
+        //     `;
+        //     badge.textContent = totalUnread >= 99 ? '99+' : String(totalUnread);
+        //     navItem.appendChild(badge);
+        //   }
+        // }
 
         // Unread badge for notifications
         if (item.id === 'notifications') {
@@ -639,7 +641,8 @@ export function updateLeftNavUser(
         { id: 'home', label: t('nav.home'), icon: '🏠' },
         { id: 'explore', label: t('nav.explore'), icon: '🔍' },
         { id: 'arcade', label: t('nav.arcade'), icon: '🕹️' },
-        { id: 'messages', label: t('nav.messages'), icon: '💬' },
+        // TODO: メッセージ機能を一時的に非表示中。戻すときは次行のコメントを外す
+        // { id: 'messages', label: t('nav.messages'), icon: '💬' },
         { id: 'notifications', label: t('nav.notifications'), icon: '🔔' },
       ] as const;
 
@@ -650,26 +653,27 @@ export function updateLeftNavUser(
         navItem.innerHTML = `<span style="margin-right: 0.75rem;">${item.icon}</span><span>${item.label}</span>`;
 
         // Combined unread badge for messages (DM + groups)
-        if (item.id === 'messages') {
-          const totalUnread = (leftNav.props.unreadDmCount ?? 0) + (leftNav.props.unreadGroupCount ?? 0);
-          if (totalUnread > 0) {
-            const badge = document.createElement('span');
-            badge.className = 'nav-dm-badge';
-            badge.style.cssText = `
-              margin-left: auto;
-              background: var(--accent);
-              color: #000;
-              font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-              font-size: 0.75rem;
-              padding: 2px 8px;
-              border-radius: 9999px;
-              min-width: 20px;
-              text-align: center;
-            `;
-            badge.textContent = totalUnread >= 99 ? '99+' : String(totalUnread);
-            navItem.appendChild(badge);
-          }
-        }
+        // TODO: メッセージ機能を一時的に非表示中。戻すときは次のブロックのコメントを外す
+        // if (item.id === 'messages') {
+        //   const totalUnread = (leftNav.props.unreadDmCount ?? 0) + (leftNav.props.unreadGroupCount ?? 0);
+        //   if (totalUnread > 0) {
+        //     const badge = document.createElement('span');
+        //     badge.className = 'nav-dm-badge';
+        //     badge.style.cssText = `
+        //       margin-left: auto;
+        //       background: var(--accent);
+        //       color: #000;
+        //       font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        //       font-size: 0.75rem;
+        //       padding: 2px 8px;
+        //       border-radius: 9999px;
+        //       min-width: 20px;
+        //       text-align: center;
+        //     `;
+        //     badge.textContent = totalUnread >= 99 ? '99+' : String(totalUnread);
+        //     navItem.appendChild(badge);
+        //   }
+        // }
 
         // Unread badge for notifications
         if (item.id === 'notifications') {
