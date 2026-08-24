@@ -178,9 +178,31 @@ export function buildResponderRatchet(
   });
 }
 
+// Serialize session work per conversation+peer. The UI fires many concurrent
+// decrypts when rendering history; without this lock each one that finds no
+// in-memory session loads the persisted ratchet into a SEPARATE instance and
+// they all advance their own copy of the chains (last persist wins, state
+// corrupts). The lock also keeps ratchet operations strictly ordered.
+const locks = new Map<string, Promise<unknown>>();
+async function withSessionLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = locks.get(key) ?? Promise.resolve();
+  const run = prev.then(fn, fn);
+  const done = run
+    .catch(() => {})
+    .finally(() => {
+      if (locks.get(key) === done) locks.delete(key);
+    });
+  locks.set(key, done);
+  return run;
+}
+
 // Encrypt a DM as the sender, bootstrapping X3DH on the first message or
 // resuming from a persisted ratchet session (survives reload / other devices).
-export async function encryptDmMessageV2(dmId: string, peerId: string, plaintext: string): Promise<DmSendEnvelope> {
+export function encryptDmMessageV2(dmId: string, peerId: string, plaintext: string): Promise<DmSendEnvelope> {
+  return withSessionLock(sessionKey(dmId, peerId), () => encryptDmMessageV2Inner(dmId, peerId, plaintext));
+}
+
+async function encryptDmMessageV2Inner(dmId: string, peerId: string, plaintext: string): Promise<DmSendEnvelope> {
   const key = sessionKey(dmId, peerId);
   let session = sessions.get(key);
   if (!session) {
@@ -228,7 +250,18 @@ export async function encryptDmMessageV2(dmId: string, peerId: string, plaintext
 
 // Decrypt a received DM, bootstrapping the responder ratchet if needed or
 // resuming from a persisted ratchet session.
-export async function decryptDmMessageV2(
+export function decryptDmMessageV2(
+  dmId: string,
+  senderId: string,
+  contentJson: string,
+  header: RatchetHeader,
+): Promise<string> {
+  return withSessionLock(sessionKey(dmId, senderId), () =>
+    decryptDmMessageV2Inner(dmId, senderId, contentJson, header),
+  );
+}
+
+async function decryptDmMessageV2Inner(
   dmId: string,
   senderId: string,
   contentJson: string,

@@ -353,6 +353,15 @@ export class DmTransport implements MessageTransport {
             if (el.isConnected) this.renderDmDecryptPrefixed(el);
             return;
           }
+          // No session anywhere (e.g. after a reset): this message cannot be
+          // decrypted until either side sends a fresh X3DH bootstrap. Not an
+          // error worth spamming — show a calm hint and let recovery happen.
+          if (errMsg.startsWith('No ratchet session')) {
+            const age2 = Date.now() - new Date(msg.created_at).getTime();
+            if (age2 < 2 * 60_000) nudgeRatchetReset(this.conversationId, this.peerUserId ?? '');
+            if (el.isConnected) this.renderDmDecryptPending(el);
+            return;
+          }
           // Old backlog messages fail on every render; recovering on them would
           // destroy freshly established sessions in an endless loop. Only a
           // failure on a RECENT message means the live session is broken.
@@ -418,6 +427,14 @@ export class DmTransport implements MessageTransport {
   private renderDmDecryptPrefixed(el: HTMLElement): void {
     el.classList.add('msg-row-encrypted');
     el.textContent = '⚠️ このメッセージは暗号化アップデート前に送信されたため復号できません';
+  }
+
+  // No ratchet session exists (yet/anymore). Once either side sends a new
+  // message the X3DH session is re-established; this message may then still
+  // be undecryptable, but the conversation itself recovers automatically.
+  private renderDmDecryptPending(el: HTMLElement): void {
+    el.classList.add('msg-row-encrypted');
+    el.textContent = '⏳ 暗号セッション未確立 — 新しいメッセージを送信すると再確立されます';
   }
 
   private async enrichText(el: HTMLElement, content: string): Promise<void> {
