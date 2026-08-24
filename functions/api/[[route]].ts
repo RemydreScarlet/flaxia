@@ -12135,6 +12135,12 @@ app.get('/api/messenger/prekeys', requireAuth, async (c) => {
         .run();
     }
 
+    const remaining = (await c.env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM messenger_opks WHERE user_id = ? AND claimed_at IS NULL`,
+    )
+      .bind(userId)
+      .first()) as { n?: number } | null;
+
     return c.json({
       identitySignPub: ident.identity_sign_pub,
       identityDhPub: ident.identity_dh_pub,
@@ -12143,6 +12149,7 @@ app.get('/api/messenger/prekeys', requireAuth, async (c) => {
       signedPreKeyRotatedAt: ident.spk_rotated_at,
       preKeyPub: opk?.pub ?? null,
       preKeyId: opk?.id ?? null,
+      opkCount: remaining?.n ?? 0,
     });
   } catch (error: unknown) {
     const err = error as { message?: string };
@@ -12394,6 +12401,24 @@ app.delete('/api/messenger/ratchet-reset', requireAuth, async (c) => {
   } catch (error: unknown) {
     console.error('Ratchet reset clear error:', error);
     return c.json({ error: 'Failed to clear reset' }, 500);
+  }
+});
+
+// GET /api/messenger/opks - how many unused one-time prekeys I have left.
+// Clients use this to top up their pool (the server cannot mint OPKs because
+// the private material is only decryptable with the user's KEK).
+app.get('/api/messenger/opks', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id || '';
+    const row = (await c.env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM messenger_opks WHERE user_id = ? AND claimed_at IS NULL`,
+    )
+      .bind(userId)
+      .first()) as { n?: number } | null;
+    return c.json({ count: row?.n ?? 0 });
+  } catch (error: unknown) {
+    console.error('Messenger opks get error:', error);
+    return c.json({ error: 'Failed to count opks' }, 500);
   }
 });
 

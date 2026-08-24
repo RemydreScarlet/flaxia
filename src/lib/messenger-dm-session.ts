@@ -202,7 +202,10 @@ export async function encryptDmMessageV2(dmId: string, peerId: string, plaintext
         preKeyId: bundle.preKeyId ?? undefined,
       };
       const built = buildInitiatorRatchet(me, pk);
-      session = { ratchet: built.ratchet, bootstrap: built.bootstrap.opkId ? built.bootstrap : undefined };
+      // Always attach the bootstrap. When the peer's OPK pool is empty
+      // (preKeyId empty) this is a 2DH handshake — still enough for both sides
+      // to derive matching keys, so re-establishment never gets stuck.
+      session = { ratchet: built.ratchet, bootstrap: built.bootstrap };
     }
     sessions.set(key, session);
   }
@@ -241,7 +244,11 @@ export async function decryptDmMessageV2(
       const opkPriv = await consumeOwnOpkPriv(parsed.x3dh.opkId);
       opkPrivB64 = opkPriv ? bufToBase64(opkPriv) : null;
     }
-    if (opkPrivB64) {
+    // Build a responder ratchet for 3DH (opkId present and consumed) or for the
+    // 2DH fallback when the peer had no one-time prekey (opkId empty). Only skip
+    // when a 3DH opkId was present but its private is gone — that bootstrap can
+    // never be completed, so keep any existing session instead.
+    if (opkPrivB64 || !parsed.x3dh.opkId) {
       const ratchet = buildResponderRatchet(me, opkPrivB64, parsed.x3dh);
       session = { ratchet, bootstrap: undefined };
     }

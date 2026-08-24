@@ -7,6 +7,7 @@
 // kept in memory; the KEK is persisted in sessionStorage to survive reloads
 // without re-entering the password.
 
+import { replenishOpks } from './messenger-prekeys.ts';
 import {
   generateIdentityKeyPair,
   generateOneTimePreKeys,
@@ -234,6 +235,7 @@ async function applyUnlocked(kek: CryptoKey): Promise<boolean> {
       spkPriv: await unwrapBytes(kek, data.spkPrivEnc || '', data.spkPrivIv || ''),
       spkSig: data.spkSig || '',
     };
+    void ensureOpkPool();
     return true;
   } catch {
     return false;
@@ -418,6 +420,29 @@ export function logoutE2EE(): void {
 // now-404 endpoint (which would otherwise yield a ratchet missing the DH4 step).
 const consumedOpkCache = new Map<string, Uint8Array>();
 
+// Top up our one-time prekey pool when it runs low. The server deletes an OPK
+// after each X3DH consume, and only the client (holding the KEK) can generate
+// new private material — so replenishment has to happen here. Best-effort.
+export async function ensureOpkPool(): Promise<void> {
+  if (!kekCache) return;
+  try {
+    const res = await fetch('/api/messenger/opks', { credentials: 'include' });
+    if (!res.ok) return;
+    const { count } = (await res.json()) as { count?: number };
+    const have = count ?? 0;
+    if (have >= OPK_COUNT) return;
+    const opks = generateOneTimePreKeys(OPK_COUNT - have);
+    const opkWrapped: Array<{ id: string; pub: string; privEnc: string; privIv: string }> = [];
+    for (const o of opks) {
+      const w = await wrapBytes(kekCache, base64ToBuf(o.priv));
+      opkWrapped.push({ id: o.id, pub: o.pub, privEnc: w.enc, privIv: w.iv });
+    }
+    await replenishOpks(opkWrapped);
+  } catch {
+    /* best-effort */
+  }
+}
+
 // Fetch and consume one of our own one-time prekeys (returns raw private X25519
 // bytes). The server deletes the OPK after this call so it can never be reused.
 export async function consumeOwnOpkPriv(opkId: string): Promise<Uint8Array | null> {
@@ -436,6 +461,7 @@ export async function consumeOwnOpkPriv(opkId: string): Promise<Uint8Array | nul
     if (!data.privEnc || !data.privIv) return null;
     const priv = await unwrapBytes(kekCache, data.privEnc, data.privIv);
     consumedOpkCache.set(opkId, priv);
+    void ensureOpkPool();
     return priv;
   } catch {
     return null;

@@ -10,6 +10,7 @@ export interface PreKeyBundleResponse {
   signedPreKeyRotatedAt: string;
   preKeyPub: string | null;
   preKeyId: string | null;
+  opkCount?: number;
 }
 
 export interface PublishIdentityParams {
