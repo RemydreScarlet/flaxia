@@ -206,6 +206,7 @@ export class ServerView extends MessageView {
     const activeId = this.activeChannelId || fallback?.id || null;
     if (activeId) await this.openChannel(activeId);
     else this.renderMessages();
+    this.renderMemberPanel();
   }
 
   public async openChannel(channelId: string): Promise<void> {
@@ -456,6 +457,7 @@ export class ServerView extends MessageView {
       };
       this.channels = data.channels || [];
       this.members = data.members || [];
+      if (this.memberPanelOpen) this.renderMemberPanel();
     }
   }
 
