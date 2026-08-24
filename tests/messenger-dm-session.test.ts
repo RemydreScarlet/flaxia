@@ -1,7 +1,18 @@
 import assert from 'node:assert';
 import { describe, it } from 'node:test';
-import { buildInitiatorRatchet, buildResponderRatchet, type DmX3DHBootstrap } from '../src/lib/messenger-dm-session.ts';
-import type { IdentityV2 } from '../src/lib/messenger-identity-v2.ts';
+import {
+  __clearSessionsForTests,
+  __setSessionForTests,
+  buildInitiatorRatchet,
+  buildResponderRatchet,
+  type DmX3DHBootstrap,
+  decryptDmMessageV2,
+} from '../src/lib/messenger-dm-session.ts';
+import {
+  __seedConsumedOpkForTests,
+  __setIdentityV2ForTests,
+  type IdentityV2,
+} from '../src/lib/messenger-identity-v2.ts';
 import {
   bufToBase64,
   generateIdentityKeyPair,
@@ -90,5 +101,89 @@ describe('E2EE v2 DM session (X3DH + Double Ratchet)', () => {
     const env = aRatchet.encrypt('secret');
     const cRatchet = buildResponderRatchet(C, b.opkPriv, aBuilt.bootstrap);
     assert.throws(() => cRatchet.decrypt({ header: env.header, ciphertext: env.ciphertext }));
+  });
+});
+
+// Real CryptoKey for the KEK slot so consumeOwnOpkPriv reaches its cache.
+async function testKek(): Promise<CryptoKey> {
+  const raw = new Uint8Array(32);
+  crypto.getRandomValues(raw);
+  return crypto.subtle.importKey('raw', raw as BufferSource, 'AES-GCM', false, ['encrypt', 'decrypt']);
+}
+
+describe('DM session recovery (candidate sessions)', () => {
+  it('a replayed old bootstrap never clobbers the live session', async () => {
+    const A = fullIdentity();
+    const B = fullIdentity();
+    __clearSessionsForTests();
+    __setIdentityV2ForTests(B, await testKek());
+
+    // Session #1 (abandoned): its first message stays in history forever.
+    const b1 = peerBundle(B);
+    const aInit1 = buildInitiatorRatchet(A, b1.bundle);
+    const mOld = aInit1.ratchet.encrypt('session one hello');
+
+    // Session #2: the live session, injected as the only candidate.
+    const b2 = peerBundle(B);
+    const aInit2 = buildInitiatorRatchet(A, b2.bundle);
+    const liveB = buildResponderRatchet(B, b2.opkPriv, aInit2.bootstrap);
+    __setSessionForTests('dm-replay', 'alice', liveB);
+
+    // Both OPKs resolvable — exactly the state right after each handshake.
+    __seedConsumedOpkForTests(b1.bundle.preKeyId ?? '', b1.opkPriv);
+    __seedConsumedOpkForTests(b2.bundle.preKeyId ?? '', b2.opkPriv);
+
+    // Live traffic works.
+    const e1 = aInit2.ratchet.encrypt('live msg');
+    assert.equal(
+      await decryptDmMessageV2('dm-replay', 'alice', JSON.stringify({ ct: e1.ciphertext }), e1.header),
+      'live msg',
+    );
+
+    // Re-render replays the OLD bootstrap-bearing message. The old code
+    // rebuilt the responder ratchet from it (OPK obtainable!) and REPLACED
+    // the live session; now it must decrypt via a separate candidate.
+    const oldPt = await decryptDmMessageV2(
+      'dm-replay',
+      'alice',
+      JSON.stringify({ ct: mOld.ciphertext, x3dh: aInit1.bootstrap }),
+      mOld.header,
+    );
+    assert.equal(oldPt, 'session one hello');
+
+    // ...and the live session still works afterwards.
+    const e2 = aInit2.ratchet.encrypt('after replay');
+    assert.equal(
+      await decryptDmMessageV2('dm-replay', 'alice', JSON.stringify({ ct: e2.ciphertext }), e2.header),
+      'after replay',
+    );
+
+    // Interleaved replays keep working both ways too.
+    assert.equal(
+      await decryptDmMessageV2('dm-replay', 'alice', JSON.stringify({ ct: e1.ciphertext }), e1.header),
+      'live msg',
+    );
+  });
+
+  it('a missing OPK on an orphaned bootstrap stays OPK_UNRECOVERABLE', async () => {
+    const A = fullIdentity();
+    const B = fullIdentity();
+    __clearSessionsForTests();
+    __setIdentityV2ForTests(B, await testKek());
+
+    const b = peerBundle(B);
+    const aInit = buildInitiatorRatchet(A, b.bundle);
+    const mOld = aInit.ratchet.encrypt('orphan');
+
+    // No session injected, OPK private not seeded (server deleted it).
+    await assert.rejects(
+      decryptDmMessageV2(
+        'dm-orphan',
+        'alice',
+        JSON.stringify({ ct: mOld.ciphertext, x3dh: aInit.bootstrap }),
+        mOld.header,
+      ),
+      /OPK_UNRECOVERABLE/,
+    );
   });
 });

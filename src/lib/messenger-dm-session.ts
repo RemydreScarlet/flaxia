@@ -27,7 +27,13 @@ interface DmSession {
   bootstrap?: DmX3DHBootstrap;
 }
 
-const sessions = new Map<string, DmSession>();
+// Candidate sessions per conversation+peer, most-recently-successful first.
+// History can contain messages from several abandoned X3DH sessions (each
+// re-establishment leaves old bootstrap-bearing messages behind); keeping a
+// few candidates lets us decrypt those replays WITHOUT clobbering the live
+// session — the root cause of "sometimes it decrypts, sometimes it doesn't".
+const sessions = new Map<string, DmSession[]>();
+const MAX_SESSIONS = 5;
 const sessionKey = (dmId: string, peerId: string) => `${dmId}:${peerId}`;
 
 // Successfully decrypted plaintexts keyed by message position
@@ -204,8 +210,8 @@ export function encryptDmMessageV2(dmId: string, peerId: string, plaintext: stri
 
 async function encryptDmMessageV2Inner(dmId: string, peerId: string, plaintext: string): Promise<DmSendEnvelope> {
   const key = sessionKey(dmId, peerId);
-  let session = sessions.get(key);
-  if (!session) {
+  let list = sessions.get(key);
+  if (!list || list.length === 0) {
     const loaded = await loadDmRatchet(dmId);
     if (loaded) {
       // If the peer asked us to re-bootstrap (they could not decrypt our
@@ -215,11 +221,14 @@ async function encryptDmMessageV2Inner(dmId: string, peerId: string, plaintext: 
       if (await checkRatchetResetRequest(dmId)) {
         resetDmRatchet(dmId, peerId);
         await clearRatchetResetRequest(dmId);
+        list = [];
       } else {
-        session = { ratchet: loaded, bootstrap: undefined };
+        list = [{ ratchet: loaded }];
       }
+    } else {
+      list = [];
     }
-    if (!session) {
+    if (list.length === 0) {
       const me = getIdentityV2();
       if (!me) throw new Error('E2EE identity is locked');
       const bundle = await fetchPreKeyBundle(peerId);
@@ -236,10 +245,11 @@ async function encryptDmMessageV2Inner(dmId: string, peerId: string, plaintext: 
       // Always attach the bootstrap. When the peer's OPK pool is empty
       // (preKeyId empty) this is a 2DH handshake — still enough for both sides
       // to derive matching keys, so re-establishment never gets stuck.
-      session = { ratchet: built.ratchet, bootstrap: built.bootstrap };
+      list = [{ ratchet: built.ratchet, bootstrap: built.bootstrap }];
     }
-    sessions.set(key, session);
+    sessions.set(key, list);
   }
+  const session = list[0];
   const msg = session.ratchet.encrypt(plaintext);
   // Only the first message of a fresh session carries the X3DH bootstrap.
   const envelope: DmSendEnvelope = { ciphertext: msg.ciphertext, header: msg.header, x3dh: session.bootstrap };
@@ -274,15 +284,56 @@ async function decryptDmMessageV2Inner(
     const cached = plaintextCache.get(cacheKey);
     if (cached !== undefined) return cached;
   }
-  let session = sessions.get(key);
 
-  // If the message carries an X3DH bootstrap, (re)establish the responder
-  // ratchet. This is how a broken/mismatched session recovers: when the peer
-  // re-sends a bootstrap (after "Reset secure session"), we discard any stale
-  // session and rebuild a matching one. We only rebuild when we actually
-  // obtained the OPK private; if it is gone (already consumed / a stale
-  // bootstrap) we keep the existing session instead of building a ratchet that
-  // can never decrypt.
+  const tryDecrypt = async (session: DmSession): Promise<string> => {
+    let own: string | null = null;
+    try {
+      own = session.ratchet.decryptOwn({ header, ciphertext: parsed.ct });
+    } catch {
+      own = null;
+    }
+    return own ?? session.ratchet.decrypt({ header, ciphertext: parsed.ct });
+  };
+  const rememberPlaintext = (plaintext: string) => {
+    if (!cacheKey) return;
+    if (plaintextCache.size >= PLAINTEXT_CACHE_MAX) {
+      const first = plaintextCache.keys().next();
+      if (first.value) plaintextCache.delete(first.value);
+    }
+    plaintextCache.set(cacheKey, plaintext);
+  };
+
+  let list = sessions.get(key);
+  if (!list || list.length === 0) {
+    list = [];
+    sessions.set(key, list);
+    const loaded = await loadDmRatchet(dmId);
+    if (loaded) list.push({ ratchet: loaded });
+  }
+
+  // Try each known candidate — most-recently-successful first. A healthy live
+  // session therefore always wins, and replayed history messages from older
+  // sessions can no longer clobber it (the old code rebuilt the responder
+  // ratchet from ANY bootstrap it could complete, replacing the live session
+  // and breaking every subsequent message until the next lucky re-bootstrap).
+  let lastError: unknown = null;
+  for (const candidate of [...list]) {
+    try {
+      const plaintext = await tryDecrypt(candidate);
+      list.splice(list.indexOf(candidate), 1);
+      list.unshift(candidate);
+      if (list.length > MAX_SESSIONS) list.pop();
+      rememberPlaintext(plaintext);
+      await persistDmRatchet(dmId, candidate.ratchet);
+      return plaintext;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+
+  // Every candidate failed. If the message carries an X3DH bootstrap we can
+  // still recover: build a matching responder ratchet and keep it alongside
+  // the existing candidates instead of discarding them.
   if (parsed.x3dh) {
     const me = getIdentityV2();
     if (!me) throw new Error('E2EE identity is locked');
@@ -294,43 +345,27 @@ async function decryptDmMessageV2Inner(
     // Build a responder ratchet for 3DH (opkId present and consumed) or for the
     // 2DH fallback when the peer had no one-time prekey (opkId empty). Only skip
     // when a 3DH opkId was present but its private is gone — that bootstrap can
-    // never be completed, so keep any existing session instead.
+    // never be completed.
     if (opkPrivB64 || !parsed.x3dh.opkId) {
-      const ratchet = buildResponderRatchet(me, opkPrivB64, parsed.x3dh);
-      session = { ratchet, bootstrap: undefined };
+      const rebuilt: DmSession = { ratchet: buildResponderRatchet(me, opkPrivB64, parsed.x3dh) };
+      const plaintext = await tryDecrypt(rebuilt);
+      list.unshift(rebuilt);
+      if (list.length > MAX_SESSIONS) list.pop();
+      rememberPlaintext(plaintext);
+      await persistDmRatchet(dmId, rebuilt.ratchet);
+      return plaintext;
     }
-  }
-
-  if (!session) {
-    const loaded = await loadDmRatchet(dmId);
-    if (loaded) {
-      session = { ratchet: loaded, bootstrap: undefined };
-    } else if (parsed.x3dh?.opkId) {
+    if (list.length === 0 && parsed.x3dh.opkId) {
       // Bootstrap present but its one-time prekey is gone (a message sent
       // before the X3DH OPK-handling fix deleted it). Permanently undecryptable.
       throw new Error('OPK_UNRECOVERABLE');
-    } else {
-      throw new Error('No ratchet session and no X3DH bootstrap');
     }
   }
-  sessions.set(key, session);
-  let own: string | null = null;
-  try {
-    own = session.ratchet.decryptOwn({ header, ciphertext: parsed.ct });
-  } catch {
-    own = null;
+
+  if (list.length === 0 && !parsed.x3dh) {
+    throw new Error('No ratchet session and no X3DH bootstrap');
   }
-  const plaintext = own ?? session.ratchet.decrypt({ header, ciphertext: parsed.ct });
-  if (cacheKey) {
-    if (plaintextCache.size >= PLAINTEXT_CACHE_MAX) {
-      const first = plaintextCache.keys().next();
-      if (first.value) plaintextCache.delete(first.value);
-    }
-    plaintextCache.set(cacheKey, plaintext);
-  }
-  session.bootstrap = undefined;
-  await persistDmRatchet(dmId, session.ratchet);
-  return plaintext;
+  throw lastError ?? new Error('DM v2 decrypt failed');
 }
 
 export function clearDmSessions(): void {
@@ -347,4 +382,14 @@ export function clearDmSessions(): void {
 export function resetDmRatchet(dmId: string, peerId: string): void {
   sessions.delete(sessionKey(dmId, peerId));
   void clearDmRatchetOnServer(dmId);
+}
+
+// Unit-test hooks: inject/clear candidate sessions without the unlock flow.
+export function __setSessionForTests(dmId: string, peerId: string, ratchet: DoubleRatchet): void {
+  sessions.set(sessionKey(dmId, peerId), [{ ratchet }]);
+}
+
+export function __clearSessionsForTests(): void {
+  sessions.clear();
+  plaintextCache.clear();
 }

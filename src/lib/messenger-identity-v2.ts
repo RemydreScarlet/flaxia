@@ -419,6 +419,18 @@ export function logoutE2EE(): void {
 // re-render) must reuse the previously unwrapped private instead of hitting the
 // now-404 endpoint (which would otherwise yield a ratchet missing the DH4 step).
 const consumedOpkCache = new Map<string, Uint8Array>();
+
+// Unit-test hooks: inject an unlocked identity/KEK and pre-consumed OPK
+// privates so session-level tests can run without the password unlock flow
+// or a live server.
+export function __setIdentityV2ForTests(me: IdentityV2, kek: CryptoKey): void {
+  cached = me;
+  kekCache = kek;
+}
+
+export function __seedConsumedOpkForTests(opkId: string, privB64: string): void {
+  consumedOpkCache.set(opkId, base64ToBuf(privB64));
+}
 // OPK ids already known to be gone (server 404). Old pre-fix messages carry
 // bootstraps referencing these; without this cache every render would re-fire
 // a doomed consume request for each of them.
