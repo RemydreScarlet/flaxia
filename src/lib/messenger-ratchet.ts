@@ -159,6 +159,42 @@ export class DoubleRatchet {
   }
 
   decrypt(msg: RatchetMessage): string {
+    // Transactional: a failed AEAD verification (wrong key / tampered /
+    // already-consumed message being re-decrypted) must leave NO trace on the
+    // live session. Without the rollback, a failed attempt permanently
+    // advances the chains and corrupts every subsequent decryption.
+    const snap = {
+      rootKey: this.rootKey,
+      sendChainKey: this.sendChainKey,
+      recvChainKey: this.recvChainKey,
+      sendRatchetPriv: this.sendRatchetPriv,
+      sendRatchetPub: this.sendRatchetPub,
+      recvRatchetPub: this.recvRatchetPub,
+      sendCount: this.sendCount,
+      recvCount: this.recvCount,
+      prevSendCount: this.prevSendCount,
+      ratchetPending: this.ratchetPending,
+      skipped: new Map(this.skipped),
+    };
+    try {
+      return this.decryptInner(msg);
+    } catch (e) {
+      this.rootKey = snap.rootKey;
+      this.sendChainKey = snap.sendChainKey;
+      this.recvChainKey = snap.recvChainKey;
+      this.sendRatchetPriv = snap.sendRatchetPriv;
+      this.sendRatchetPub = snap.sendRatchetPub;
+      this.recvRatchetPub = snap.recvRatchetPub;
+      this.sendCount = snap.sendCount;
+      this.recvCount = snap.recvCount;
+      this.prevSendCount = snap.prevSendCount;
+      this.ratchetPending = snap.ratchetPending;
+      this.skipped = snap.skipped;
+      throw e;
+    }
+  }
+
+  private decryptInner(msg: RatchetMessage): string {
     const { header, ciphertext } = msg;
     const key = `${header.ratchetPub}:${header.n}`;
     const cached = this.skipped.get(key);

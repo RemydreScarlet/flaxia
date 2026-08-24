@@ -1,5 +1,6 @@
 import assert from 'node:assert';
 import { describe, it } from 'node:test';
+import { x25519 } from '@noble/curves/ed25519.js';
 import { DoubleRatchet, type RatchetMessage } from '../src/lib/messenger-ratchet.ts';
 import {
   generateIdentityKeyPair,
@@ -190,5 +191,64 @@ describe('X3DH + Double Ratchet', () => {
       ciphertext: bytesToB64(b64ToBytes(msg.ciphertext).map((x, i) => (i === 0 ? x ^ 1 : x))),
     };
     assert.throws(() => evil.decrypt(flipped));
+  });
+
+  it('a failed re-decrypt does not corrupt subsequent decryptions', () => {
+    const { alice, bob } = setupPeers();
+    const { aliceRatchet, bobRatchet } = establish(alice, bob);
+
+    const m1 = aliceRatchet.encrypt('first');
+    const m2 = aliceRatchet.encrypt('second');
+    assert.strictEqual(bobRatchet.decrypt(m1), 'first');
+
+    // UI re-render replays an already-consumed message: must fail WITHOUT
+    // advancing Bob's recv chain (previously it stepped the chain and broke
+    // every later message).
+    assert.throws(() => bobRatchet.decrypt(m1));
+    assert.strictEqual(bobRatchet.decrypt(m2), 'second');
+
+    // Same for garbage from an unknown ratchet key: fails cleanly and the
+    // live conversation keeps working afterwards.
+    const mallory = new DoubleRatchet({
+      rootKey: new Uint8Array(32),
+      associatedData: 'x',
+      ...(() => {
+        const k = x25519.keygen();
+        return { sendRatchetPriv: k.secretKey, sendRatchetPub: x25519.getPublicKey(k.secretKey) };
+      })(),
+      recvRatchetPub: null,
+      initialSendChainKey: new Uint8Array(32),
+    });
+    const junk = mallory.encrypt('junk');
+    assert.throws(() => bobRatchet.decrypt(junk));
+    const b1 = bobRatchet.encrypt('still alive');
+    assert.strictEqual(aliceRatchet.decrypt(b1), 'still alive');
+  });
+
+  it('falling back to decrypt() on an own legacy sent message fails safely', () => {
+    const { alice, bob } = setupPeers();
+    const { aliceRatchet, bobRatchet } = establish(alice, bob);
+
+    const a1 = aliceRatchet.encrypt('legacy own message');
+    assert.strictEqual(bobRatchet.decrypt(a1), 'legacy own message');
+    const b1 = bobRatchet.encrypt('reply');
+    assert.strictEqual(aliceRatchet.decrypt(b1), 'reply');
+
+    // Simulate a sent message from before sentKeys capture existed: strip
+    // sentKeys during a reload so decryptOwn returns null for it.
+    const ser = aliceRatchet.serialize() as unknown as Record<string, unknown>;
+    ser.sentKeys = {};
+    const legacyOwn = DoubleRatchet.deserialize(ser as never);
+
+    // The fallback decrypt() attempt used to rotate chains against our own
+    // old ratchet pub, destroying the whole session. It must simply fail.
+    assert.throws(() => legacyOwn.decrypt({ header: a1.header, ciphertext: a1.ciphertext }));
+
+    // ...and both sides keep exchanging messages normally afterwards.
+    const a2 = aliceRatchet.encrypt('after failed fallback');
+    assert.strictEqual(bobRatchet.decrypt(a2), 'after failed fallback');
+    const b2 = bobRatchet.encrypt('and back');
+    const restored = DoubleRatchet.deserialize(aliceRatchet.serialize());
+    assert.strictEqual(restored.decrypt(b2), 'and back');
   });
 });

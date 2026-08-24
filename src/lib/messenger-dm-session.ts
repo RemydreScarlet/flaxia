@@ -30,6 +30,15 @@ interface DmSession {
 const sessions = new Map<string, DmSession>();
 const sessionKey = (dmId: string, peerId: string) => `${dmId}:${peerId}`;
 
+// Successfully decrypted plaintexts keyed by message position
+// (`dmId:senderId:ratchetPub:n`). The UI re-renders history and re-runs
+// decrypt on messages it has already shown; serving those from cache avoids
+// pointless ratchet attempts (a second attempt at a consumed index can never
+// succeed) and keeps console noise down.
+const plaintextCache = new Map<string, string>();
+const PLAINTEXT_CACHE_MAX = 500;
+const plaintextKey = (dmId: string, senderId: string, pub: string, n: number) => `${dmId}:${senderId}:${pub}:${n}`;
+
 const subtle = globalThis.crypto?.subtle;
 
 function base64ToBuf(b64: string): Uint8Array {
@@ -227,6 +236,11 @@ export async function decryptDmMessageV2(
 ): Promise<string> {
   const parsed = JSON.parse(contentJson) as { ct: string; x3dh?: DmX3DHBootstrap };
   const key = sessionKey(dmId, senderId);
+  const cacheKey = header ? plaintextKey(dmId, senderId, header.ratchetPub, header.n) : null;
+  if (cacheKey) {
+    const cached = plaintextCache.get(cacheKey);
+    if (cached !== undefined) return cached;
+  }
   let session = sessions.get(key);
 
   // If the message carries an X3DH bootstrap, (re)establish the responder
@@ -274,6 +288,13 @@ export async function decryptDmMessageV2(
     own = null;
   }
   const plaintext = own ?? session.ratchet.decrypt({ header, ciphertext: parsed.ct });
+  if (cacheKey) {
+    if (plaintextCache.size >= PLAINTEXT_CACHE_MAX) {
+      const first = plaintextCache.keys().next();
+      if (first.value) plaintextCache.delete(first.value);
+    }
+    plaintextCache.set(cacheKey, plaintext);
+  }
   session.bootstrap = undefined;
   await persistDmRatchet(dmId, session.ratchet);
   return plaintext;

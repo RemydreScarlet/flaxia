@@ -144,15 +144,17 @@ function run() {
     }
     assert(threw, 'bob FAILS to decrypt alice msg when OPK private is missing (reproduces invalid tag)');
 
-    // And the reverse: bob (no dh4) sends, alice (with dh4) fails
-    const m2 = b.encrypt('hi from bob');
-    let threw2 = false;
+    // And the reverse direction stays unusable too: a failed decrypt used to
+    // half-initialize bob's ratchet (leaking mutated state) which let him send
+    // messages neither side could read. Transactional decrypt keeps his state
+    // pristine, so he cannot send until a session is actually established.
+    let sendThrew = false;
     try {
-      a.ratchet.decrypt(m2);
+      b.encrypt('hi from bob');
     } catch {
-      threw2 = true;
+      sendThrew = true;
     }
-    assert(threw2, 'alice FAILS to decrypt bob msg when her ratchet has dh4 but bob has none (reproduces invalid tag)');
+    assert(sendThrew, 'bob cannot send on an un-established (failed X3DH) session');
   }
 
   console.log('=== Test 3: both WITHOUT opk (no OPKs at all) => match ===');
