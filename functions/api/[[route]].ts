@@ -11392,9 +11392,8 @@ app.get('/api/groups/:id/messages', requireAuth, async (c) => {
       messages = await c.env.DB.prepare(`
         SELECT m.id, m.group_id, m.sender_id, m.content, m.created_at,
                m.gif_key, m.payload_key, m.swf_key, m.edited_at,
-               m.content_iv, m.enc_version, m.key_version,
-               m.ratchet_pub, m.ratchet_pn, m.ratchet_n,
-               u.username as sender_username, u.display_name as sender_display_name,
+                m.content_iv, m.enc_version, m.key_version,
+                u.username as sender_username, u.display_name as sender_display_name,
                u.avatar_key as sender_avatar_key
         FROM group_messages m
         JOIN users u ON m.sender_id = u.id
@@ -11408,9 +11407,8 @@ app.get('/api/groups/:id/messages', requireAuth, async (c) => {
       messages = await c.env.DB.prepare(`
         SELECT m.id, m.group_id, m.sender_id, m.content, m.created_at,
                m.gif_key, m.payload_key, m.swf_key, m.edited_at,
-               m.content_iv, m.enc_version, m.key_version,
-               m.ratchet_pub, m.ratchet_pn, m.ratchet_n,
-               u.username as sender_username, u.display_name as sender_display_name,
+                m.content_iv, m.enc_version, m.key_version,
+                u.username as sender_username, u.display_name as sender_display_name,
                u.avatar_key as sender_avatar_key
         FROM group_messages m
         JOIN users u ON m.sender_id = u.id
@@ -13327,8 +13325,8 @@ app.get('/api/servers/:id/channels/:channelId/messages', requireAuth, async (c) 
       messages = await c.env.DB.prepare(`
         SELECT m.id, m.channel_id, m.sender_id, m.content, m.created_at,
                m.gif_key, m.payload_key, m.swf_key, m.edited_at,
-               m.content_iv, m.enc_version, m.key_version,
-               m.ratchet_pub, m.ratchet_pn, m.ratchet_n, m.reply_to_id, m.pinned,
+                m.content_iv, m.enc_version, m.key_version,
+                m.reply_to_id, m.pinned,
                u.username as sender_username, u.display_name as sender_display_name,
                u.avatar_key as sender_avatar_key
         FROM server_messages m
@@ -13343,8 +13341,8 @@ app.get('/api/servers/:id/channels/:channelId/messages', requireAuth, async (c) 
       messages = await c.env.DB.prepare(`
         SELECT m.id, m.channel_id, m.sender_id, m.content, m.created_at,
                m.gif_key, m.payload_key, m.swf_key, m.edited_at,
-               m.content_iv, m.enc_version, m.key_version,
-               m.ratchet_pub, m.ratchet_pn, m.ratchet_n, m.reply_to_id, m.pinned,
+                m.content_iv, m.enc_version, m.key_version,
+                m.reply_to_id, m.pinned,
                u.username as sender_username, u.display_name as sender_display_name,
                u.avatar_key as sender_avatar_key
         FROM server_messages m
