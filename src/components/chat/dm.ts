@@ -1,6 +1,6 @@
 import { getStoredSrpSalt } from '../../lib/auth-srp.js';
 import { t } from '../../lib/i18n.js';
-import { decryptDmMessageV2, encryptDmMessageV2 } from '../../lib/messenger-dm-session.js';
+import { decryptDmMessageV2, encryptDmMessageV2, resetDmRatchet } from '../../lib/messenger-dm-session.js';
 import {
   ensureE2EEIdentityV2,
   isIdentityV2Unlocked,
@@ -350,6 +350,15 @@ export class DmTransport implements MessageTransport {
   private renderDmDecryptFailed(el: HTMLElement): void {
     el.classList.add('msg-row-encrypted');
     el.textContent = '⚠️ 復号できませんでした';
+    const btn = document.createElement('button');
+    btn.className = 'msg-decrypt-unlock';
+    btn.textContent = '🔄 暗号セッションを再確立';
+    btn.addEventListener('click', () => {
+      resetDmRatchet(this.conversationId, this.peerUserId ?? '');
+      showToast('セッションをリセットしました。新しいメッセージを送信すると再確立されます。');
+      el.textContent = '🔄 セッションをリセットしました — 新しいメッセージを送信してください';
+    });
+    el.appendChild(btn);
   }
 
   private async enrichText(el: HTMLElement, content: string): Promise<void> {

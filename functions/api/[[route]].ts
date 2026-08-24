@@ -12110,13 +12110,18 @@ app.get('/api/messenger/prekeys', requireAuth, async (c) => {
     if (!ident) return c.json({ error: 'No identity registered' }, 404);
 
     const opk = (await c.env.DB.prepare(
-      `SELECT id, pub FROM messenger_opks WHERE user_id = ? ORDER BY created_at LIMIT 1`,
+      `SELECT id, pub FROM messenger_opks WHERE user_id = ? AND claimed_at IS NULL ORDER BY created_at LIMIT 1`,
     )
       .bind(userId)
       .first()) as Record<string, unknown> | null;
 
     if (opk) {
-      await c.env.DB.prepare('DELETE FROM messenger_opks WHERE id = ?')
+      // Reserve this OPK so it is not handed to another initiator, but do NOT
+      // delete it: the responder still needs its private material via
+      // POST /api/messenger/opks/consume to complete X3DH (the DH4 step).
+      await c.env.DB.prepare(
+        `UPDATE messenger_opks SET claimed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?`,
+      )
         .bind(opk.id as string)
         .run();
     }
@@ -13887,6 +13892,9 @@ app.post('/api/test/reset', async (c) => {
       'dm_messages',
       'dm_conversations',
       'messenger_keys',
+      'messenger_ratchet_sessions',
+      'messenger_opks',
+      'messenger_identity_v2',
       'chat_message_reactions',
       'chat_read_states',
       'chat_messages',

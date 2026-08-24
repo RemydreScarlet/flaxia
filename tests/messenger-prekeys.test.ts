@@ -21,17 +21,19 @@ describe('E2EE v2 prekey directory', () => {
       body: JSON.stringify({
         identitySignPub: 'sigPubA',
         identitySignPrivEnc: 'sigPrivEncA',
+        identitySignPrivIv: 'sigPrivIvA',
         identityDhPub: 'dhPubA',
         identityDhPrivEnc: 'dhPrivEncA',
+        identityDhPrivIv: 'dhPrivIvA',
         spkPub: 'spkPubA',
         spkPrivEnc: 'spkPrivEncA',
+        spkPrivIv: 'spkPrivIvA',
         spkSig: 'spkSigA',
         opks: [
-          { id: 'opk1', pub: 'opkPub1', privEnc: 'opkPrivEnc1' },
-          { id: 'opk2', pub: 'opkPub2', privEnc: 'opkPrivEnc2' },
+          { id: 'opk1', pub: 'opkPub1', privEnc: 'opkPrivEnc1', privIv: 'opkPrivIv1' },
+          { id: 'opk2', pub: 'opkPub2', privEnc: 'opkPrivEnc2', privIv: 'opkPrivIv2' },
         ],
         encSalt: 'salt',
-        encIv: 'iv',
       }),
     });
     assert.equal(put.status, 200);

@@ -215,25 +215,37 @@ export async function decryptDmMessageV2(
   const parsed = JSON.parse(contentJson) as { ct: string; x3dh?: DmX3DHBootstrap };
   const key = sessionKey(dmId, senderId);
   let session = sessions.get(key);
+
+  // If the message carries an X3DH bootstrap, (re)establish the responder
+  // ratchet. This is how a broken/mismatched session recovers: when the peer
+  // re-sends a bootstrap (after "Reset secure session"), we discard any stale
+  // session and rebuild a matching one. We only rebuild when we actually
+  // obtained the OPK private; if it is gone (already consumed / a stale
+  // bootstrap) we keep the existing session instead of building a ratchet that
+  // can never decrypt.
+  if (parsed.x3dh) {
+    const me = getIdentityV2();
+    if (!me) throw new Error('E2EE identity is locked');
+    let opkPrivB64: string | null = null;
+    if (parsed.x3dh.opkId) {
+      const opkPriv = await consumeOwnOpkPriv(parsed.x3dh.opkId);
+      opkPrivB64 = opkPriv ? bufToBase64(opkPriv) : null;
+    }
+    if (opkPrivB64) {
+      const ratchet = buildResponderRatchet(me, opkPrivB64, parsed.x3dh);
+      session = { ratchet, bootstrap: undefined };
+    }
+  }
+
   if (!session) {
     const loaded = await loadDmRatchet(dmId);
     if (loaded) {
       session = { ratchet: loaded, bootstrap: undefined };
-    } else if (parsed.x3dh) {
-      const me = getIdentityV2();
-      if (!me) throw new Error('E2EE identity is locked');
-      let opkPrivB64: string | null = null;
-      if (parsed.x3dh.opkId) {
-        const opkPriv = await consumeOwnOpkPriv(parsed.x3dh.opkId);
-        opkPrivB64 = opkPriv ? bufToBase64(opkPriv) : null;
-      }
-      const ratchet = buildResponderRatchet(me, opkPrivB64, parsed.x3dh);
-      session = { ratchet, bootstrap: undefined };
     } else {
       throw new Error('No ratchet session and no X3DH bootstrap');
     }
-    sessions.set(key, session);
   }
+  sessions.set(key, session);
   let own: string | null = null;
   try {
     own = session.ratchet.decryptOwn({ header, ciphertext: parsed.ct });
@@ -252,4 +264,12 @@ export function clearDmSessions(): void {
     void clearDmRatchetOnServer(convId);
   }
   sessions.clear();
+}
+
+// Discard the local + persisted ratchet for a single DM so the next outgoing
+// message re-bootstraps X3DH from scratch (recovering a broken session). The
+// peer automatically rebuilds its side when it receives the new bootstrap.
+export function resetDmRatchet(dmId: string, peerId: string): void {
+  sessions.delete(sessionKey(dmId, peerId));
+  void clearDmRatchetOnServer(dmId);
 }

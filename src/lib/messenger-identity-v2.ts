@@ -412,10 +412,18 @@ export function logoutE2EE(): void {
   }
 }
 
+// Cache of already-consumed OPK privates, keyed by opk id. The server deletes
+// the OPK on first consume, so re-decrypting the same X3DH message (e.g. on a
+// re-render) must reuse the previously unwrapped private instead of hitting the
+// now-404 endpoint (which would otherwise yield a ratchet missing the DH4 step).
+const consumedOpkCache = new Map<string, Uint8Array>();
+
 // Fetch and consume one of our own one-time prekeys (returns raw private X25519
 // bytes). The server deletes the OPK after this call so it can never be reused.
 export async function consumeOwnOpkPriv(opkId: string): Promise<Uint8Array | null> {
   if (!kekCache) return null;
+  const cached = consumedOpkCache.get(opkId);
+  if (cached) return cached;
   try {
     const res = await fetch('/api/messenger/opks/consume', {
       method: 'POST',
@@ -426,7 +434,9 @@ export async function consumeOwnOpkPriv(opkId: string): Promise<Uint8Array | nul
     if (!res.ok) return null;
     const data = (await res.json()) as { privEnc?: string; privIv?: string };
     if (!data.privEnc || !data.privIv) return null;
-    return unwrapBytes(kekCache, data.privEnc, data.privIv);
+    const priv = await unwrapBytes(kekCache, data.privEnc, data.privIv);
+    consumedOpkCache.set(opkId, priv);
+    return priv;
   } catch {
     return null;
   }
