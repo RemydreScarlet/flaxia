@@ -419,6 +419,10 @@ export function logoutE2EE(): void {
 // re-render) must reuse the previously unwrapped private instead of hitting the
 // now-404 endpoint (which would otherwise yield a ratchet missing the DH4 step).
 const consumedOpkCache = new Map<string, Uint8Array>();
+// OPK ids already known to be gone (server 404). Old pre-fix messages carry
+// bootstraps referencing these; without this cache every render would re-fire
+// a doomed consume request for each of them.
+const deadOpkIds = new Set<string>();
 
 // Top up our one-time prekey pool when it runs low. The server deletes an OPK
 // after each X3DH consume, and only the client (holding the KEK) can generate
@@ -449,6 +453,7 @@ export async function consumeOwnOpkPriv(opkId: string): Promise<Uint8Array | nul
   if (!kekCache) return null;
   const cached = consumedOpkCache.get(opkId);
   if (cached) return cached;
+  if (deadOpkIds.has(opkId)) return null;
   try {
     const res = await fetch('/api/messenger/opks/consume', {
       method: 'POST',
@@ -456,9 +461,15 @@ export async function consumeOwnOpkPriv(opkId: string): Promise<Uint8Array | nul
       credentials: 'include',
       body: JSON.stringify({ opkId }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      if (res.status === 404) deadOpkIds.add(opkId);
+      return null;
+    }
     const data = (await res.json()) as { privEnc?: string; privIv?: string };
-    if (!data.privEnc || !data.privIv) return null;
+    if (!data.privEnc || !data.privIv) {
+      deadOpkIds.add(opkId);
+      return null;
+    }
     const priv = await unwrapBytes(kekCache, data.privEnc, data.privIv);
     consumedOpkCache.set(opkId, priv);
     void ensureOpkPool();
