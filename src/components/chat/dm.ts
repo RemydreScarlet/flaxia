@@ -30,14 +30,16 @@ import { type ApiMessage, mapMessage } from './mappers.js';
 import type { ChatMessage, MessageTransport } from './types.js';
 
 // Debounce per-conversation so a burst of undecryptable (e.g. pre-fix) messages
-// does not spam the peer with reset requests. The peer only needs one nudge to
-// re-bootstrap X3DH.
+// does not spam the peer with reset requests. On a failed decrypt we both reset
+// our own session (so our next outgoing message re-bootstraps X3DH) and ask the
+// peer to do the same, recovering the conversation automatically.
 const lastRatchetNudge = new Map<string, number>();
-function nudgeRatchetReset(conversationId: string): void {
+function nudgeRatchetReset(conversationId: string, peerUserId: string): void {
   const now = Date.now();
   const last = lastRatchetNudge.get(conversationId) ?? 0;
   if (now - last < 30_000) return;
   lastRatchetNudge.set(conversationId, now);
+  resetDmRatchet(conversationId, peerUserId);
   void requestRatchetReset(conversationId);
 }
 
@@ -344,7 +346,7 @@ export class DmTransport implements MessageTransport {
           return;
         } catch (e) {
           console.error('DM v2 decrypt failed:', e);
-          nudgeRatchetReset(this.conversationId);
+          nudgeRatchetReset(this.conversationId, this.peerUserId ?? '');
           if (el.isConnected) this.renderDmDecryptFailed(el);
           return;
         }
