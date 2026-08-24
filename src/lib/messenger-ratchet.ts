@@ -56,6 +56,7 @@ interface SerializedRatchet {
   ratchetPending: boolean;
   associatedData: string;
   skipped: Record<string, string>;
+  sentKeys: Record<string, string>;
 }
 
 function deriveRoot(root: Uint8Array, dh: Uint8Array): [Uint8Array, Uint8Array] {
@@ -92,6 +93,9 @@ export class DoubleRatchet {
   private ratchetPending = false;
   private associatedData: string;
   private skipped = new Map<string, Uint8Array>();
+  // Message keys for messages we sent, indexed by `${ratchetPub}:${n}`, so we
+  // can decrypt our own outgoing messages (the recv chain can't).
+  private sentKeys = new Map<string, Uint8Array>();
 
   constructor(opts: {
     rootKey: Uint8Array;
@@ -136,6 +140,7 @@ export class DoubleRatchet {
       pn: this.prevSendCount,
       n: this.sendCount,
     };
+    this.sentKeys.set(`${header.ratchetPub}:${header.n}`, mk);
     const ad = new Uint8Array([...encodeHeader(header), ...new TextEncoder().encode(this.associatedData)]);
     const ct = this.aeadKey(mk, ad).encrypt(new TextEncoder().encode(plaintext));
     this.sendCount += 1;
@@ -198,6 +203,20 @@ export class DoubleRatchet {
     return this.finishDecrypt(mk, header, ciphertext);
   }
 
+  // Decrypt a message we previously sent, using the captured send-chain message
+  // key. Returns null if this ratchet did not send that message (or the key is
+  // unavailable), in which case the caller should fall back to decrypt().
+  decryptOwn(msg: RatchetMessage): string | null {
+    const key = `${msg.header.ratchetPub}:${msg.header.n}`;
+    const mk = this.sentKeys.get(key);
+    if (!mk) return null;
+    try {
+      return this.finishDecrypt(mk, msg.header, msg.ciphertext);
+    } catch {
+      return null;
+    }
+  }
+
   private skipTo(N: number): void {
     if (N > this.recvCount + MAX_SKIP) throw new Error('Too many skipped messages');
     while (this.recvCount < N) {
@@ -223,6 +242,8 @@ export class DoubleRatchet {
   serialize(): SerializedRatchet {
     const skipped: Record<string, string> = {};
     for (const [k, v] of this.skipped) skipped[k] = bufToBase64(v);
+    const sentKeys: Record<string, string> = {};
+    for (const [k, v] of this.sentKeys) sentKeys[k] = bufToBase64(v);
     return {
       rootKey: bufToBase64(this.rootKey),
       sendChainKey: this.sendChainKey ? bufToBase64(this.sendChainKey) : null,
@@ -236,6 +257,7 @@ export class DoubleRatchet {
       ratchetPending: this.ratchetPending,
       associatedData: this.associatedData,
       skipped,
+      sentKeys,
     };
   }
 
@@ -254,6 +276,7 @@ export class DoubleRatchet {
     r.prevSendCount = data.prevSendCount;
     r.ratchetPending = data.ratchetPending;
     for (const [k, v] of Object.entries(data.skipped)) r.skipped.set(k, base64ToBuf(v));
+    for (const [k, v] of Object.entries(data.sentKeys || {})) r.sentKeys.set(k, base64ToBuf(v));
     return r;
   }
 }

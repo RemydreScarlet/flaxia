@@ -234,7 +234,13 @@ export async function decryptDmMessageV2(
     }
     sessions.set(key, session);
   }
-  const plaintext = session.ratchet.decrypt({ header, ciphertext: parsed.ct });
+  let own: string | null = null;
+  try {
+    own = session.ratchet.decryptOwn({ header, ciphertext: parsed.ct });
+  } catch {
+    own = null;
+  }
+  const plaintext = own ?? session.ratchet.decrypt({ header, ciphertext: parsed.ct });
   session.bootstrap = undefined;
   await persistDmRatchet(dmId, session.ratchet);
   return plaintext;
