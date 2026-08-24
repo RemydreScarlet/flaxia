@@ -534,7 +534,7 @@ export abstract class MessageView {
       if (msg.content) {
         const text = document.createElement('div');
         text.className = 'msg-row-text';
-        const isEnc = !!msg.enc_version && !!msg.content_iv;
+        const isEnc = !!msg.enc_version && msg.enc_version > 0;
         if (isEnc) {
           text.textContent = t('messages.encrypted');
           text.classList.add('msg-row-encrypted');

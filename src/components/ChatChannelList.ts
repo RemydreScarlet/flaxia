@@ -14,6 +14,7 @@ export interface ChannelListConversation {
     content: string;
     sender_id: string;
     created_at: string;
+    enc_version?: number | null;
     is_mine: boolean;
   } | null;
   unread: boolean;
@@ -809,7 +810,14 @@ export class ChatChannelList {
       const preview = document.createElement('div');
       preview.className = 'channel-item-preview';
       const prefix = conv.last_message.is_mine ? t('messages.you') + ': ' : '';
-      preview.textContent = prefix + conv.last_message.content;
+      const lm = conv.last_message;
+      // DM messages are E2EE; the server stores only ciphertext, so never
+      // surface the raw envelope in the preview.
+      if (lm.enc_version) {
+        preview.textContent = prefix + (t('messages.encrypted') || '🔒 暗号化メッセージ');
+      } else {
+        preview.textContent = prefix + lm.content;
+      }
       info.appendChild(preview);
     }
 

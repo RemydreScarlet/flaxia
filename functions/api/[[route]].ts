@@ -10241,6 +10241,7 @@ app.get('/api/dm/conversations', requireAuth, async (c) => {
         c.last_message_content,
         c.last_message_sender_id,
         c.last_message_created_at,
+        (SELECT enc_version FROM dm_messages WHERE id = c.last_message_id) as last_message_enc_version,
         c.user_a_read_at,
         c.user_b_read_at,
         c.key_version,
@@ -10278,6 +10279,7 @@ app.get('/api/dm/conversations', requireAuth, async (c) => {
             content: row.last_message_content,
             sender_id: row.last_message_sender_id,
             created_at: row.last_message_created_at,
+            enc_version: (row.last_message_enc_version as number | null) ?? null,
             is_mine: row.last_message_sender_id === userId,
           }
         : null,
