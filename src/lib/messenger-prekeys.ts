@@ -68,3 +68,46 @@ export async function fetchPreKeyBundle(userId: string): Promise<PreKeyBundleRes
     return null;
   }
 }
+
+// Ask the peer to re-bootstrap X3DH (their ratchet session is lost / mismatched
+// and they cannot decrypt our messages). Idempotent: repeated calls just
+// refresh the same request row.
+export async function requestRatchetReset(conversationId: string): Promise<void> {
+  try {
+    await fetch('/api/messenger/ratchet-reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ conversation_id: conversationId }),
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
+// Check whether the peer has asked US to re-bootstrap. Returns true only when
+// the pending request was made by the peer (not ourselves).
+export async function checkRatchetResetRequest(conversationId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/messenger/ratchet-reset?conversation_id=${encodeURIComponent(conversationId)}`, {
+      credentials: 'include',
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as { requested?: boolean };
+    return !!data.requested;
+  } catch {
+    return false;
+  }
+}
+
+// Clear a pending reset request after we have acted on it.
+export async function clearRatchetResetRequest(conversationId: string): Promise<void> {
+  try {
+    await fetch(`/api/messenger/ratchet-reset?conversation_id=${encodeURIComponent(conversationId)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+  } catch {
+    /* ignore */
+  }
+}

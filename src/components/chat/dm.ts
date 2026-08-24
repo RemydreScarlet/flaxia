@@ -8,6 +8,11 @@ import {
   unlockOrCreateIdentityV2,
 } from '../../lib/messenger-identity-v2.js';
 import {
+  checkRatchetResetRequest,
+  clearRatchetResetRequest,
+  requestRatchetReset,
+} from '../../lib/messenger-prekeys.js';
+import {
   decryptDmText,
   decryptFileForDm,
   encryptDmText,
@@ -23,6 +28,18 @@ import { createImagePreview } from '../ImagePreview.js';
 import { createVideoPlayer } from '../VideoPlayer.js';
 import { type ApiMessage, mapMessage } from './mappers.js';
 import type { ChatMessage, MessageTransport } from './types.js';
+
+// Debounce per-conversation so a burst of undecryptable (e.g. pre-fix) messages
+// does not spam the peer with reset requests. The peer only needs one nudge to
+// re-bootstrap X3DH.
+const lastRatchetNudge = new Map<string, number>();
+function nudgeRatchetReset(conversationId: string): void {
+  const now = Date.now();
+  const last = lastRatchetNudge.get(conversationId) ?? 0;
+  if (now - last < 30_000) return;
+  lastRatchetNudge.set(conversationId, now);
+  void requestRatchetReset(conversationId);
+}
 
 export class DmTransport implements MessageTransport {
   readonly scope = 'dm' as const;
@@ -74,6 +91,7 @@ export class DmTransport implements MessageTransport {
     });
     if (!res.ok) return { messages: [], nextCursor: null };
     const data = (await res.json()) as { messages: ApiMessage[]; next_cursor: string | null };
+    void this.maybeHandlePeerReset();
     return {
       messages: (data.messages || []).map((m) => mapMessage(m, 'dm', this.conversationId)),
       nextCursor: data.next_cursor,
@@ -87,7 +105,25 @@ export class DmTransport implements MessageTransport {
     );
     if (!res.ok) return [];
     const data = (await res.json()) as { messages: ApiMessage[] };
+    void this.maybeHandlePeerReset();
     return (data.messages || []).map((m) => mapMessage(m, 'dm', this.conversationId));
+  }
+
+  // If the peer has asked us to re-bootstrap X3DH (because they could not
+  // decrypt our messages), reset our local session so the next outgoing
+  // message establishes a fresh ratchet. This makes "Reset secure session"
+  // recover both sides automatically.
+  private async maybeHandlePeerReset(): Promise<void> {
+    if (!this.peerUserId) return;
+    try {
+      const requested = await checkRatchetResetRequest(this.conversationId);
+      if (requested) {
+        resetDmRatchet(this.conversationId, this.peerUserId);
+        await clearRatchetResetRequest(this.conversationId);
+      }
+    } catch {
+      /* ignore */
+    }
   }
 
   async markRead(): Promise<void> {
@@ -308,6 +344,7 @@ export class DmTransport implements MessageTransport {
           return;
         } catch (e) {
           console.error('DM v2 decrypt failed:', e);
+          nudgeRatchetReset(this.conversationId);
           if (el.isConnected) this.renderDmDecryptFailed(el);
           return;
         }
@@ -355,6 +392,7 @@ export class DmTransport implements MessageTransport {
     btn.textContent = '🔄 暗号セッションを再確立';
     btn.addEventListener('click', () => {
       resetDmRatchet(this.conversationId, this.peerUserId ?? '');
+      void requestRatchetReset(this.conversationId);
       showToast('セッションをリセットしました。新しいメッセージを送信すると再確立されます。');
       el.textContent = '🔄 セッションをリセットしました — 新しいメッセージを送信してください';
     });

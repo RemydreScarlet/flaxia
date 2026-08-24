@@ -12109,6 +12109,15 @@ app.get('/api/messenger/prekeys', requireAuth, async (c) => {
       .first()) as Record<string, unknown> | null;
     if (!ident) return c.json({ error: 'No identity registered' }, 404);
 
+    // Reclaim one-time prekeys that were reserved (claimed) by an abandoned
+    // session start, so the pool cannot get permanently stuck. A reservation
+    // older than 5 minutes is treated as freed and becomes available again.
+    await c.env.DB.prepare(
+      `UPDATE messenger_opks SET claimed_at = NULL WHERE user_id = ? AND claimed_at IS NOT NULL AND claimed_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-5 minutes')`,
+    )
+      .bind(userId)
+      .run();
+
     const opk = (await c.env.DB.prepare(
       `SELECT id, pub FROM messenger_opks WHERE user_id = ? AND claimed_at IS NULL ORDER BY created_at LIMIT 1`,
     )
@@ -12324,6 +12333,67 @@ app.delete('/api/messenger/ratchet-session', requireAuth, async (c) => {
   } catch (error: unknown) {
     console.error('Ratchet session delete error:', error);
     return c.json({ error: 'Failed to delete session' }, 500);
+  }
+});
+
+// POST /api/messenger/ratchet-reset - request the peer to re-bootstrap X3DH.
+// Used when this participant cannot decrypt the peer's messages (lost /
+// mismatched ratchet). The peer polls for the request and resets its own
+// session, so a single "Reset secure session" recovers BOTH sides.
+app.post('/api/messenger/ratchet-reset', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id;
+    const { conversation_id } = (await c.req.json()) as { conversation_id?: string };
+    if (!userId || !conversation_id) return c.json({ error: 'conversation_id required' }, 400);
+    const now = new Date().toISOString();
+    const result = await c.env.DB.prepare(
+      `INSERT INTO messenger_ratchet_reset_requests (conversation_id, requested_by, requested_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(conversation_id) DO UPDATE SET requested_by = excluded.requested_by, requested_at = excluded.requested_at`,
+    )
+      .bind(conversation_id, userId, now)
+      .run();
+    if (!result.success) return c.json({ error: 'Failed to request reset' }, 500);
+    return c.json({ success: true });
+  } catch (error: unknown) {
+    console.error('Ratchet reset request error:', error);
+    return c.json({ error: 'Failed to request reset' }, 500);
+  }
+});
+
+// GET /api/messenger/ratchet-reset?conversation_id=... - check whether the peer
+// has requested that WE re-bootstrap. Returns requested:true only when the
+// pending request was made by someone other than the caller.
+app.get('/api/messenger/ratchet-reset', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id;
+    const convId = c.req.query('conversation_id');
+    if (!userId || !convId) return c.json({ error: 'conversation_id required' }, 400);
+    const row = (await c.env.DB.prepare(
+      'SELECT requested_by FROM messenger_ratchet_reset_requests WHERE conversation_id = ?',
+    )
+      .bind(convId)
+      .first()) as { requested_by: string } | null;
+    if (!row || row.requested_by === userId) return c.json({ requested: false });
+    return c.json({ requested: true });
+  } catch (error: unknown) {
+    console.error('Ratchet reset check error:', error);
+    return c.json({ error: 'Failed to check reset' }, 500);
+  }
+});
+
+// DELETE /api/messenger/ratchet-reset?conversation_id=... - clear a pending
+// reset request (called by the peer after it has reset its own session).
+app.delete('/api/messenger/ratchet-reset', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id;
+    const convId = c.req.query('conversation_id');
+    if (!userId || !convId) return c.json({ error: 'conversation_id required' }, 400);
+    await c.env.DB.prepare('DELETE FROM messenger_ratchet_reset_requests WHERE conversation_id = ?').bind(convId).run();
+    return c.json({ success: true });
+  } catch (error: unknown) {
+    console.error('Ratchet reset clear error:', error);
+    return c.json({ error: 'Failed to clear reset' }, 500);
   }
 });
 
