@@ -62,6 +62,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       | 'messages'
       | 'groups'
       | 'servers'
+      | 'serverInvite'
       | 'call' = 'timeline';
     let currentPostId: string | null = null;
     let _currentUsername: string | null = null;
@@ -85,6 +86,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let conversationView: ConversationView | null = null;
     let groupChatView: GroupChatView | null = null;
     let serverView: ServerView | null = null;
+    let serverInviteView: { getElement(): HTMLElement; destroy: () => void } | null = null;
     let callUI: { element: HTMLElement; destroy: () => void } | null = null;
     let cachedContentComponent: { view: string; component: unknown; scrollY: number } | null = null;
     let adminLayout:
@@ -860,7 +862,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         cleanPath.startsWith('/users/') ||
         cleanPath.startsWith('/profile/') ||
         cleanPath.startsWith('/arcade/') ||
-        cleanPath.startsWith('/thread/');
+        cleanPath.startsWith('/thread/') ||
+        cleanPath.startsWith('/invite/');
 
       // Allow public routes for everyone
       if (isPublicRoute) {
@@ -1074,6 +1077,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         return { view: 'servers' as const, postId: null, username: null, tag: null };
       }
 
+      // Invite link (public, no auth required to view the landing)
+      const inviteMatch = cleanPath.match(/^\/invite\/([^/]+)$/);
+      if (inviteMatch) {
+        return {
+          view: 'serverInvite' as const,
+          postId: inviteMatch[1],
+          username: null,
+          tag: null,
+        };
+      }
+
       // Call route - requires auth
       const callMatch = cleanPath.match(/^\/call\/([^/]+)$/);
       if (callMatch) {
@@ -1198,6 +1212,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         | 'messages'
         | 'groups'
         | 'servers'
+        | 'serverInvite'
         | 'call',
       postId?: string,
       username?: string,
@@ -1369,12 +1384,43 @@ document.addEventListener('DOMContentLoaded', async () => {
           serverView.destroy();
           serverView = null;
         }
+        if (serverInviteView) {
+          serverInviteView.destroy();
+          serverInviteView = null;
+        }
       }
       showPageLoader();
       app.innerHTML = '';
 
       // Wrap rendering in try-catch so errors don't leave the loader stuck
       try {
+        // Handle server invite landing (public, no auth required to view)
+        if (view === 'serverInvite') {
+          if (leftNavOverlay) {
+            leftNavOverlay.remove();
+            leftNavOverlay = null;
+          }
+          currentView = 'serverInvite';
+          currentPostId = postId || null;
+          _currentUsername = null;
+
+          const { ServerInviteView } = await import('./components/ServerInviteView.js');
+          serverInviteView = new ServerInviteView({
+            token: postId || '',
+            onJoin: (serverId: string) => {
+              window.history.pushState({}, '', `/servers/${serverId}`);
+              navigateTo('servers', serverId);
+            },
+            onLogin: () => {
+              window.history.pushState({}, '', '/login');
+              navigateTo('login');
+            },
+          });
+          app.appendChild(serverInviteView.getElement());
+          hidePageLoader();
+          return;
+        }
+
         // Handle auth pages (full screen, no nav)
         if (view === 'login') {
           if (leftNavOverlay) {

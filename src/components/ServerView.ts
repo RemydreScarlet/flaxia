@@ -3,6 +3,7 @@ import {
   createNewChannelKey,
   ensureChannelKeys,
   fetchUserPublicKeys,
+  reconcileServerChannelKeys,
   wrapKeyForMembers,
 } from '../lib/messenger-store.js';
 import { showToast } from '../lib/toast.js';
@@ -54,6 +55,7 @@ export class ServerView extends MessageView {
   private members: ServerMember[] = [];
   private activeChannelId: string | null = null;
   private memberPanelOpen = !window.matchMedia('(max-width: 768px)').matches;
+  private lastReconcileAt = 0;
 
   constructor(props: ServerViewProps) {
     super('server');
@@ -275,7 +277,13 @@ export class ServerView extends MessageView {
 
   private async ensureChannelReady(ch: ServerChannel): Promise<void> {
     const key = await ensureChannelKeys(this.props.serverId, ch.id, ch.key_version);
-    if (key) return;
+    if (key) {
+      // We hold the channel key: make sure every current member has a wrapped
+      // box (delivers the key to members who joined after channel creation,
+      // e.g. via an invite link). Server-blind E2EE is preserved.
+      void this.reconcileChannel(ch);
+      return;
+    }
     if (!this.canManage()) return;
     const membersWithKeys = await fetchUserPublicKeys(this.members.map((m) => m.id));
     if (membersWithKeys.size === 0) {
@@ -296,6 +304,32 @@ export class ServerView extends MessageView {
       /* best effort */
     }
     await ensureChannelKeys(this.props.serverId, ch.id, ch.key_version);
+  }
+
+  // Wrap the channel key we hold for every current member and upload the boxes.
+  // Idempotent: the server upserts, and reconcileServerChannelKeys is a no-op
+  // unless we actually have the key cached. Keeps invitees able to decrypt.
+  private reconcileChannel(ch: ServerChannel): void {
+    const memberIds = this.members.map((m) => m.id);
+    if (memberIds.length === 0) return;
+    void reconcileServerChannelKeys(this.props.serverId, ch.id, ch.key_version, memberIds);
+  }
+
+  // Periodically (throttled) re-distribute the channel key so members who join
+  // via an invite link after this view loaded still receive it. We refresh the
+  // member list first so newly-joined invitees are included.
+  protected override async pollNewMessages(): Promise<void> {
+    await super.pollNewMessages();
+    const now = Date.now();
+    if (now - this.lastReconcileAt < 20000) return;
+    this.lastReconcileAt = now;
+    const ch = this.channels.find((c) => c.id === this.activeChannelId);
+    if (ch) {
+      void this.refreshServer().then(() => {
+        const current = this.channels.find((c) => c.id === this.activeChannelId);
+        if (current) this.reconcileChannel(current);
+      });
+    }
   }
 
   private async rotateServerKeys(): Promise<void> {
@@ -373,6 +407,11 @@ export class ServerView extends MessageView {
       addMember.textContent = '+ ' + t('servers.add_members');
       addMember.addEventListener('click', () => this.openAddMembers());
       actions.appendChild(addMember);
+      const inviteBtn = document.createElement('button');
+      inviteBtn.className = 'chat-btn chat-btn--ghost';
+      inviteBtn.textContent = t('servers.create_invite') || '🔗 ' + 'Invite link';
+      inviteBtn.addEventListener('click', () => this.openInviteModal());
+      actions.appendChild(inviteBtn);
       if (this.server.isFounder || this.server.my_role === 'admin') {
         const settings = document.createElement('button');
         settings.className = 'chat-btn chat-btn--ghost';
@@ -441,6 +480,155 @@ export class ServerView extends MessageView {
         }
       },
     });
+  }
+
+  private openInviteModal(): void {
+    const { dialog } = createModalBase('chat-modal');
+    const head = document.createElement('h3');
+    head.className = 'chat-modal-title';
+    head.textContent = t('servers.create_invite') || 'Invite link';
+    dialog.appendChild(head);
+
+    const form = document.createElement('div');
+    form.className = 'chat-modal-form';
+
+    const expLabel = document.createElement('label');
+    expLabel.className = 'chat-modal-label';
+    expLabel.textContent = t('servers.invite_expires_hours') || 'Expires after (hours)';
+    const expInput = document.createElement('input');
+    expInput.type = 'number';
+    expInput.min = '1';
+    expInput.className = 'chat-modal-input';
+    expInput.placeholder = '';
+    expLabel.appendChild(expInput);
+    form.appendChild(expLabel);
+
+    const usesLabel = document.createElement('label');
+    usesLabel.className = 'chat-modal-label';
+    usesLabel.textContent = t('servers.invite_max_uses') || 'Max uses';
+    const usesInput = document.createElement('input');
+    usesInput.type = 'number';
+    usesInput.min = '1';
+    usesInput.className = 'chat-modal-input';
+    usesLabel.appendChild(usesInput);
+    form.appendChild(usesLabel);
+
+    const createBtn = document.createElement('button');
+    createBtn.className = 'chat-btn chat-btn--primary';
+    createBtn.textContent = t('servers.invite_create') || 'Create';
+    form.appendChild(createBtn);
+    dialog.appendChild(form);
+
+    const linkWrap = document.createElement('div');
+    linkWrap.className = 'chat-modal-invite-link';
+    linkWrap.style.display = 'none';
+    dialog.appendChild(linkWrap);
+
+    const listWrap = document.createElement('div');
+    listWrap.className = 'chat-modal-invite-list';
+    dialog.appendChild(listWrap);
+
+    const renderLink = (url: string) => {
+      linkWrap.innerHTML = '';
+      linkWrap.style.display = '';
+      const lbl = document.createElement('div');
+      lbl.className = 'chat-modal-label';
+      lbl.textContent = t('servers.invite_link') || 'Invite link';
+      const full = `${window.location.origin}${url}`;
+      const inp = document.createElement('input');
+      inp.className = 'chat-modal-input';
+      inp.readOnly = true;
+      inp.value = full;
+      const copy = document.createElement('button');
+      copy.className = 'chat-btn chat-btn--ghost';
+      copy.textContent = t('servers.invite_copy') || 'Copy';
+      copy.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(full);
+          showToast(t('servers.invite_copied') || 'Copied');
+        } catch {
+          inp.select();
+          showToast(t('servers.invite_copy_failed') || 'Copy failed', true);
+        }
+      });
+      linkWrap.appendChild(lbl);
+      linkWrap.appendChild(inp);
+      linkWrap.appendChild(copy);
+    };
+
+    const renderList = async () => {
+      const res = await fetch(`/api/servers/${this.props.serverId}/invites`, { credentials: 'include' });
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        invites: Array<{
+          token: string;
+          url: string;
+          role: string;
+          maxUses: number | null;
+          useCount: number;
+          expiresAt: string | null;
+        }>;
+      };
+      listWrap.innerHTML = '';
+      const title = document.createElement('div');
+      title.className = 'chat-modal-label';
+      title.textContent = t('servers.invite_active') || 'Active invites';
+      listWrap.appendChild(title);
+      if (!data.invites || data.invites.length === 0) {
+        const none = document.createElement('div');
+        none.className = 'chat-modal-hint';
+        none.textContent = t('servers.invite_none') || 'No invites yet';
+        listWrap.appendChild(none);
+        return;
+      }
+      for (const inv of data.invites) {
+        const row = document.createElement('div');
+        row.className = 'chat-modal-invite-row';
+        const info = document.createElement('span');
+        info.textContent = `${inv.url} · ${inv.useCount}${inv.maxUses != null ? `/${inv.maxUses}` : ''}`;
+        const revoke = document.createElement('button');
+        revoke.className = 'chat-btn chat-btn--danger';
+        revoke.textContent = t('servers.invite_revoke') || 'Revoke';
+        revoke.addEventListener('click', async () => {
+          const r = await fetch(`/api/servers/${this.props.serverId}/invites/${inv.token}`, {
+            method: 'DELETE',
+            credentials: 'include',
+          });
+          if (r.ok) {
+            showToast(t('servers.invite_revoked') || 'Revoked');
+            await renderList();
+          }
+        });
+        row.appendChild(info);
+        row.appendChild(revoke);
+        listWrap.appendChild(row);
+      }
+    };
+
+    createBtn.addEventListener('click', async () => {
+      const expVal = expInput.value.trim();
+      const usesVal = usesInput.value.trim();
+      const body: Record<string, unknown> = {};
+      if (expVal) body.expiresInHours = Number(expVal);
+      if (usesVal) body.maxUses = Number(usesVal);
+      const res = await fetch(`/api/servers/${this.props.serverId}/invites`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { url: string };
+        renderLink(data.url);
+        showToast(t('servers.invite_created') || 'Created');
+        await renderList();
+      } else {
+        const err = (await res.json()) as { error?: string };
+        showToast(err.error || t('servers.invite_copy_failed') || 'Failed', true);
+      }
+    });
+
+    void renderList();
   }
 
   private openSettings(): void {

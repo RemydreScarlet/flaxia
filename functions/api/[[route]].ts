@@ -12795,6 +12795,226 @@ app.delete('/api/servers/:id/members/:userId', requireAuth, async (c) => {
   }
 });
 
+// ─── Server invite links ───────────────────────────────────────────────────────
+
+// POST /api/servers/:id/invites - create an invite link (owner/admin)
+app.post('/api/servers/:id/invites', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id || '';
+    const serverId = c.req.param('id');
+    const { role, maxUses, expiresInHours } = (await c.req.json()) as {
+      role?: string;
+      maxUses?: number | null;
+      expiresInHours?: number | null;
+    };
+
+    const member = (await c.env.DB.prepare(
+      "SELECT role FROM server_members WHERE server_id = ? AND user_id = ? AND left_at IS NULL AND role IN ('owner', 'admin')",
+    )
+      .bind(serverId, userId)
+      .first()) as { role: string } | null;
+
+    if (!member) {
+      return c.json({ error: 'Not authorized to create invites' }, 403);
+    }
+
+    // Invites never grant owner; default to member.
+    const inviteRole = role === 'admin' ? 'admin' : 'member';
+    const safeMaxUses = typeof maxUses === 'number' && maxUses > 0 ? Math.floor(maxUses) : null;
+    const expiresAt =
+      typeof expiresInHours === 'number' && expiresInHours > 0
+        ? new Date(Date.now() + Math.floor(expiresInHours) * 3600 * 1000).toISOString()
+        : null;
+
+    const token = nanoid();
+    await c.env.DB.prepare(
+      'INSERT INTO server_invites (token, server_id, created_by, role, max_uses, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    )
+      .bind(token, serverId, userId, inviteRole, safeMaxUses, expiresAt, new Date().toISOString())
+      .run();
+
+    return c.json({ token, url: `/invite/${token}`, role: inviteRole, maxUses: safeMaxUses, expiresAt });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Server invite create error:', error);
+    return c.json({ error: 'Failed to create invite', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
+// GET /api/servers/:id/invites - list invites (owner/admin)
+app.get('/api/servers/:id/invites', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id || '';
+    const serverId = c.req.param('id');
+
+    const member = (await c.env.DB.prepare(
+      "SELECT role FROM server_members WHERE server_id = ? AND user_id = ? AND left_at IS NULL AND role IN ('owner', 'admin')",
+    )
+      .bind(serverId, userId)
+      .first()) as { role: string } | null;
+
+    if (!member) {
+      return c.json({ error: 'Not authorized to view invites' }, 403);
+    }
+
+    const invites = await c.env.DB.prepare(
+      'SELECT token, role, max_uses, use_count, expires_at, created_at FROM server_invites WHERE server_id = ? ORDER BY created_at DESC',
+    )
+      .bind(serverId)
+      .all();
+
+    return c.json({
+      invites: (invites.results || []).map((row: Record<string, unknown>) => ({
+        token: row.token,
+        url: `/invite/${row.token}`,
+        role: row.role,
+        maxUses: row.max_uses ?? null,
+        useCount: row.use_count,
+        expiresAt: row.expires_at ?? null,
+        createdAt: row.created_at,
+      })),
+    });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Server invites list error:', error);
+    return c.json({ error: 'Failed to list invites', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
+// DELETE /api/servers/:id/invites/:token - revoke an invite (owner/admin)
+app.delete('/api/servers/:id/invites/:token', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id || '';
+    const serverId = c.req.param('id');
+    const token = c.req.param('token');
+
+    const member = (await c.env.DB.prepare(
+      "SELECT role FROM server_members WHERE server_id = ? AND user_id = ? AND left_at IS NULL AND role IN ('owner', 'admin')",
+    )
+      .bind(serverId, userId)
+      .first()) as { role: string } | null;
+
+    if (!member) {
+      return c.json({ error: 'Not authorized to revoke invites' }, 403);
+    }
+
+    await c.env.DB.prepare('DELETE FROM server_invites WHERE server_id = ? AND token = ?').bind(serverId, token).run();
+
+    return c.json({ success: true });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Server invite revoke error:', error);
+    return c.json({ error: 'Failed to revoke invite', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
+// GET /api/servers/invite/:token - resolve invite metadata (public, no auth).
+// Never returns member lists or any E2EE key material.
+app.get('/api/servers/invite/:token', async (c) => {
+  try {
+    const token = c.req.param('token');
+    const invite = (await c.env.DB.prepare(
+      `SELECT i.token, i.role, i.max_uses, i.use_count, i.expires_at, i.server_id,
+              s.name, s.icon_key, s.description
+       FROM server_invites i
+       JOIN server_conversations s ON s.id = i.server_id
+       WHERE i.token = ?`,
+    )
+      .bind(token)
+      .first()) as {
+      token: string;
+      role: string;
+      max_uses: number | null;
+      use_count: number;
+      expires_at: string | null;
+      server_id: string;
+      name: string;
+      icon_key: string | null;
+      description: string;
+    } | null;
+
+    if (!invite) {
+      return c.json({ error: 'Invite not found' }, 404);
+    }
+
+    const now = Date.now();
+    const expired = !!invite.expires_at && new Date(invite.expires_at).getTime() <= now;
+    const usedUp = invite.max_uses != null && invite.use_count >= invite.max_uses;
+
+    return c.json({
+      token: invite.token,
+      serverName: invite.name,
+      serverIconKey: invite.icon_key,
+      serverDescription: invite.description,
+      role: invite.role,
+      maxUses: invite.max_uses,
+      useCount: invite.use_count,
+      expiresAt: invite.expires_at,
+      expired,
+      usedUp,
+    });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Server invite resolve error:', error);
+    return c.json({ error: 'Failed to resolve invite', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
+// POST /api/servers/invite/:token/join - join a server via invite (auth user)
+app.post('/api/servers/invite/:token/join', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id || '';
+    const token = c.req.param('token');
+
+    const invite = (await c.env.DB.prepare(
+      'SELECT token, server_id, role, max_uses, use_count, expires_at FROM server_invites WHERE token = ?',
+    )
+      .bind(token)
+      .first()) as {
+      token: string;
+      server_id: string;
+      role: string;
+      max_uses: number | null;
+      use_count: number;
+      expires_at: string | null;
+    } | null;
+
+    if (!invite) {
+      return c.json({ error: 'Invite not found' }, 404);
+    }
+    if (invite.expires_at && new Date(invite.expires_at).getTime() <= Date.now()) {
+      return c.json({ error: 'Invite has expired' }, 410);
+    }
+    if (invite.max_uses != null && invite.use_count >= invite.max_uses) {
+      return c.json({ error: 'Invite has reached its usage limit' }, 410);
+    }
+
+    const now = new Date().toISOString();
+    const existing = (await c.env.DB.prepare('SELECT 1 FROM server_members WHERE server_id = ? AND user_id = ?')
+      .bind(invite.server_id, userId)
+      .first()) as { 1: number } | null;
+
+    await c.env.DB.prepare(
+      `INSERT INTO server_members (server_id, user_id, role, joined_at, left_at)
+       VALUES (?, ?, ?, ?, NULL)
+       ON CONFLICT(server_id, user_id) DO UPDATE SET left_at = NULL, role = excluded.role, joined_at = excluded.joined_at`,
+    )
+      .bind(invite.server_id, userId, invite.role, now)
+      .run();
+
+    // Only count a use when the user was not already an active/former member.
+    if (!existing) {
+      await c.env.DB.prepare('UPDATE server_invites SET use_count = use_count + 1 WHERE token = ?').bind(token).run();
+    }
+
+    return c.json({ success: true, serverId: invite.server_id, role: invite.role });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Server invite join error:', error);
+    return c.json({ error: 'Failed to join server', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
 // POST /api/servers/:id/channels - create a channel (owner/admin)
 app.post('/api/servers/:id/channels', requireAuth, async (c) => {
   try {
@@ -12988,10 +13208,11 @@ app.post('/api/servers/:id/keys', requireAuth, async (c) => {
       return c.json({ error: 'Server not found' }, 404);
     }
 
-    const canManage = myMember.role === 'owner' || myMember.role === 'admin';
-    if (!canManage && boxes.some((b) => b.userId !== userId)) {
-      return c.json({ error: 'Not authorized to submit keys for other members' }, 403);
-    }
+    // Any current member may submit wrapped keys for other current members.
+    // A member can only wrap a channel key they already possess (decrypted in
+    // the client); the server never sees plaintext keys. The worst a malicious
+    // member can do is refuse to wrap (or wrap garbage for) another member,
+    // which is the same trust model as the rest of the E2EE group chats.
 
     const memberIds = await c.env.DB.prepare(
       'SELECT user_id FROM server_members WHERE server_id = ? AND left_at IS NULL',
