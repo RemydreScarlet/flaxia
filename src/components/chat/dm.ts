@@ -28,6 +28,7 @@ export class DmTransport implements MessageTransport {
   readonly scope = 'dm' as const;
   private peerUserId: string | null = null;
   private keyVersion = 1;
+  private unlockPromise: Promise<boolean> | null = null;
 
   constructor(private readonly conversationId: string) {}
 
@@ -277,35 +278,78 @@ export class DmTransport implements MessageTransport {
 
   async decryptTextInto(el: HTMLElement, msg: ChatMessage): Promise<void> {
     if (!this.peerUserId) return;
-    if (msg.enc_version === 2 && msg.ratchet_pub) {
-      try {
-        const plain = await decryptDmMessageV2(this.conversationId, this.peerUserId, msg.content, {
-          ratchetPub: msg.ratchet_pub,
-          pn: msg.ratchet_pn || 0,
-          n: msg.ratchet_n || 0,
-        });
-        if (plain && el.isConnected) {
-          el.classList.remove('msg-row-encrypted');
-          el.textContent = plain;
-          await this.enrichText(el, plain);
+    if (msg.enc_version === 2) {
+      if (!isIdentityV2Unlocked()) {
+        if (!this.unlockPromise) {
+          this.unlockPromise = this.unlockV2().finally(() => {
+            this.unlockPromise = null;
+          });
         }
-      } catch {
-        /* leave encrypted placeholder */
+        const ok = await this.unlockPromise;
+        if (!ok) {
+          this.renderDmLocked(el, msg);
+          return;
+        }
       }
-      return;
+      if (msg.ratchet_pub) {
+        try {
+          const plain = await decryptDmMessageV2(this.conversationId, this.peerUserId, msg.content, {
+            ratchetPub: msg.ratchet_pub,
+            pn: msg.ratchet_pn || 0,
+            n: msg.ratchet_n || 0,
+          });
+          if (plain && el.isConnected) {
+            el.classList.remove('msg-row-encrypted');
+            el.textContent = plain;
+            await this.enrichText(el, plain);
+          } else if (el.isConnected) {
+            this.renderDmDecryptFailed(el);
+          }
+          return;
+        } catch (e) {
+          console.error('DM v2 decrypt failed:', e);
+          if (el.isConnected) this.renderDmDecryptFailed(el);
+          return;
+        }
+      }
     }
-    const plain = await decryptDmText(
-      this.conversationId,
-      msg.key_version || this.keyVersion,
-      this.peerUserId,
-      msg.content,
-      msg.content_iv || '',
-    );
-    if (!plain) return;
-    if (!el.isConnected) return;
-    el.classList.remove('msg-row-encrypted');
-    el.textContent = plain;
-    await this.enrichText(el, plain);
+    try {
+      const plain = await decryptDmText(
+        this.conversationId,
+        msg.key_version || this.keyVersion,
+        this.peerUserId,
+        msg.content,
+        msg.content_iv || '',
+      );
+      if (!plain) {
+        if (el.isConnected) this.renderDmDecryptFailed(el);
+        return;
+      }
+      if (!el.isConnected) return;
+      el.classList.remove('msg-row-encrypted');
+      el.textContent = plain;
+      await this.enrichText(el, plain);
+    } catch (e) {
+      console.error('DM v1 decrypt failed:', e);
+      if (el.isConnected) this.renderDmDecryptFailed(el);
+    }
+  }
+
+  private renderDmLocked(el: HTMLElement, msg: ChatMessage): void {
+    el.classList.add('msg-row-encrypted');
+    el.textContent = '';
+    const btn = document.createElement('button');
+    btn.className = 'msg-decrypt-unlock';
+    btn.textContent = '🔒 ロック解除して表示';
+    btn.addEventListener('click', async () => {
+      if (await this.unlockV2()) await this.decryptTextInto(el, msg);
+    });
+    el.appendChild(btn);
+  }
+
+  private renderDmDecryptFailed(el: HTMLElement): void {
+    el.classList.add('msg-row-encrypted');
+    el.textContent = '⚠️ 復号できませんでした';
   }
 
   private async enrichText(el: HTMLElement, content: string): Promise<void> {
