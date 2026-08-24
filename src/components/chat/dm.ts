@@ -345,6 +345,11 @@ export class DmTransport implements MessageTransport {
           }
           return;
         } catch (e) {
+          const errMsg = (e as Error | undefined)?.message ?? '';
+          if (errMsg === 'OPK_UNRECOVERABLE') {
+            if (el.isConnected) this.renderDmDecryptPrefixed(el);
+            return;
+          }
           console.error('DM v2 decrypt failed:', e);
           nudgeRatchetReset(this.conversationId, this.peerUserId ?? '');
           if (el.isConnected) this.renderDmDecryptFailed(el);
@@ -399,6 +404,11 @@ export class DmTransport implements MessageTransport {
       el.textContent = '🔄 セッションをリセットしました — 新しいメッセージを送信してください';
     });
     el.appendChild(btn);
+  }
+
+  private renderDmDecryptPrefixed(el: HTMLElement): void {
+    el.classList.add('msg-row-encrypted');
+    el.textContent = '⚠️ このメッセージは暗号化アップデート前に送信されたため復号できません';
   }
 
   private async enrichText(el: HTMLElement, content: string): Promise<void> {

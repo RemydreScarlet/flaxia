@@ -6,7 +6,7 @@
 
 import { x25519 } from '@noble/curves/ed25519.js';
 import { consumeOwnOpkPriv, getE2EEK, getIdentityV2, type IdentityV2 } from './messenger-identity-v2.ts';
-import { fetchPreKeyBundle } from './messenger-prekeys.ts';
+import { checkRatchetResetRequest, clearRatchetResetRequest, fetchPreKeyBundle } from './messenger-prekeys.ts';
 import { DoubleRatchet, type RatchetHeader } from './messenger-ratchet.ts';
 import { bufToBase64, deriveInitialRatchet, type PreKeyBundle, x3dhInitiate, x3dhRespond } from './messenger-x3dh.ts';
 
@@ -177,8 +177,18 @@ export async function encryptDmMessageV2(dmId: string, peerId: string, plaintext
   if (!session) {
     const loaded = await loadDmRatchet(dmId);
     if (loaded) {
-      session = { ratchet: loaded, bootstrap: undefined };
-    } else {
+      // If the peer asked us to re-bootstrap (they could not decrypt our
+      // messages, e.g. a stale pre-fix ratchet), discard the persisted session
+      // so this send establishes a fresh X3DH ratchet — recovery works even
+      // without actively polling the conversation.
+      if (await checkRatchetResetRequest(dmId)) {
+        resetDmRatchet(dmId, peerId);
+        await clearRatchetResetRequest(dmId);
+      } else {
+        session = { ratchet: loaded, bootstrap: undefined };
+      }
+    }
+    if (!session) {
       const me = getIdentityV2();
       if (!me) throw new Error('E2EE identity is locked');
       const bundle = await fetchPreKeyBundle(peerId);
@@ -241,6 +251,10 @@ export async function decryptDmMessageV2(
     const loaded = await loadDmRatchet(dmId);
     if (loaded) {
       session = { ratchet: loaded, bootstrap: undefined };
+    } else if (parsed.x3dh?.opkId) {
+      // Bootstrap present but its one-time prekey is gone (a message sent
+      // before the X3DH OPK-handling fix deleted it). Permanently undecryptable.
+      throw new Error('OPK_UNRECOVERABLE');
     } else {
       throw new Error('No ratchet session and no X3DH bootstrap');
     }
