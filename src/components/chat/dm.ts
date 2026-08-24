@@ -340,6 +340,9 @@ export class DmTransport implements MessageTransport {
             el.classList.remove('msg-row-encrypted');
             el.textContent = plain;
             await this.enrichText(el, plain);
+            // A successful decrypt proves the session is healthy — re-arm
+            // recovery so a genuine future failure triggers it immediately.
+            lastRatchetNudge.delete(this.conversationId);
           } else if (el.isConnected) {
             this.renderDmDecryptFailed(el);
           }
@@ -350,8 +353,14 @@ export class DmTransport implements MessageTransport {
             if (el.isConnected) this.renderDmDecryptPrefixed(el);
             return;
           }
-          console.error('DM v2 decrypt failed:', e);
-          nudgeRatchetReset(this.conversationId, this.peerUserId ?? '');
+          // Old backlog messages fail on every render; recovering on them would
+          // destroy freshly established sessions in an endless loop. Only a
+          // failure on a RECENT message means the live session is broken.
+          const age = Date.now() - new Date(msg.created_at).getTime();
+          if (age < 2 * 60_000) {
+            console.error('DM v2 decrypt failed:', e);
+            nudgeRatchetReset(this.conversationId, this.peerUserId ?? '');
+          }
           if (el.isConnected) this.renderDmDecryptFailed(el);
           return;
         }
