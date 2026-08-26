@@ -158,6 +158,35 @@ describe('X3DH + Double Ratchet', () => {
     assert.strictEqual(aliceRatchet.decrypt(b1), 'reply after reload');
   });
 
+  it('reload (serialize/deserialize) mid-conversation on both sides keeps decrypting', () => {
+    const { alice, bob } = setupPeers();
+    let { aliceRatchet, bobRatchet } = establish(alice, bob);
+
+    const m1 = aliceRatchet.encrypt('m1');
+    const m2 = aliceRatchet.encrypt('m2');
+    assert.strictEqual(bobRatchet.decrypt(m1), 'm1');
+    assert.strictEqual(bobRatchet.decrypt(m2), 'm2');
+
+    // Both participants "reload" at the same time — rehydrate from persisted
+    // state. This is the exact path that produced "invalid tag" after a client
+    // update: the AEAD input must stay identical so stored ciphertext still
+    // verifies.
+    aliceRatchet = DoubleRatchet.deserialize(aliceRatchet.serialize());
+    bobRatchet = DoubleRatchet.deserialize(bobRatchet.serialize());
+
+    const r1 = bobRatchet.encrypt('r1');
+    assert.strictEqual(aliceRatchet.decrypt(r1), 'r1');
+
+    const m3 = aliceRatchet.encrypt('m3');
+    assert.strictEqual(bobRatchet.decrypt(m3), 'm3');
+
+    const m4 = aliceRatchet.encrypt('m4');
+    const m5 = aliceRatchet.encrypt('m5');
+    // Out-of-order after reload still works.
+    assert.strictEqual(bobRatchet.decrypt(m5), 'm5');
+    assert.strictEqual(bobRatchet.decrypt(m4), 'm4');
+  });
+
   it('provides forward secrecy: a compromised later state cannot decrypt earlier messages', () => {
     const { alice, bob } = setupPeers();
     const { aliceRatchet, bobRatchet } = establish(alice, bob);

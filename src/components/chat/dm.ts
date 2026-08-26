@@ -311,6 +311,28 @@ export class DmTransport implements MessageTransport {
   }
 
   async startEditDecrypt(msg: ChatMessage): Promise<string> {
+    if (!this.peerUserId) return msg.content;
+    try {
+      if (msg.enc_version === 2 && msg.ratchet_pub) {
+        const plain = await decryptDmMessageV2(this.conversationId, this.peerUserId, msg.content, {
+          ratchetPub: msg.ratchet_pub,
+          pn: msg.ratchet_pn || 0,
+          n: msg.ratchet_n || 0,
+        });
+        if (plain) return plain;
+      } else if (msg.enc_version === 1) {
+        const plain = await decryptDmText(
+          this.conversationId,
+          msg.key_version || this.keyVersion,
+          this.peerUserId,
+          msg.content,
+          msg.content_iv || '',
+        );
+        if (plain) return plain;
+      }
+    } catch {
+      /* fall through to raw content */
+    }
     return msg.content;
   }
 
@@ -357,8 +379,10 @@ export class DmTransport implements MessageTransport {
           // decrypted until either side sends a fresh X3DH bootstrap. Not an
           // error worth spamming — show a calm hint and let recovery happen.
           if (errMsg.startsWith('No ratchet session')) {
-            const age2 = Date.now() - new Date(msg.created_at).getTime();
-            if (age2 < 2 * 60_000) nudgeRatchetReset(this.conversationId, this.peerUserId ?? '');
+            // We have no session at all, so requesting a re-bootstrap from the
+            // peer is safe (nothing to lose) and is how the conversation
+            // recovers — always ask; the debounce prevents spam.
+            nudgeRatchetReset(this.conversationId, this.peerUserId ?? '');
             if (el.isConnected) this.renderDmDecryptPending(el);
             return;
           }

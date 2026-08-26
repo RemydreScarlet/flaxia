@@ -116,6 +116,10 @@ export class DoubleRatchet {
   }
 
   private aeadKey(mk: Uint8Array, ad: Uint8Array): ReturnType<typeof chacha20poly1305> {
+    // Each Double Ratchet message key (mk) is single-use, so the (key, nonce)
+    // pair is never reused — a constant nonce is safe and, crucially, keeps the
+    // AEAD input stable so ciphertext encrypted by any prior client build keeps
+    // decrypting after a reload/update.
     return chacha20poly1305(mk, new Uint8Array(12), ad);
   }
 

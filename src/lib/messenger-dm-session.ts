@@ -89,35 +89,72 @@ async function unwrapWithKek(encB64: string, ivB64: string): Promise<Uint8Array>
   return new Uint8Array(pt);
 }
 
-// Persist the serialized ratchet (KEK-wrapped) to the server so the session
-// survives a reload or spans multiple devices.
-export async function persistDmRatchet(conversationId: string, ratchet: DoubleRatchet): Promise<void> {
+// Stable per-browser device id so each device keeps its own ratchet session
+// instead of clobbering other devices' state in the single shared row.
+function getDeviceId(): string {
   try {
-    const json = new TextEncoder().encode(JSON.stringify(ratchet.serialize()));
+    if (typeof localStorage !== 'undefined') {
+      let id = localStorage.getItem('flaxia_device_id');
+      if (!id) {
+        const b = new Uint8Array(16);
+        globalThis.crypto.getRandomValues(b);
+        id = bufToBase64(b);
+        localStorage.setItem('flaxia_device_id', id);
+      }
+      return id;
+    }
+  } catch {
+    /* storage unavailable */
+  }
+  return 'default';
+}
+
+// Persist the FULL candidate list (KEK-wrapped) for this conversation+device so
+// the live session AND any replayed older sessions survive a reload. Storing the
+// whole list (not just the last-touched candidate) is what keeps the live
+// session from being dropped when an old history message is decrypted.
+async function persistDmRatchet(conversationId: string, peerId: string): Promise<void> {
+  try {
+    const key = sessionKey(conversationId, peerId);
+    const list = sessions.get(key);
+    if (!list || list.length === 0) return;
+    const serialized = list.map((s) => ({ ratchet: s.ratchet.serialize(), bootstrap: s.bootstrap ?? null }));
+    const json = new TextEncoder().encode(JSON.stringify(serialized));
     const { enc, iv } = await wrapWithKek(json);
     await fetch('/api/messenger/ratchet-session', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ conversation_id: conversationId, session_enc: enc, session_iv: iv }),
+      body: JSON.stringify({
+        conversation_id: conversationId,
+        device_id: getDeviceId(),
+        session_enc: enc,
+        session_iv: iv,
+      }),
     });
   } catch {
     /* persistence is best-effort; the in-memory session still works */
   }
 }
 
-// Load a previously persisted ratchet for this conversation, or null.
-export async function loadDmRatchet(conversationId: string): Promise<DoubleRatchet | null> {
+// Load the previously persisted candidate list for this conversation+device, or
+// null. Restores the live session at index 0.
+export async function loadDmRatchet(conversationId: string): Promise<DmSession[] | null> {
   try {
     if (!getE2EEK()) return null;
-    const res = await fetch(`/api/messenger/ratchet-session?conversation_id=${encodeURIComponent(conversationId)}`, {
-      credentials: 'include',
-    });
+    const res = await fetch(
+      `/api/messenger/ratchet-session?conversation_id=${encodeURIComponent(conversationId)}&device_id=${encodeURIComponent(getDeviceId())}`,
+      { credentials: 'include' },
+    );
     if (!res.ok) return null;
     const data = (await res.json()) as { exists?: boolean; session_enc?: string; session_iv?: string };
     if (!data.exists || !data.session_enc || !data.session_iv) return null;
-    const json = new TextDecoder().decode(await unwrapWithKek(data.session_enc, data.session_iv));
-    return DoubleRatchet.deserialize(JSON.parse(json) as never);
+    const json = JSON.parse(new TextDecoder().decode(await unwrapWithKek(data.session_enc, data.session_iv))) as Array<{
+      ratchet: never;
+      bootstrap: DmX3DHBootstrap | null;
+    }>;
+    if (!Array.isArray(json) || json.length === 0) return null;
+    return json.map((s) => ({ ratchet: DoubleRatchet.deserialize(s.ratchet), bootstrap: s.bootstrap ?? undefined }));
   } catch {
     return null;
   }
@@ -125,10 +162,10 @@ export async function loadDmRatchet(conversationId: string): Promise<DoubleRatch
 
 async function clearDmRatchetOnServer(conversationId: string): Promise<void> {
   try {
-    await fetch(`/api/messenger/ratchet-session?conversation_id=${encodeURIComponent(conversationId)}`, {
-      method: 'DELETE',
-      credentials: 'include',
-    });
+    await fetch(
+      `/api/messenger/ratchet-session?conversation_id=${encodeURIComponent(conversationId)}&device_id=${encodeURIComponent(getDeviceId())}`,
+      { method: 'DELETE', credentials: 'include' },
+    );
   } catch {
     /* ignore */
   }
@@ -213,7 +250,7 @@ async function encryptDmMessageV2Inner(dmId: string, peerId: string, plaintext: 
   let list = sessions.get(key);
   if (!list || list.length === 0) {
     const loaded = await loadDmRatchet(dmId);
-    if (loaded) {
+    if (loaded && loaded.length > 0) {
       // If the peer asked us to re-bootstrap (they could not decrypt our
       // messages, e.g. a stale pre-fix ratchet), discard the persisted session
       // so this send establishes a fresh X3DH ratchet — recovery works even
@@ -223,7 +260,7 @@ async function encryptDmMessageV2Inner(dmId: string, peerId: string, plaintext: 
         await clearRatchetResetRequest(dmId);
         list = [];
       } else {
-        list = [{ ratchet: loaded }];
+        list = loaded;
       }
     } else {
       list = [];
@@ -254,7 +291,7 @@ async function encryptDmMessageV2Inner(dmId: string, peerId: string, plaintext: 
   // Only the first message of a fresh session carries the X3DH bootstrap.
   const envelope: DmSendEnvelope = { ciphertext: msg.ciphertext, header: msg.header, x3dh: session.bootstrap };
   session.bootstrap = undefined;
-  await persistDmRatchet(dmId, session.ratchet);
+  await persistDmRatchet(dmId, peerId);
   return envelope;
 }
 
@@ -308,7 +345,7 @@ async function decryptDmMessageV2Inner(
     list = [];
     sessions.set(key, list);
     const loaded = await loadDmRatchet(dmId);
-    if (loaded) list.push({ ratchet: loaded });
+    if (loaded && loaded.length) list.push(...loaded);
   }
 
   // Try each known candidate — most-recently-successful first. A healthy live
@@ -324,7 +361,7 @@ async function decryptDmMessageV2Inner(
       list.unshift(candidate);
       if (list.length > MAX_SESSIONS) list.pop();
       rememberPlaintext(plaintext);
-      await persistDmRatchet(dmId, candidate.ratchet);
+      await persistDmRatchet(dmId, senderId);
       return plaintext;
     } catch (e) {
       lastError = e;
@@ -352,7 +389,7 @@ async function decryptDmMessageV2Inner(
       list.unshift(rebuilt);
       if (list.length > MAX_SESSIONS) list.pop();
       rememberPlaintext(plaintext);
-      await persistDmRatchet(dmId, rebuilt.ratchet);
+      await persistDmRatchet(dmId, senderId);
       return plaintext;
     }
     if (list.length === 0 && parsed.x3dh.opkId) {

@@ -12279,24 +12279,25 @@ app.put('/api/messenger/identity-v2', requireAuth, async (c) => {
 app.put('/api/messenger/ratchet-session', requireAuth, async (c) => {
   try {
     const userId = c.get('user')?.id;
-    const { conversation_id, session_enc, session_iv } = (await c.req.json()) as {
+    const { conversation_id, device_id, session_enc, session_iv } = (await c.req.json()) as {
       conversation_id?: string;
+      device_id?: string;
       session_enc?: string;
       session_iv?: string;
     };
-    if (!userId || !conversation_id || !session_enc || !session_iv) {
+    if (!userId || !conversation_id || !device_id || !session_enc || !session_iv) {
       return c.json({ error: 'Missing session fields' }, 400);
     }
     const now = new Date().toISOString();
     const result = await c.env.DB.prepare(
-      `INSERT INTO messenger_ratchet_sessions (user_id, conversation_id, session_enc, session_iv, updated_at)
-       VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(user_id, conversation_id) DO UPDATE SET
+      `INSERT INTO messenger_ratchet_sessions (user_id, conversation_id, device_id, session_enc, session_iv, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(user_id, conversation_id, device_id) DO UPDATE SET
          session_enc = excluded.session_enc,
          session_iv = excluded.session_iv,
          updated_at = excluded.updated_at`,
     )
-      .bind(userId, conversation_id, session_enc, session_iv, now)
+      .bind(userId, conversation_id, device_id, session_enc, session_iv, now)
       .run();
     if (!result.success) return c.json({ error: 'Failed to save session' }, 500);
     return c.json({ success: true });
@@ -12312,11 +12313,12 @@ app.get('/api/messenger/ratchet-session', requireAuth, async (c) => {
   try {
     const userId = c.get('user')?.id;
     const convId = c.req.query('conversation_id');
-    if (!userId || !convId) return c.json({ error: 'conversation_id required' }, 400);
+    const deviceId = c.req.query('device_id');
+    if (!userId || !convId || !deviceId) return c.json({ error: 'conversation_id and device_id required' }, 400);
     const row = (await c.env.DB.prepare(
-      'SELECT session_enc, session_iv FROM messenger_ratchet_sessions WHERE user_id = ? AND conversation_id = ?',
+      'SELECT session_enc, session_iv FROM messenger_ratchet_sessions WHERE user_id = ? AND conversation_id = ? AND device_id = ?',
     )
-      .bind(userId, convId)
+      .bind(userId, convId, deviceId)
       .first()) as { session_enc: string; session_iv: string } | null;
     if (!row) return c.json({ exists: false });
     return c.json({ exists: true, session_enc: row.session_enc, session_iv: row.session_iv });
@@ -12332,9 +12334,12 @@ app.delete('/api/messenger/ratchet-session', requireAuth, async (c) => {
   try {
     const userId = c.get('user')?.id;
     const convId = c.req.query('conversation_id');
-    if (!userId || !convId) return c.json({ error: 'conversation_id required' }, 400);
-    await c.env.DB.prepare('DELETE FROM messenger_ratchet_sessions WHERE user_id = ? AND conversation_id = ?')
-      .bind(userId, convId)
+    const deviceId = c.req.query('device_id');
+    if (!userId || !convId || !deviceId) return c.json({ error: 'conversation_id and device_id required' }, 400);
+    await c.env.DB.prepare(
+      'DELETE FROM messenger_ratchet_sessions WHERE user_id = ? AND conversation_id = ? AND device_id = ?',
+    )
+      .bind(userId, convId, deviceId)
       .run();
     return c.json({ success: true });
   } catch (error: unknown) {
