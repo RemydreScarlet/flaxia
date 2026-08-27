@@ -8,7 +8,7 @@ export function createSandboxFrame(props: SandboxFrameProps): HTMLElement {
 
   const iframe = document.createElement('iframe');
   iframe.className = 'sandbox-frame';
-  iframe.src = `${props.sandboxOrigin}/run/${props.postId}`;
+  iframe.src = `${props.sandboxOrigin}/run/${props.postId}${props.versionId ? `?v=${props.versionId}` : ''}`;
   iframe.sandbox = 'allow-scripts allow-forms allow-popups';
   iframe.allow = 'fullscreen; web-share';
   iframe.referrerPolicy = 'no-referrer';

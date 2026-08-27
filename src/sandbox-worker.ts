@@ -44,6 +44,7 @@ app.use('/*', cors());
 app.get('/api/wvfs-zip/:postId/*', async (c) => {
   try {
     const postId = c.req.param('postId');
+    const versionId = c.req.query('v') ?? undefined;
     const fullPath = c.req.path;
     const basePath = `/api/wvfs-zip/${postId}`;
     const filePath = fullPath.replace(basePath, '').replace(/^\//, '') || 'index.html';
@@ -53,17 +54,33 @@ app.get('/api/wvfs-zip/:postId/*', async (c) => {
     }
 
     // 1. Try pre-extracted R2 files (fast path — persists across workers, CDN-cacheable)
-    let response = await serveFileFromR2(c.env.BUCKET, postId, filePath);
+    let response = await serveFileFromR2(c.env.BUCKET, postId, filePath, versionId);
     if (response) return withCsp(response);
 
     // 2. Try in-memory cache (second fast path)
-    response = await serveFileFromWvfs(postId, filePath);
+    response = await serveFileFromWvfs(postId, filePath, versionId);
     if (response) return withCsp(response);
 
     // 3. Find the ZIP key in R2
     let zipKey: string | null = null;
 
-    if (c.env.DB) {
+    if (c.env.DB && versionId) {
+      try {
+        const versionResult = (await c.env.DB.prepare(
+          'SELECT payload_key FROM game_versions WHERE post_id = ? AND id = ?',
+        )
+          .bind(postId, versionId)
+          .first()) as { payload_key: string } | null;
+        if (versionResult?.payload_key) {
+          const obj = await c.env.BUCKET.head(versionResult.payload_key);
+          if (obj) zipKey = versionResult.payload_key;
+        }
+      } catch {
+        // proceed without version lookup on DB failure
+      }
+    }
+
+    if (!zipKey && c.env.DB) {
       try {
         const adResult = (await c.env.DB.prepare(
           "SELECT payload_key FROM ads WHERE id = ? AND payload_type = 'zip' AND active = 1",
@@ -115,14 +132,14 @@ app.get('/api/wvfs-zip/:postId/*', async (c) => {
     }
 
     // 4. Try progressive extraction: parse central dir + extract just this file
-    const loaded = await ensureFileInWvfs(c.env.BUCKET, zipKey, postId, filePath);
+    const loaded = await ensureFileInWvfs(c.env.BUCKET, zipKey, postId, filePath, versionId);
     if (loaded) {
-      response = await serveFileFromWvfs(postId, filePath);
+      response = await serveFileFromWvfs(postId, filePath, versionId);
       if (response) {
         // Persist just this file to R2 so subsequent requests skip extraction.
         // Deliberately not a full-archive extraction: that would exceed the
         // CPU/subrequest limits on the free plan.
-        c.executionCtx.waitUntil(persistFileToWvfsR2(c.env.BUCKET, postId, filePath));
+        c.executionCtx.waitUntil(persistFileToWvfsR2(c.env.BUCKET, postId, filePath, versionId));
         return withCsp(response);
       }
     }
@@ -156,10 +173,17 @@ app.notFound(async (c) => {
   const wvfsMatch = referer.match(/\/api\/wvfs-zip\/([^/?#]+)/);
   if (wvfsMatch && c.env.BUCKET) {
     const postId = wvfsMatch[1];
+    const versionId = (() => {
+      try {
+        return new URL(referer).searchParams.get('v') ?? undefined;
+      } catch {
+        return undefined;
+      }
+    })();
     const filePath = c.req.path.replace(/^\//, '') || 'index.html';
-    let response = await serveFileFromR2(c.env.BUCKET, postId, filePath);
+    let response = await serveFileFromR2(c.env.BUCKET, postId, filePath, versionId);
     if (response) return withCsp(response);
-    response = await serveFileFromWvfs(postId, filePath);
+    response = await serveFileFromWvfs(postId, filePath, versionId);
     if (response) return withCsp(response);
   }
   return c.text('Not found', 404);

@@ -18,6 +18,7 @@ export async function executeUniversalZip(
   containerEl: HTMLElement,
   mode: ZipExecutionMode = 'wvfs',
   url?: string,
+  versionId?: string,
 ): Promise<UniversalZipExecutorHandle> {
   // Clean up any existing execution
   if (activeHandle) {
@@ -29,11 +30,11 @@ export async function executeUniversalZip(
     let handle: ZipExecutorHandle | WvfsZipExecutorHandle | SwZipExecutorHandle;
 
     if (mode === 'sw') {
-      handle = await executeSwZip(postId, containerEl, url);
+      handle = await executeSwZip(postId, containerEl, url, undefined, undefined, versionId);
     } else if (mode === 'wvfs') {
-      handle = await executeWvfsZip(postId, containerEl, url);
+      handle = await executeWvfsZip(postId, containerEl, url, false, true, versionId);
     } else {
-      handle = await executeZip(postId, containerEl, url);
+      handle = await executeZip(postId, containerEl, url, versionId);
     }
 
     // Create universal handle
@@ -85,8 +86,9 @@ export async function executeZipAuto(
   postId: string,
   containerEl: HTMLElement,
   url?: string,
+  versionId?: string,
 ): Promise<UniversalZipExecutorHandle> {
   const mode = getOptimalZipMode();
   console.log(`Using ZIP execution mode: ${mode}`);
-  return executeUniversalZip(postId, containerEl, mode, url);
+  return executeUniversalZip(postId, containerEl, mode, url, versionId);
 }

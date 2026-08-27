@@ -8,14 +8,16 @@ import { useSandboxBridge } from '../lib/sandbox-bridge.js';
 import { getShowNsfw } from '../lib/settings.js';
 import { PostCardMode, type PostCardProps, type QuotedPost, type ReactionSummary } from '../types/post.js';
 import { createAudioPlayer } from './AudioPlayer.js';
+import { openGameUpdateModal } from './GameUpdateModal.js';
 import { createImagePreview } from './ImagePreview.js';
 import { createPostActions } from './PostActions.js';
 import { createPostHeader } from './PostHeader.js';
-import { createPostStage, updatePostStage } from './PostStage.js';
+import { createPostStage, isZipGame, updatePostStage } from './PostStage.js';
 import { createPostText } from './PostText.js';
 import { createReplyComposer, ReplyComposer } from './ReplyComposer.js';
 import { createShareModal } from './ShareModal.js';
 import { showSignInPrompt } from './SignInPrompt.js';
+import { openVersionHistoryModal } from './VersionHistoryModal.js';
 import { createVideoPlayer } from './VideoPlayer.js';
 
 // How many 100ms attempts to make before giving up on attaching the sandbox
@@ -51,6 +53,7 @@ export class PostCard {
   private editAttachmentFile: File | null = null;
   private editNewAttachmentKey: string | null = null;
   private editRemoveAttachment: boolean = false;
+  private currentVersionId: string | null = null;
 
   constructor(props: PostCardProps) {
     this.originalText = props.post.text;
@@ -218,6 +221,7 @@ export class PostCard {
         post: this.props.post,
         mode: this.mode,
         sandboxOrigin: this.props.sandboxOrigin,
+        versionId: this.currentVersionId ?? undefined,
         onModeChange: (newMode) => this.handleModeChange(newMode),
       });
       container.appendChild(this.postStageElement);
@@ -468,6 +472,23 @@ export class PostCard {
         post: this.props.post,
         mode: this.mode,
         sandboxOrigin: this.props.sandboxOrigin,
+        versionId: this.currentVersionId ?? undefined,
+        onModeChange: (newMode) => this.handleModeChange(newMode),
+      });
+    }
+  }
+
+  // Switch the executed game to a specific archived version (or back to the
+  // latest by passing null) and (re)load the sandbox iframe.
+  private playVersion(versionId: string | null): void {
+    this.currentVersionId = versionId;
+    this.mode = PostCardMode.EXECUTING;
+    if (this.postStageElement) {
+      updatePostStage(this.postStageElement, {
+        post: this.props.post,
+        mode: this.mode,
+        sandboxOrigin: this.props.sandboxOrigin,
+        versionId: this.currentVersionId ?? undefined,
         onModeChange: (newMode) => this.handleModeChange(newMode),
       });
     }
@@ -862,10 +883,7 @@ export class PostCard {
       return wrap;
     }
 
-    const isExecutable =
-      (!!quoted.payload_key && quoted.payload_key.startsWith('zip/')) ||
-      (!!quoted.payload_key && quoted.payload_key.startsWith('html/')) ||
-      (!!quoted.swf_key && quoted.swf_key.startsWith('swf/'));
+    const isExecutable = isZipGame(quoted.payload_key) || (!!quoted.swf_key && quoted.swf_key.startsWith('swf/'));
 
     if (quoted.thumbnail_key) {
       wrap.appendChild(
@@ -1103,6 +1121,39 @@ export class PostCard {
       min-width: 120px;
     `;
 
+    const historyItem = document.createElement('button');
+    historyItem.style.cssText = `
+      display: block;
+      width: 100%;
+      padding: 10px 16px;
+      background: none;
+      border: none;
+      color: var(--text-primary);
+      text-align: left;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.2s;
+    `;
+    historyItem.textContent = t('game.version_history');
+    historyItem.addEventListener('mouseenter', () => {
+      historyItem.style.background = 'var(--bg-secondary)';
+    });
+    historyItem.addEventListener('mouseleave', () => {
+      historyItem.style.background = 'none';
+    });
+    historyItem.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dropdown.remove();
+      this.menuDropdown = undefined;
+      openVersionHistoryModal({
+        postId: this.props.post.id,
+        sandboxOrigin: this.props.sandboxOrigin,
+        currentVersionId: this.currentVersionId,
+        onPlay: (versionId) => this.playVersion(versionId),
+      });
+    });
+    dropdown.appendChild(historyItem);
+
     if (isOwnPost) {
       if (this.props.post.hidden === 1) {
         const counterItem = document.createElement('button');
@@ -1161,6 +1212,41 @@ export class PostCard {
         this.startEditing();
       });
       dropdown.appendChild(editItem);
+
+      const isZipGamePost = isZipGame(this.props.post.payload_key);
+      if (isZipGamePost) {
+        const updateItem = document.createElement('button');
+        updateItem.style.cssText = `
+          display: block;
+          width: 100%;
+          padding: 10px 16px;
+          background: none;
+          border: none;
+          color: var(--text-primary);
+          text-align: left;
+          cursor: pointer;
+          font-size: 14px;
+          transition: background 0.2s;
+        `;
+        updateItem.textContent = t('game.update');
+        updateItem.addEventListener('mouseenter', () => {
+          updateItem.style.background = 'var(--bg-secondary)';
+        });
+        updateItem.addEventListener('mouseleave', () => {
+          updateItem.style.background = 'none';
+        });
+        updateItem.addEventListener('click', (e) => {
+          e.stopPropagation();
+          dropdown.remove();
+          this.menuDropdown = undefined;
+          openGameUpdateModal({
+            postId: this.props.post.id,
+            sandboxOrigin: this.props.sandboxOrigin,
+            onUpdated: () => this.playVersion(null),
+          });
+        });
+        dropdown.appendChild(updateItem);
+      }
 
       const deleteItem = document.createElement('button');
       deleteItem.style.cssText = `

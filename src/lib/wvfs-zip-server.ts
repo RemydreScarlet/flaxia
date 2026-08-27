@@ -4,6 +4,13 @@ import { getMimeType, validateFileType } from './file-extensions.ts';
 const WVFS_TTL = 5 * 60 * 1000;
 const WVFS_R2_PREFIX = 'wvfs/';
 
+// Compute the R2 base prefix for a post (or a specific game version of it).
+// Versions are isolated under wvfs/<postId>/<versionId>/ so multiple releases
+// of the same game can coexist without clobbering each other's extracted files.
+function wvfsBase(postId: string, versionId?: string | null): string {
+  return versionId ? `${WVFS_R2_PREFIX}${postId}/${versionId}` : `${WVFS_R2_PREFIX}${postId}`;
+}
+
 // Maximum files to persist to R2 in a single invocation. Keeps the number of
 // subrequests under the Workers Free plan limit (50 per invocation):
 // 1 head + 1 tail + 1 central dir + 1 manifest get + 3 * files + 1 manifest put.
@@ -374,10 +381,11 @@ export async function ensureFileInWvfs(
   zipKey: string,
   postId: string,
   filePath: string,
+  versionId?: string | null,
 ): Promise<boolean> {
   cleanupExpiredEntries();
 
-  const entry = wvfsStorage.get(postId);
+  const entry = wvfsStorage.get(wvfsBase(postId, versionId));
 
   // Already fully extracted — just check if file exists
   if (entry && !entry.index) {
@@ -461,7 +469,7 @@ export async function ensureFileInWvfs(
   const fileMap = new Map<string, Uint8Array>();
   fileMap.set(resolvedIndexPath, fileData);
 
-  wvfsStorage.set(postId, {
+  wvfsStorage.set(wvfsBase(postId, versionId), {
     data: fileMap,
     createdAt: Date.now(),
     index,
@@ -551,10 +559,14 @@ export async function extractZipToWvfs(zipData: ArrayBuffer, postId: string): Pr
   }
 }
 
-export async function serveFileFromWvfs(postId: string, filePath: string): Promise<Response | null> {
+export async function serveFileFromWvfs(
+  postId: string,
+  filePath: string,
+  versionId?: string | null,
+): Promise<Response | null> {
   cleanupExpiredEntries();
 
-  const entry = wvfsStorage.get(postId);
+  const entry = wvfsStorage.get(wvfsBase(postId, versionId));
   if (!entry) {
     console.log(`WVFS: No file map found for postId: ${postId}`);
     return null;
@@ -593,7 +605,7 @@ export async function serveFileFromWvfs(postId: string, filePath: string): Promi
     const ext = resolvedPath.split('.').pop()?.toLowerCase();
 
     if (ext === 'html') {
-      const cacheKey = `${postId}:${resolvedPath}`;
+      const cacheKey = `${wvfsBase(postId, versionId)}:${resolvedPath}`;
       let cached = htmlCache.get(cacheKey);
       if (!cached) {
         const htmlContent = new TextDecoder().decode(fileData);
@@ -693,11 +705,11 @@ export function injectBaseTag(htmlContent: string, postId: string, subPath: stri
   }
 }
 
-export async function cleanupWvfsZip(postId: string): Promise<void> {
+export async function cleanupWvfsZip(postId: string, versionId?: string | null): Promise<void> {
   cleanupExpiredEntries();
   try {
-    wvfsStorage.delete(postId);
-    const prefix = `${postId}:`;
+    wvfsStorage.delete(wvfsBase(postId, versionId));
+    const prefix = `${wvfsBase(postId, versionId)}:`;
     for (const key of htmlCache.keys()) {
       if (key.startsWith(prefix)) {
         htmlCache.delete(key);
@@ -717,6 +729,7 @@ export async function extractZipToR2(
   bucket: R2Bucket,
   zipKey: string,
   postId: string,
+  versionId?: string | null,
   maxFiles: number = DEFAULT_EXTRACT_BUDGET,
 ): Promise<number> {
   try {
@@ -741,8 +754,8 @@ export async function extractZipToR2(
     validateZipCentralDirectory(cdData, eocd.cdEntries);
 
     const index = parseCentralDirectory(cdData);
-    const manifestKey = `${WVFS_R2_PREFIX}${postId}/.wvfs-manifest`;
-    const existing = new Set(await readWvfsManifest(bucket, postId));
+    const manifestKey = `${wvfsBase(postId, versionId)}/.wvfs-manifest`;
+    const existing = new Set(await readWvfsManifest(bucket, postId, versionId));
 
     // Deterministic order: extract the earliest files first (index.html + core assets).
     const entries = [...index.entries()].sort((a, b) => a[1].localHeaderOffset - b[1].localHeaderOffset);
@@ -757,7 +770,7 @@ export async function extractZipToR2(
       const fileData = await extractFileFromR2(bucket, zipKey, entry);
       if (!fileData) continue;
 
-      const r2Key = `${WVFS_R2_PREFIX}${postId}/${fileName}`;
+      const r2Key = `${wvfsBase(postId, versionId)}/${fileName}`;
       const contentType = getMimeType(fileName);
       puts.push(
         bucket
@@ -786,9 +799,9 @@ export async function extractZipToR2(
   }
 }
 
-// Read the list of files already persisted under wvfs/{postId}.
-async function readWvfsManifest(bucket: R2Bucket, postId: string): Promise<string[]> {
-  const manifestObj = await bucket.get(`${WVFS_R2_PREFIX}${postId}/.wvfs-manifest`);
+// Read the list of files already persisted under wvfs/{postId} (or a version).
+async function readWvfsManifest(bucket: R2Bucket, postId: string, versionId?: string | null): Promise<string[]> {
+  const manifestObj = await bucket.get(`${wvfsBase(postId, versionId)}/.wvfs-manifest`);
   if (!manifestObj) return [];
   try {
     const manifest = JSON.parse(await manifestObj.text()) as { files?: string[] };
@@ -824,9 +837,14 @@ export async function copyHtmlToWvfs(bucket: R2Bucket, htmlKey: string, postId: 
 // Persist a single file from the in-memory WVFS cache to R2 (persist-on-access).
 // Used after serving a lazily-extracted file so subsequent requests hit the fast
 // R2 path without re-extraction. Only a handful of subrequests are needed.
-export async function persistFileToWvfsR2(bucket: R2Bucket, postId: string, filePath: string): Promise<void> {
+export async function persistFileToWvfsR2(
+  bucket: R2Bucket,
+  postId: string,
+  filePath: string,
+  versionId?: string | null,
+): Promise<void> {
   try {
-    const entry = wvfsStorage.get(postId);
+    const entry = wvfsStorage.get(wvfsBase(postId, versionId));
     if (!entry) return;
 
     const normalizedPath = normalizePath(filePath);
@@ -849,14 +867,14 @@ export async function persistFileToWvfsR2(bucket: R2Bucket, postId: string, file
 
     if (!fileData) return;
 
-    const r2Key = `${WVFS_R2_PREFIX}${postId}/${resolvedPath}`;
+    const r2Key = `${wvfsBase(postId, versionId)}/${resolvedPath}`;
     const contentType = getMimeType(resolvedPath);
     await bucket.put(r2Key, fileData, { httpMetadata: { contentType } });
 
-    const existing = await readWvfsManifest(bucket, postId);
+    const existing = await readWvfsManifest(bucket, postId, versionId);
     if (!existing.includes(resolvedPath)) {
       existing.push(resolvedPath);
-      await bucket.put(`${WVFS_R2_PREFIX}${postId}/.wvfs-manifest`, JSON.stringify({ files: existing }), {
+      await bucket.put(`${wvfsBase(postId, versionId)}/.wvfs-manifest`, JSON.stringify({ files: existing }), {
         httpMetadata: { contentType: 'application/json' },
       });
     }
@@ -867,10 +885,15 @@ export async function persistFileToWvfsR2(bucket: R2Bucket, postId: string, file
 
 // Serve a file from the pre-extracted R2 cache.
 // Returns null if the file is not yet extracted (caller should fall back to on-the-fly).
-export async function serveFileFromR2(bucket: R2Bucket, postId: string, filePath: string): Promise<Response | null> {
+export async function serveFileFromR2(
+  bucket: R2Bucket,
+  postId: string,
+  filePath: string,
+  versionId?: string | null,
+): Promise<Response | null> {
   try {
     const normalizedPath = normalizePath(filePath);
-    const baseKey = `${WVFS_R2_PREFIX}${postId}/`;
+    const baseKey = `${wvfsBase(postId, versionId)}/`;
 
     const r2Key = baseKey + normalizedPath;
     let obj = await bucket.get(r2Key);
@@ -918,7 +941,7 @@ export async function serveFileFromR2(bucket: R2Bucket, postId: string, filePath
     const ext = resolvedPath.split('.').pop()?.toLowerCase();
 
     if (ext === 'html') {
-      const cacheKey = `${postId}:${resolvedPath}`;
+      const cacheKey = `${wvfsBase(postId, versionId)}:${resolvedPath}`;
       let cached = htmlCache.get(cacheKey);
       if (cached) {
         return new Response(new Uint8Array(cached), {

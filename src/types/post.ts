@@ -115,6 +115,7 @@ export interface PostStageProps {
   post: Post;
   mode: PostCardMode;
   sandboxOrigin: string;
+  versionId?: string;
   onModeChange: (mode: PostCardMode) => void;
 }
 
@@ -130,6 +131,7 @@ export interface GifPreviewProps {
 export interface SandboxFrameProps {
   postId: string;
   sandboxOrigin: string;
+  versionId?: string;
 }
 
 export interface PostActionsProps {
