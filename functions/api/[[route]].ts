@@ -15111,8 +15111,8 @@ app.post('/api/posts/:id/versions/commit', requireAuth, async (c) => {
       .bind(body.versionId, postId, newVersionNumber, newKey, null, changelog, user.id, now)
       .run();
 
-    await c.env.DB.prepare('UPDATE posts SET payload_key = ?, edited_at = ? WHERE id = ?')
-      .bind(newKey, now, postId)
+    await c.env.DB.prepare('UPDATE posts SET payload_key = ?, edited_at = ?, created_at = ? WHERE id = ?')
+      .bind(newKey, now, now, postId)
       .run();
 
     const execCtx = (c as unknown as { executionCtx?: { waitUntil: (p: Promise<unknown>) => void } }).executionCtx;
