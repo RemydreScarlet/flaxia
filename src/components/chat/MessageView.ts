@@ -442,7 +442,6 @@ export abstract class MessageView {
     if (!area) return;
     area.innerHTML = '';
     this.pendingEnrich = [];
-    const decryptJobs: Array<() => Promise<void>> = [];
 
     if (this.loading && this.messages.length === 0) {
       const loader = document.createElement('div');
@@ -540,7 +539,7 @@ export abstract class MessageView {
           text.textContent = t('messages.encrypted');
           text.classList.add('msg-row-encrypted');
           body.appendChild(text);
-          decryptJobs.push(() => this.transport.decryptTextInto(text, msg));
+          this.pendingEnrich.push(this.transport.decryptTextInto(text, msg));
         } else {
           text.textContent = msg.content;
           body.appendChild(text);
@@ -577,10 +576,6 @@ export abstract class MessageView {
       area.appendChild(row);
 
       prevMsg = msg;
-    }
-
-    for (let i = decryptJobs.length - 1; i >= 0; i--) {
-      void decryptJobs[i]();
     }
   }
 

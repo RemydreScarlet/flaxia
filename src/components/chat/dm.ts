@@ -29,19 +29,11 @@ import { createVideoPlayer } from '../VideoPlayer.js';
 import { type ApiMessage, mapMessage } from './mappers.js';
 import type { ChatMessage, MessageTransport } from './types.js';
 
-// Debounce per-conversation so a burst of undecryptable (e.g. pre-fix) messages
-// does not spam the peer with reset requests. On a failed decrypt we both reset
-// our own session (so our next outgoing message re-bootstraps X3DH) and ask the
-// peer to do the same, recovering the conversation automatically.
-const lastRatchetNudge = new Map<string, number>();
-function nudgeRatchetReset(conversationId: string, peerUserId: string): void {
-  const now = Date.now();
-  const last = lastRatchetNudge.get(conversationId) ?? 0;
-  if (now - last < 30_000) return;
-  lastRatchetNudge.set(conversationId, now);
-  resetDmRatchet(conversationId, peerUserId);
-  void requestRatchetReset(conversationId);
-}
+// Ratchet recovery (re-bootstrapping X3DH) is MANUAL only — triggered from the
+// "再確立" button on a failed message. Auto-resetting on a decrypt failure wiped
+// our own ratchet state and could destroy decryptable history in an endless
+// loop. A brand-new conversation still auto-bootstraps on the first outgoing
+// message (see encryptDmMessageV2), which is safe because nobody has sent yet.
 
 export class DmTransport implements MessageTransport {
   readonly scope = 'dm' as const;
@@ -362,9 +354,6 @@ export class DmTransport implements MessageTransport {
             el.classList.remove('msg-row-encrypted');
             el.textContent = plain;
             await this.enrichText(el, plain);
-            // A successful decrypt proves the session is healthy — re-arm
-            // recovery so a genuine future failure triggers it immediately.
-            lastRatchetNudge.delete(this.conversationId);
           } else if (el.isConnected) {
             this.renderDmDecryptFailed(el);
           }
@@ -375,25 +364,16 @@ export class DmTransport implements MessageTransport {
             if (el.isConnected) this.renderDmDecryptPrefixed(el);
             return;
           }
-          // No session anywhere (e.g. after a reset): this message cannot be
-          // decrypted until either side sends a fresh X3DH bootstrap. Not an
-          // error worth spamming — show a calm hint and let recovery happen.
+          // No session anywhere (e.g. after a manual reset): this message
+          // cannot be decrypted until either side sends a fresh X3DH bootstrap.
+          // Recovery is manual only — never wipe our own ratchet here.
           if (errMsg.startsWith('No ratchet session')) {
-            // We have no session at all, so requesting a re-bootstrap from the
-            // peer is safe (nothing to lose) and is how the conversation
-            // recovers — always ask; the debounce prevents spam.
-            nudgeRatchetReset(this.conversationId, this.peerUserId ?? '');
             if (el.isConnected) this.renderDmDecryptPending(el);
             return;
           }
-          // Old backlog messages fail on every render; recovering on them would
-          // destroy freshly established sessions in an endless loop. Only a
-          // failure on a RECENT message means the live session is broken.
-          const age = Date.now() - new Date(msg.created_at).getTime();
-          if (age < 2 * 60_000) {
-            console.error('DM v2 decrypt failed:', e);
-            nudgeRatchetReset(this.conversationId, this.peerUserId ?? '');
-          }
+          // A failed decrypt must NOT auto-reset the ratchet: that destroys
+          // decryptable history and can loop forever. The user re-establishes
+          // the session via the "再確立" button.
           if (el.isConnected) this.renderDmDecryptFailed(el);
           return;
         }

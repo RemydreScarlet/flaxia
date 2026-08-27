@@ -12172,7 +12172,16 @@ app.post('/api/messenger/opks/consume', requireAuth, async (c) => {
       .first()) as Record<string, unknown> | null;
     if (!opk) return c.json({ error: 'OPK not found' }, 404);
 
-    await c.env.DB.prepare('DELETE FROM messenger_opks WHERE id = ? AND user_id = ?').bind(body.opkId, userId).run();
+    // Mark the OPK consumed but DO NOT delete it. X3DH consumes the one-time
+    // prekey to complete the handshake; if the responder's ratchet is later
+    // lost (e.g. cleared locally) it must re-consume the SAME opkId to rebuild
+    // the identical ratchet and keep decrypting history, instead of hitting 404
+    // and permanently losing the conversation. A sentinel claimed_at keeps it
+    // reserved (never re-handed out / never reclaimed) without weakening the
+    // single-use property of the established session.
+    await c.env.DB.prepare(`UPDATE messenger_opks SET claimed_at = '9999-01-01T00:00:00Z' WHERE id = ? AND user_id = ?`)
+      .bind(body.opkId, userId)
+      .run();
 
     return c.json({ privEnc: opk.priv_enc, privIv: opk.priv_iv ?? null });
   } catch (error: unknown) {
