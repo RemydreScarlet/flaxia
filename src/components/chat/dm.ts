@@ -1,4 +1,18 @@
+import { getStoredSrpSalt } from '../../lib/auth-srp.js';
 import { t } from '../../lib/i18n.js';
+import { unwrapStringWithKek, wrapStringWithKek } from '../../lib/messenger-dm-cache.js';
+import { decryptDmMessageV2, encryptDmMessageV2, resetDmRatchet } from '../../lib/messenger-dm-session.js';
+import {
+  ensureE2EEIdentityV2,
+  isIdentityV2Unlocked,
+  unlockIdentityV2FromSession,
+  unlockOrCreateIdentityV2,
+} from '../../lib/messenger-identity-v2.js';
+import {
+  checkRatchetResetRequest,
+  clearRatchetResetRequest,
+  requestRatchetReset,
+} from '../../lib/messenger-prekeys.js';
 import {
   decryptDmText,
   decryptFileForDm,
@@ -16,10 +30,20 @@ import { createVideoPlayer } from '../VideoPlayer.js';
 import { type ApiMessage, mapMessage } from './mappers.js';
 import type { ChatMessage, MessageTransport } from './types.js';
 
+// Ratchet recovery (re-bootstrapping X3DH) is MANUAL only — triggered from the
+// "再確立" button on a failed message. Auto-resetting on a decrypt failure wiped
+// our own ratchet state and could destroy decryptable history in an endless
+// loop. A brand-new conversation still auto-bootstraps on the first outgoing
+// message (see encryptDmMessageV2), which is safe because nobody has sent yet.
+
 export class DmTransport implements MessageTransport {
   readonly scope = 'dm' as const;
   private peerUserId: string | null = null;
   private keyVersion = 1;
+  private unlockPromise: Promise<boolean> | null = null;
+  // Message ids whose KEK-wrapped plaintext we've already pushed to the server,
+  // so a reload on another device can read history without the ratchet.
+  private plaintextUploaded = new Set<string>();
 
   constructor(private readonly conversationId: string) {}
 
@@ -36,6 +60,25 @@ export class DmTransport implements MessageTransport {
     }
   }
 
+  private async unlockV2(): Promise<boolean> {
+    try {
+      if (isIdentityV2Unlocked()) return true;
+      if (await unlockIdentityV2FromSession()) return true;
+      // Last-resort re-prompt (e.g. storage cleared). Derive the KEK from the
+      // account password + the stored SRP salt so it stays consistent with the
+      // login-time E2EE setup, rather than creating a divergent key.
+      const pw = globalThis.prompt?.('Enter your account password to enable end-to-end encrypted messages');
+      if (!pw) return false;
+      const salt = getStoredSrpSalt();
+      if (salt && (await ensureE2EEIdentityV2(pw, salt))) return true;
+      if (await unlockOrCreateIdentityV2(pw)) return true;
+      showToast('Could not enable E2EE identity', true);
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
   async fetchMessages(
     cursor: string | null,
     limit: number,
@@ -46,6 +89,7 @@ export class DmTransport implements MessageTransport {
     });
     if (!res.ok) return { messages: [], nextCursor: null };
     const data = (await res.json()) as { messages: ApiMessage[]; next_cursor: string | null };
+    void this.maybeHandlePeerReset();
     return {
       messages: (data.messages || []).map((m) => mapMessage(m, 'dm', this.conversationId)),
       nextCursor: data.next_cursor,
@@ -59,7 +103,25 @@ export class DmTransport implements MessageTransport {
     );
     if (!res.ok) return [];
     const data = (await res.json()) as { messages: ApiMessage[] };
+    void this.maybeHandlePeerReset();
     return (data.messages || []).map((m) => mapMessage(m, 'dm', this.conversationId));
+  }
+
+  // If the peer has asked us to re-bootstrap X3DH (because they could not
+  // decrypt our messages), reset our local session so the next outgoing
+  // message establishes a fresh ratchet. This makes "Reset secure session"
+  // recover both sides automatically.
+  private async maybeHandlePeerReset(): Promise<void> {
+    if (!this.peerUserId) return;
+    try {
+      const requested = await checkRatchetResetRequest(this.conversationId);
+      if (requested) {
+        resetDmRatchet(this.conversationId, this.peerUserId);
+        await clearRatchetResetRequest(this.conversationId);
+      }
+    } catch {
+      /* ignore */
+    }
   }
 
   async markRead(): Promise<void> {
@@ -132,13 +194,37 @@ export class DmTransport implements MessageTransport {
     const body: Record<string, unknown> = {};
     let encryptedMessage = false;
     if (content && this.peerUserId) {
-      const encrypted = await encryptDmText(this.conversationId, this.keyVersion, this.peerUserId, content);
-      if (encrypted) {
-        body.content = encrypted.ciphertext;
-        body.contentIv = encrypted.iv;
-        body.encVersion = 1;
-        body.keyVersion = this.keyVersion;
-        encryptedMessage = true;
+      if (await this.unlockV2()) {
+        try {
+          const env = await encryptDmMessageV2(this.conversationId, this.peerUserId, content);
+          body.content = JSON.stringify({ ct: env.ciphertext, x3dh: env.x3dh ?? undefined });
+          body.encVersion = 2;
+          body.ratchetPub = env.header.ratchetPub;
+          body.ratchetPn = env.header.pn;
+          body.ratchetN = env.header.n;
+          // Persist our own KEK-wrapped plaintext so we can read it on another
+          // device (where no ratchet session exists). Server never sees raw text.
+          try {
+            const wrapped = await wrapStringWithKek(content);
+            body.plaintextEnc = wrapped.enc;
+            body.plaintextIv = wrapped.iv;
+          } catch {
+            /* best-effort; the ratchet still decrypts locally */
+          }
+          encryptedMessage = true;
+        } catch {
+          /* fall back to v1 */
+        }
+      }
+      if (!encryptedMessage) {
+        const encrypted = await encryptDmText(this.conversationId, this.keyVersion, this.peerUserId, content);
+        if (encrypted) {
+          body.content = encrypted.ciphertext;
+          body.contentIv = encrypted.iv;
+          body.encVersion = 1;
+          body.keyVersion = this.keyVersion;
+          encryptedMessage = true;
+        }
       }
     }
     if (encryptedUpload) {
@@ -169,14 +255,41 @@ export class DmTransport implements MessageTransport {
   async editMessage(messageId: string, content: string): Promise<Partial<ChatMessage> | null> {
     let body: Record<string, unknown> = { content };
     if (content && this.peerUserId) {
-      const encrypted = await encryptDmText(this.conversationId, this.keyVersion, this.peerUserId, content);
-      if (encrypted) {
-        body = {
-          content: encrypted.ciphertext,
-          contentIv: encrypted.iv,
-          encVersion: 1,
-          keyVersion: this.keyVersion,
-        };
+      if (await this.unlockV2()) {
+        try {
+          const env = await encryptDmMessageV2(this.conversationId, this.peerUserId, content);
+          let plaintextEnc: string | undefined;
+          let plaintextIv: string | undefined;
+          try {
+            const wrapped = await wrapStringWithKek(content);
+            plaintextEnc = wrapped.enc;
+            plaintextIv = wrapped.iv;
+          } catch {
+            /* best-effort */
+          }
+          body = {
+            content: JSON.stringify({ ct: env.ciphertext, x3dh: env.x3dh ?? undefined }),
+            encVersion: 2,
+            ratchetPub: env.header.ratchetPub,
+            ratchetPn: env.header.pn,
+            ratchetN: env.header.n,
+            plaintextEnc,
+            plaintextIv,
+          };
+        } catch {
+          /* fall back to v1 */
+        }
+      }
+      if (!body.encVersion) {
+        const encrypted = await encryptDmText(this.conversationId, this.keyVersion, this.peerUserId, content);
+        if (encrypted) {
+          body = {
+            content: encrypted.ciphertext,
+            contentIv: encrypted.iv,
+            encVersion: 1,
+            keyVersion: this.keyVersion,
+          };
+        }
       }
     }
     const res = await fetch(`/api/dm/conversations/${this.conversationId}/messages/${messageId}`, {
@@ -196,6 +309,9 @@ export class DmTransport implements MessageTransport {
       content_iv?: string | null;
       enc_version?: number | null;
       key_version?: number | null;
+      ratchet_pub?: string | null;
+      ratchet_pn?: number | null;
+      ratchet_n?: number | null;
       edited_at: string;
     };
     return {
@@ -203,28 +319,193 @@ export class DmTransport implements MessageTransport {
       content_iv: updated.content_iv ?? null,
       enc_version: updated.enc_version ?? null,
       key_version: updated.key_version ?? null,
+      ratchet_pub: updated.ratchet_pub ?? null,
+      ratchet_pn: updated.ratchet_pn ?? null,
+      ratchet_n: updated.ratchet_n ?? null,
       edited_at: updated.edited_at,
     };
   }
 
   async startEditDecrypt(msg: ChatMessage): Promise<string> {
+    if (!this.peerUserId) return msg.content;
+    try {
+      if (msg.enc_version === 2 && msg.ratchet_pub) {
+        const plain = await decryptDmMessageV2(this.conversationId, this.peerUserId, msg.content, {
+          ratchetPub: msg.ratchet_pub,
+          pn: msg.ratchet_pn || 0,
+          n: msg.ratchet_n || 0,
+        });
+        if (plain) return plain;
+      } else if (msg.enc_version === 1) {
+        const plain = await decryptDmText(
+          this.conversationId,
+          msg.key_version || this.keyVersion,
+          this.peerUserId,
+          msg.content,
+          msg.content_iv || '',
+        );
+        if (plain) return plain;
+      }
+      // Cross-device fallback: our own KEK-wrapped plaintext backup.
+      if (msg.plaintext_enc && msg.plaintext_iv) {
+        return await unwrapStringWithKek(msg.plaintext_enc, msg.plaintext_iv);
+      }
+    } catch {
+      /* fall through to raw content */
+    }
     return msg.content;
   }
 
   async decryptTextInto(el: HTMLElement, msg: ChatMessage): Promise<void> {
     if (!this.peerUserId) return;
-    const plain = await decryptDmText(
-      this.conversationId,
-      msg.key_version || this.keyVersion,
-      this.peerUserId,
-      msg.content,
-      msg.content_iv || '',
-    );
-    if (!plain) return;
-    if (!el.isConnected) return;
-    el.classList.remove('msg-row-encrypted');
-    el.textContent = plain;
-    await this.enrichText(el, plain);
+    if (msg.enc_version === 2) {
+      if (!isIdentityV2Unlocked()) {
+        if (!this.unlockPromise) {
+          this.unlockPromise = this.unlockV2().finally(() => {
+            this.unlockPromise = null;
+          });
+        }
+        const ok = await this.unlockPromise;
+        if (!ok) {
+          this.renderDmLocked(el, msg);
+          return;
+        }
+      }
+      if (msg.ratchet_pub) {
+        try {
+          const plain = await decryptDmMessageV2(this.conversationId, this.peerUserId, msg.content, {
+            ratchetPub: msg.ratchet_pub,
+            pn: msg.ratchet_pn || 0,
+            n: msg.ratchet_n || 0,
+          });
+          if (plain && el.isConnected) {
+            el.classList.remove('msg-row-encrypted');
+            el.textContent = plain;
+            await this.enrichText(el, plain);
+            // Persist our KEK-wrapped plaintext so we can read it on another
+            // device (where no ratchet session exists). Idempotent per message.
+            void this.uploadPlaintext(msg, plain);
+            return;
+          }
+          if (el.isConnected) this.renderDmDecryptFailed(el);
+          return;
+        } catch (e) {
+          const errMsg = (e as Error | undefined)?.message ?? '';
+          if (errMsg === 'OPK_UNRECOVERABLE') {
+            if (el.isConnected) this.renderDmDecryptPrefixed(el);
+            return;
+          }
+          // No session anywhere (e.g. after a manual reset): this message
+          // cannot be decrypted until either side sends a fresh X3DH bootstrap.
+          // Recovery is manual only — never wipe our own ratchet here.
+          if (errMsg.startsWith('No ratchet session')) {
+            if (el.isConnected) this.renderDmDecryptPending(el);
+            return;
+          }
+          // Cross-device fallback: our own KEK-wrapped plaintext backup survives
+          // a missing/advanced ratchet (new device, cleared local cache). The
+          // server stores only the wrapped blob and cannot read it.
+          if (msg.plaintext_enc && msg.plaintext_iv) {
+            try {
+              const plain = await unwrapStringWithKek(msg.plaintext_enc, msg.plaintext_iv);
+              if (plain && el.isConnected) {
+                el.classList.remove('msg-row-encrypted');
+                el.textContent = plain;
+                await this.enrichText(el, plain);
+                return;
+              }
+            } catch {
+              /* fall through to failed UI */
+            }
+          }
+          // A failed decrypt must NOT auto-reset the ratchet: that destroys
+          // decryptable history and can loop forever. The user re-establishes
+          // the session via the "再確立" button.
+          if (el.isConnected) this.renderDmDecryptFailed(el);
+          return;
+        }
+      }
+    }
+    try {
+      const plain = await decryptDmText(
+        this.conversationId,
+        msg.key_version || this.keyVersion,
+        this.peerUserId,
+        msg.content,
+        msg.content_iv || '',
+      );
+      if (!plain) {
+        if (el.isConnected) this.renderDmDecryptFailed(el);
+        return;
+      }
+      if (!el.isConnected) return;
+      el.classList.remove('msg-row-encrypted');
+      el.textContent = plain;
+      await this.enrichText(el, plain);
+    } catch (e) {
+      console.error('DM v1 decrypt failed:', e);
+      if (el.isConnected) this.renderDmDecryptFailed(el);
+    }
+  }
+
+  private renderDmLocked(el: HTMLElement, msg: ChatMessage): void {
+    el.classList.add('msg-row-encrypted');
+    el.textContent = '';
+    const btn = document.createElement('button');
+    btn.className = 'msg-decrypt-unlock';
+    btn.textContent = '🔒 ロック解除して表示';
+    btn.addEventListener('click', async () => {
+      if (await this.unlockV2()) await this.decryptTextInto(el, msg);
+    });
+    el.appendChild(btn);
+  }
+
+  // Push our own KEK-wrapped plaintext to the server so we can read this message
+  // on another device where no ratchet session exists. Best-effort and debounced
+  // per message id; the row is upserted server-side.
+  private async uploadPlaintext(msg: ChatMessage, plaintext: string): Promise<void> {
+    if (!msg.id || this.plaintextUploaded.has(msg.id)) return;
+    this.plaintextUploaded.add(msg.id);
+    try {
+      const wrapped = await wrapStringWithKek(plaintext);
+      await fetch(`/api/dm/conversations/${this.conversationId}/messages/${msg.id}/plaintext`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ plaintextEnc: wrapped.enc, plaintextIv: wrapped.iv }),
+      });
+    } catch {
+      /* best-effort: local ratchet + IndexedDB cache still cover this device */
+      this.plaintextUploaded.delete(msg.id);
+    }
+  }
+
+  private renderDmDecryptFailed(el: HTMLElement): void {
+    el.classList.add('msg-row-encrypted');
+    el.textContent = '⚠️ 復号できませんでした';
+    const btn = document.createElement('button');
+    btn.className = 'msg-decrypt-unlock';
+    btn.textContent = '🔄 暗号セッションを再確立';
+    btn.addEventListener('click', () => {
+      resetDmRatchet(this.conversationId, this.peerUserId ?? '');
+      void requestRatchetReset(this.conversationId);
+      showToast('セッションをリセットしました。新しいメッセージを送信すると再確立されます。');
+      el.textContent = '🔄 セッションをリセットしました — 新しいメッセージを送信してください';
+    });
+    el.appendChild(btn);
+  }
+
+  private renderDmDecryptPrefixed(el: HTMLElement): void {
+    el.classList.add('msg-row-encrypted');
+    el.textContent = '⚠️ このメッセージは暗号化アップデート前に送信されたため復号できません';
+  }
+
+  // No ratchet session exists (yet/anymore). Once either side sends a new
+  // message the X3DH session is re-established; this message may then still
+  // be undecryptable, but the conversation itself recovers automatically.
+  private renderDmDecryptPending(el: HTMLElement): void {
+    el.classList.add('msg-row-encrypted');
+    el.textContent = '⏳ 暗号セッション未確立 — 新しいメッセージを送信すると再確立されます';
   }
 
   private async enrichText(el: HTMLElement, content: string): Promise<void> {

@@ -20,6 +20,11 @@ export interface ChatMessage {
   content_iv?: string | null;
   enc_version?: number | null;
   key_version?: number | null;
+  plaintext_enc?: string | null;
+  plaintext_iv?: string | null;
+  ratchet_pub?: string | null;
+  ratchet_pn?: number | null;
+  ratchet_n?: number | null;
   reply_to_id?: string | null;
   pinned?: number | null;
   created_at: string;

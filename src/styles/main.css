@@ -819,6 +819,18 @@ h1 {
   width: 1.4rem;
   height: 1.4rem;
   stroke-width: 2;
+}
+
+.nav-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-user-popup-item .nav-popup-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
 }
 

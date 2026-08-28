@@ -29,6 +29,7 @@ export async function executeZip(
   postId: string,
   containerEl: HTMLElement,
   url?: string, // if provided, fetch from this URL instead of /api/zip/${postId}
+  versionId?: string,
 ): Promise<ZipExecutorHandle> {
   if (activeHandle) {
     activeHandle.destroy();
@@ -42,7 +43,7 @@ export async function executeZip(
     const loadingEl = createZipLoadingIndicator();
     containerEl.appendChild(loadingEl);
 
-    const zipUrl = url || `/api/zip/${postId}`;
+    const zipUrl = url || `/api/zip/${postId}${versionId ? `?v=${versionId}` : ''}`;
     const response = await fetch(zipUrl);
     if (!response.ok) {
       throw new Error(`Failed to fetch ZIP: ${response.status}`);

@@ -1,4 +1,3 @@
-import { formatCount } from '../lib/format.js';
 import { t } from '../lib/i18n.js';
 import { createPageHeader } from '../lib/page-header.js';
 
@@ -235,26 +234,19 @@ export class NotificationsPage {
       case 'fresh':
       case 'ap_like':
         if (notification.actors && notification.actors.length > 1) {
-          // Grouped fresh notification
+          // Grouped fresh notification (newest liker first)
           const validActors = notification.actors.filter((a): a is NonNullable<typeof a> => a !== null);
           if (validActors.length > 0) {
-            appendStrong(`@${validActors[0].username}`);
-            if (validActors.length === 2) {
+            const reversed = [...validActors].reverse();
+            reversed.slice(0, 2).forEach((a, i) => {
+              if (i > 0) mainText.appendChild(document.createTextNode('、'));
+              appendStrong(`@${a.username}`);
               mainText.appendChild(document.createTextNode(' '));
-              appendMuted(`(${validActors[0].display_name})`);
-              mainText.appendChild(document.createTextNode(t('notifications.freshed_and', { actor: '' })));
-              appendStrong(`@${validActors[1].username}`);
-              mainText.appendChild(document.createTextNode(' '));
-              appendMuted(`(${validActors[1].display_name})`);
-            } else {
-              const othersCount = validActors.length - 1;
-              mainText.appendChild(document.createTextNode(' '));
-              appendMuted(`(${validActors[0].display_name})`);
-              mainText.appendChild(
-                document.createTextNode(t('notifications.freshed_and_others', { n: formatCount(othersCount) })),
-              );
-            }
-            mainText.appendChild(document.createTextNode(t('notifications.freshed_your_post', { actor: '' })));
+              appendMuted(`(${a.display_name})`);
+            });
+            const freshKey =
+              notification.type === 'fresh' ? 'notifications.freshed_your_post' : 'notifications.liked_your_post';
+            mainText.appendChild(document.createTextNode(t(freshKey, { actor: '' })));
           }
         } else if (notification.actor) {
           const freshKey =
@@ -269,22 +261,13 @@ export class NotificationsPage {
         if (notification.actors && notification.actors.length > 1) {
           const validActors = notification.actors.filter((a): a is NonNullable<typeof a> => a !== null);
           if (validActors.length > 0) {
-            appendStrong(`@${validActors[0].username}`);
-            if (validActors.length === 2) {
+            const reversed = [...validActors].reverse();
+            reversed.slice(0, 2).forEach((a, i) => {
+              if (i > 0) mainText.appendChild(document.createTextNode('、'));
+              appendStrong(`@${a.username}`);
               mainText.appendChild(document.createTextNode(' '));
-              appendMuted(`(${validActors[0].display_name})`);
-              mainText.appendChild(document.createTextNode(t('notifications.freshed_and', { actor: '' })));
-              appendStrong(`@${validActors[1].username}`);
-              mainText.appendChild(document.createTextNode(' '));
-              appendMuted(`(${validActors[1].display_name})`);
-            } else {
-              const othersCount = validActors.length - 1;
-              mainText.appendChild(document.createTextNode(' '));
-              appendMuted(`(${validActors[0].display_name})`);
-              mainText.appendChild(
-                document.createTextNode(t('notifications.freshed_and_others', { n: formatCount(othersCount) })),
-              );
-            }
+              appendMuted(`(${a.display_name})`);
+            });
             mainText.appendChild(document.createTextNode(t('notifications.replied_to_you', { actor: '' })));
           }
         } else if (notification.actor) {

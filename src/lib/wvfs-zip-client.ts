@@ -15,6 +15,7 @@ export async function executeWvfsZip(
   workerUrl?: string,
   hideFullscreen: boolean = false,
   showLoading: boolean = true,
+  versionId?: string,
 ): Promise<WvfsZipExecutorHandle> {
   if (activeHandle) {
     activeHandle.destroy();
@@ -32,7 +33,7 @@ export async function executeWvfsZip(
     }
 
     const sandboxOrigin = workerUrl || import.meta.env.VITE_SANDBOX_ORIGIN || 'https://sandbox.flaxia.app';
-    const zipUrl = `${sandboxOrigin}/api/wvfs-zip/${postId}`;
+    const zipUrl = `${sandboxOrigin}/api/wvfs-zip/${postId}${versionId ? `?v=${versionId}` : ''}`;
     const preWarmUrl = `${zipUrl}/index.html`;
     fetch(preWarmUrl, { method: 'GET', mode: 'cors' }).catch(() => {});
 

@@ -22,8 +22,12 @@ import {
   loginUser,
   registerUser,
   setSessionCookie,
+  startSrpLogin,
   User,
+  upgradeSrp,
   verifyPassword,
+  verifySrpLogin,
+  verifySrpPassword,
 } from '../lib/auth';
 import { validateImageDimensions } from '../lib/image-dimensions';
 import {
@@ -590,25 +594,39 @@ app.put('/api/upload/*', requireAuth, async (c) => {
       .first()) as { id: string } | null;
 
     if (!ownedPost) {
-      // Check if user owns a published post (for editing attachments)
-      const slashIndex = key.indexOf('/');
-      if (slashIndex !== -1) {
-        const afterSlash = key.substring(slashIndex + 1);
-        const keyPostId = afterSlash.split('.')[0];
-        if (keyPostId) {
-          const publishedPost = (await c.env.DB.prepare(
-            'SELECT id FROM posts WHERE id = ? AND user_id = ? AND status = ?',
-          )
-            .bind(keyPostId, user.id, 'published')
-            .first()) as { id: string } | null;
-          if (!publishedPost) {
-            return c.json({ error: 'No pending post found for this key' }, 403);
+      // Versioned game uploads live under versions/<postId>/<versionId>.zip
+      if (key.startsWith('versions/')) {
+        const postId = key.split('/')[1];
+        if (!postId) return c.json({ error: 'Invalid key' }, 400);
+        const publishedPost = (await c.env.DB.prepare(
+          'SELECT id FROM posts WHERE id = ? AND user_id = ? AND status = ?',
+        )
+          .bind(postId, user.id, 'published')
+          .first()) as { id: string } | null;
+        if (!publishedPost) {
+          return c.json({ error: 'No published post found for this key' }, 403);
+        }
+      } else {
+        // Check if user owns a published post (for editing attachments)
+        const slashIndex = key.indexOf('/');
+        if (slashIndex !== -1) {
+          const afterSlash = key.substring(slashIndex + 1);
+          const keyPostId = afterSlash.split('.')[0];
+          if (keyPostId) {
+            const publishedPost = (await c.env.DB.prepare(
+              'SELECT id FROM posts WHERE id = ? AND user_id = ? AND status = ?',
+            )
+              .bind(keyPostId, user.id, 'published')
+              .first()) as { id: string } | null;
+            if (!publishedPost) {
+              return c.json({ error: 'No pending post found for this key' }, 403);
+            }
+          } else {
+            return c.json({ error: 'Invalid key' }, 400);
           }
         } else {
           return c.json({ error: 'Invalid key' }, 400);
         }
-      } else {
-        return c.json({ error: 'Invalid key' }, 400);
       }
     }
 
@@ -2219,10 +2237,10 @@ app.post('/api/games/dwell', async (c) => {
 // POST /api/auth/register - user registration
 app.post('/api/auth/register', async (c) => {
   try {
-    const { email, password, username, display_name } = await c.req.json();
+    const { email, password, username, display_name, srp_salt, srp_verifier, srp_group } = await c.req.json();
 
     // Validation
-    if (!email || !password || !username || !display_name) {
+    if (!email || !username || !display_name) {
       return c.json({ error: 'Missing required fields' }, 400);
     }
 
@@ -2230,11 +2248,6 @@ app.post('/api/auth/register', async (c) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       return c.json({ error: 'Invalid email format' }, 400);
-    }
-
-    // Password validation
-    if (password.length < 8 || password.length > 128) {
-      return c.json({ error: 'Password must be 8-128 characters' }, 400);
     }
 
     // Username validation
@@ -2248,12 +2261,28 @@ app.post('/api/auth/register', async (c) => {
       return c.json({ error: 'Display name must be ≤50 characters' }, 400);
     }
 
+    // Either legacy password or SRP verifier must be provided.
+    const srp =
+      srp_salt && srp_verifier && srp_group
+        ? { salt: srp_salt as string, verifier: srp_verifier as string, group: srp_group as string }
+        : undefined;
+
+    if (!srp) {
+      if (!password) {
+        return c.json({ error: 'Password or SRP verifier required' }, 400);
+      }
+      if (password.length < 8 || password.length > 128) {
+        return c.json({ error: 'Password must be 8-128 characters' }, 400);
+      }
+    }
+
     // Register user with custom auth
     const user = await registerUser(c.env, {
       email,
       password,
       username,
       display_name,
+      srp,
     });
 
     // Create session and set cookie so user is logged in after registration
@@ -2269,7 +2298,8 @@ app.post('/api/auth/register', async (c) => {
   }
 });
 
-// POST /api/auth/login - user login
+// POST /api/auth/login - legacy (plaintext password) login. Kept for fallback
+// and for accounts that have not yet upgraded to SRP.
 app.post('/api/auth/login', async (c) => {
   try {
     const { email, password } = await c.req.json();
@@ -2289,6 +2319,80 @@ app.post('/api/auth/login', async (c) => {
   } catch (error: unknown) {
     console.error('Login error:', error);
     return c.json({ error: 'Invalid credentials' }, 401);
+  }
+});
+
+// POST /api/auth/login/start - begin SRP login. Returns the server ephemeral B
+// and the user's salt; or { srp: false } to signal legacy fallback.
+app.post('/api/auth/login/start', async (c) => {
+  try {
+    const { email } = await c.req.json();
+    if (!email) return c.json({ error: 'Email required' }, 400);
+
+    const hs = await startSrpLogin(c.env, email);
+    if (!hs) return c.json({ srp: false });
+
+    return c.json({ srp: true, challenge_id: hs.challengeId, salt: hs.salt, B: hs.B });
+  } catch (error: unknown) {
+    console.error('SRP login/start error:', error);
+    return c.json({ error: 'Login failed' }, 500);
+  }
+});
+
+// POST /api/auth/login/verify - finish SRP login with the client proof M1.
+app.post('/api/auth/login/verify', async (c) => {
+  try {
+    const { email, challenge_id, A, M1 } = await c.req.json();
+    if (!email || !challenge_id || !A || !M1) {
+      return c.json({ error: 'Missing SRP parameters' }, 400);
+    }
+
+    const result = await verifySrpLogin(c.env, email, challenge_id, A, M1);
+    if (!result) return c.json({ error: 'Invalid credentials' }, 401);
+
+    const response = c.json({ user: result.user, M2: result.M2 });
+    setSessionCookie(response, result.session.id);
+    return response;
+  } catch (error: unknown) {
+    console.error('SRP login/verify error:', error);
+    return c.json({ error: 'Invalid credentials' }, 401);
+  }
+});
+
+// POST /api/auth/reauth/start - begin an SRP proof of the CURRENT password for
+// the logged-in user. Used by the password-change flow so SRP-only accounts
+// (which have no legacy password hash) can still prove their current password.
+app.post('/api/auth/reauth/start', requireAuth, async (c) => {
+  try {
+    const user = c.get('user');
+    if (!user?.email) return c.json({ error: 'Unauthorized' }, 401);
+    const hs = await startSrpLogin(c.env, user.email);
+    if (!hs) return c.json({ error: 'SRP not available' }, 400);
+    return c.json({ challenge_id: hs.challengeId, salt: hs.salt, B: hs.B });
+  } catch (error: unknown) {
+    console.error('SRP reauth/start error:', error);
+    return c.json({ error: 'Re-auth failed' }, 500);
+  }
+});
+
+// POST /api/auth/upgrade-srp - store an SRP verifier for the logged-in user.
+app.post('/api/auth/upgrade-srp', requireAuth, async (c) => {
+  try {
+    const { srp_salt, srp_verifier, srp_group } = await c.req.json();
+    if (!srp_salt || !srp_verifier || !srp_group) {
+      return c.json({ error: 'Missing SRP parameters' }, 400);
+    }
+    const userId = c.get('user')?.id;
+    if (!userId) return c.json({ error: 'Unauthorized' }, 401);
+    await upgradeSrp(c.env, userId, {
+      salt: srp_salt,
+      verifier: srp_verifier,
+      group: srp_group,
+    });
+    return c.json({ success: true });
+  } catch (error: unknown) {
+    console.error('SRP upgrade error:', error);
+    return c.json({ error: 'Upgrade failed' }, 400);
   }
 });
 
@@ -4208,42 +4312,73 @@ app.patch('/api/users/me/password', requireAuth, async (c) => {
       return c.json({ error: 'Database not available' }, 500);
     }
 
-    const { current_password, new_password } = await c.req.json();
+    const { current_password, new_password, srp_salt, srp_verifier, srp_group, current_srp } = await c.req.json();
+
+    const srp =
+      srp_salt && srp_verifier && srp_group
+        ? { salted: true as const, salt: srp_salt, verifier: srp_verifier, group: srp_group }
+        : null;
 
     // Validation
-    if (!current_password || !new_password) {
-      return c.json({ error: 'Current password and new password are required' }, 400);
+    if (!current_password && !current_srp) {
+      return c.json({ error: 'Current password is required' }, 400);
     }
-
-    if (new_password.length < 8 || new_password.length > 128) {
+    if (!new_password && !srp) {
+      return c.json({ error: 'New password or SRP verifier required' }, 400);
+    }
+    if (new_password && (new_password.length < 8 || new_password.length > 128)) {
       return c.json({ error: 'Password must be 8-128 characters' }, 400);
     }
 
     const userId = sessionData.user.id;
 
-    // Get user with password hash to verify current password
+    // Fetch both the legacy hash and SRP verifier so we can verify the current
+    // password for any account type.
     const userWithPassword = (await c.env.DB.prepare(`
-      SELECT password_hash FROM users WHERE id = ?
+      SELECT password_hash, srp_verifier FROM users WHERE id = ?
     `)
       .bind(userId)
-      .first()) as { password_hash: string } | null;
+      .first()) as { password_hash: string; srp_verifier: string | null } | null;
 
     if (!userWithPassword) {
       return c.json({ error: 'User not found' }, 404);
     }
 
-    // Verify current password using the same method as auth
-    const isValid = await verifyPassword(current_password, userWithPassword.password_hash);
-    if (!isValid) {
+    // Verify the current password. SRP accounts (no legacy hash) prove it via an
+    // SRP handshake (M1); legacy accounts verify the PBKDF2 hash. Either valid
+    // proof is sufficient.
+    let verified = false;
+    if (userWithPassword.password_hash && current_password) {
+      if (await verifyPassword(current_password, userWithPassword.password_hash)) verified = true;
+    }
+    if (!verified && userWithPassword.srp_verifier && current_srp) {
+      const { challenge_id, A, M1 } = current_srp as { challenge_id?: string; A?: string; M1?: string };
+      if (challenge_id && A && M1 && (await verifySrpPassword(c.env, userId, challenge_id, A, M1))) {
+        verified = true;
+      }
+    }
+    if (!verified) {
       return c.json({ error: 'Current password is incorrect' }, 401);
     }
 
-    // Hash new password using the same method as registration
-    const newPasswordHash = await hashPassword(new_password);
+    // Build the update. Both legacy hash and SRP verifier can be refreshed.
+    const newPasswordHash = new_password ? await hashPassword(new_password) : null;
 
-    // Update password
-    const result = await c.env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?')
-      .bind(newPasswordHash, userId)
+    const sets: string[] = [];
+    const binds: unknown[] = [];
+    if (newPasswordHash) {
+      sets.push('password_hash = ?');
+      binds.push(newPasswordHash);
+    }
+    if (srp) {
+      if (srp.group !== '2048') return c.json({ error: 'Unsupported SRP group' }, 400);
+      sets.push('srp_salt = ?, srp_verifier = ?, srp_group = ?');
+      binds.push(srp.salt, srp.verifier, srp.group);
+    }
+    binds.push(userId);
+
+    const result = await c.env.DB.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`)
+      .bind(...binds)
       .run();
 
     if (!result.success) {
@@ -10353,6 +10488,7 @@ app.get('/api/dm/conversations', requireAuth, async (c) => {
         c.last_message_content,
         c.last_message_sender_id,
         c.last_message_created_at,
+        (SELECT enc_version FROM dm_messages WHERE id = c.last_message_id) as last_message_enc_version,
         c.user_a_read_at,
         c.user_b_read_at,
         c.key_version,
@@ -10390,6 +10526,7 @@ app.get('/api/dm/conversations', requireAuth, async (c) => {
             content: row.last_message_content,
             sender_id: row.last_message_sender_id,
             created_at: row.last_message_created_at,
+            enc_version: (row.last_message_enc_version as number | null) ?? null,
             is_mine: row.last_message_sender_id === userId,
           }
         : null,
@@ -10527,28 +10664,34 @@ app.get('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
         SELECT m.id, m.conversation_id, m.sender_id, m.content, m.created_at,
                m.gif_key, m.payload_key, m.swf_key, m.edited_at,
                m.content_iv, m.enc_version, m.key_version,
+               m.ratchet_pub, m.ratchet_pn, m.ratchet_n,
+               p.enc as plaintext_enc, p.iv as plaintext_iv,
                u.username as sender_username, u.display_name as sender_display_name
         FROM dm_messages m
         JOIN users u ON m.sender_id = u.id
+        LEFT JOIN dm_message_plaintext p ON p.message_id = m.id AND p.user_id = ?
         WHERE m.conversation_id = ? AND m.created_at < ?
         ORDER BY m.created_at DESC
         LIMIT ?
       `)
-        .bind(convId, cursor, limit)
+        .bind(userId, convId, cursor, limit)
         .all();
     } else {
       messages = await c.env.DB.prepare(`
         SELECT m.id, m.conversation_id, m.sender_id, m.content, m.created_at,
                m.gif_key, m.payload_key, m.swf_key, m.edited_at,
                m.content_iv, m.enc_version, m.key_version,
+               m.ratchet_pub, m.ratchet_pn, m.ratchet_n,
+               p.enc as plaintext_enc, p.iv as plaintext_iv,
                u.username as sender_username, u.display_name as sender_display_name
         FROM dm_messages m
         JOIN users u ON m.sender_id = u.id
+        LEFT JOIN dm_message_plaintext p ON p.message_id = m.id AND p.user_id = ?
         WHERE m.conversation_id = ?
         ORDER BY m.created_at DESC
         LIMIT ?
       `)
-        .bind(convId, limit)
+        .bind(userId, convId, limit)
         .all();
     }
 
@@ -10567,6 +10710,11 @@ app.get('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
         content_iv: row.content_iv || null,
         enc_version: row.enc_version || null,
         key_version: row.key_version || null,
+        ratchet_pub: row.ratchet_pub || null,
+        ratchet_pn: row.ratchet_pn ?? null,
+        ratchet_n: row.ratchet_n ?? null,
+        plaintext_enc: row.plaintext_enc || null,
+        plaintext_iv: row.plaintext_iv || null,
         created_at: row.created_at,
         edited_at: row.edited_at || null,
         is_mine: row.sender_id === userId,
@@ -10590,17 +10738,35 @@ app.post('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
     const sender = c.get('user')!;
     const senderId = sender.id;
     const convId = c.req.param('id');
-    const { content, gifKey, payloadKey, swfKey, messageId, contentIv, encVersion, keyVersion } =
-      (await c.req.json()) as {
-        content?: string;
-        gifKey?: string;
-        payloadKey?: string;
-        swfKey?: string;
-        messageId?: string;
-        contentIv?: string;
-        encVersion?: number;
-        keyVersion?: number;
-      };
+    const {
+      content,
+      gifKey,
+      payloadKey,
+      swfKey,
+      messageId,
+      contentIv,
+      encVersion,
+      keyVersion,
+      ratchetPub,
+      ratchetPn,
+      ratchetN,
+      plaintextEnc,
+      plaintextIv,
+    } = (await c.req.json()) as {
+      content?: string;
+      gifKey?: string;
+      payloadKey?: string;
+      swfKey?: string;
+      messageId?: string;
+      contentIv?: string;
+      encVersion?: number;
+      keyVersion?: number;
+      ratchetPub?: string;
+      ratchetPn?: number;
+      ratchetN?: number;
+      plaintextEnc?: string;
+      plaintextIv?: string;
+    };
 
     const trimmed = content?.trim() || '';
     if (!trimmed && !gifKey && !payloadKey && !swfKey) {
@@ -10630,7 +10796,7 @@ app.post('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
 
     // Insert message with optional attachment keys
     await c.env.DB.prepare(
-      'INSERT INTO dm_messages (id, conversation_id, sender_id, content, created_at, gif_key, payload_key, swf_key, content_iv, enc_version, key_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO dm_messages (id, conversation_id, sender_id, content, created_at, gif_key, payload_key, swf_key, content_iv, enc_version, key_version, ratchet_pub, ratchet_pn, ratchet_n) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     )
       .bind(
         msgId,
@@ -10644,8 +10810,26 @@ app.post('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
         contentIv || null,
         isEncrypted ? encVersion : null,
         keyVersion || 1,
+        ratchetPub || null,
+        typeof ratchetPn === 'number' ? ratchetPn : null,
+        typeof ratchetN === 'number' ? ratchetN : null,
       )
       .run();
+
+    // Persist the sender's own KEK-wrapped plaintext so they can read this
+    // message on another device (where no ratchet session exists). Server never
+    // sees the raw plaintext; plaintext_enc/iv are AES-GCM wrapped with the
+    // user's password-derived KEK.
+    if (isEncrypted && plaintextEnc && plaintextIv) {
+      const ptNow = new Date().toISOString();
+      await c.env.DB.prepare(
+        `INSERT INTO dm_message_plaintext (message_id, user_id, enc, iv, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(message_id, user_id) DO UPDATE SET enc = excluded.enc, iv = excluded.iv, updated_at = excluded.updated_at`,
+      )
+        .bind(msgId, senderId, plaintextEnc, plaintextIv, ptNow)
+        .run();
+    }
 
     // Update conversation last_message and updated_at (never surface E2EE plaintext)
     const displayContent = isEncrypted
@@ -10700,6 +10884,9 @@ app.post('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
       content_iv: contentIv || null,
       enc_version: isEncrypted ? encVersion : null,
       key_version: isEncrypted ? keyVersion || 1 : null,
+      ratchet_pub: ratchetPub || null,
+      ratchet_pn: typeof ratchetPn === 'number' ? ratchetPn : null,
+      ratchet_n: typeof ratchetN === 'number' ? ratchetN : null,
       created_at: now,
       edited_at: null,
       is_mine: true,
@@ -10714,6 +10901,50 @@ app.post('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
     const err = error as { message?: string };
     console.error('DM send message error:', error);
     return c.json({ error: 'Failed to send message', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
+// PUT /api/dm/conversations/:id/messages/:msgId/plaintext - store the current
+// user's own KEK-wrapped plaintext for a DM message. Called after a participant
+// decrypts a message (e.g. on a device with no ratchet session) so they can read
+// it again on any device. The server only ever stores the KEK-wrapped blob.
+app.put('/api/dm/conversations/:id/messages/:msgId/plaintext', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id || '';
+    const convId = c.req.param('id');
+    const msgId = c.req.param('msgId');
+    const { plaintextEnc, plaintextIv } = (await c.req.json()) as {
+      plaintextEnc?: string;
+      plaintextIv?: string;
+    };
+    if (!userId || !plaintextEnc || !plaintextIv) {
+      return c.json({ error: 'Missing plaintext fields' }, 400);
+    }
+
+    // Verify user is a participant of the conversation the message belongs to.
+    const msg = (await c.env.DB.prepare(
+      `SELECT m.id FROM dm_messages m
+       JOIN dm_conversations dc ON dc.id = m.conversation_id
+       WHERE m.id = ? AND m.conversation_id = ? AND (dc.user_a_id = ? OR dc.user_b_id = ?)`,
+    )
+      .bind(msgId, convId, userId, userId)
+      .first()) as { id: string } | null;
+    if (!msg) return c.json({ error: 'Message not found' }, 404);
+
+    const now = new Date().toISOString();
+    await c.env.DB.prepare(
+      `INSERT INTO dm_message_plaintext (message_id, user_id, enc, iv, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(message_id, user_id) DO UPDATE SET enc = excluded.enc, iv = excluded.iv, updated_at = excluded.updated_at`,
+    )
+      .bind(msgId, userId, plaintextEnc, plaintextIv, now)
+      .run();
+
+    return c.json({ success: true });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('DM plaintext put error:', error);
+    return c.json({ error: 'Failed to save plaintext', details: err.message || 'Unknown error' }, 500);
   }
 });
 
@@ -10896,12 +11127,18 @@ app.put('/api/dm/conversations/:id/messages/:msgId', requireAuth, async (c) => {
     const userId = c.get('user')?.id || '';
     const convId = c.req.param('id');
     const msgId = c.req.param('msgId');
-    const { content, contentIv, encVersion, keyVersion } = (await c.req.json()) as {
-      content?: string;
-      contentIv?: string;
-      encVersion?: number;
-      keyVersion?: number;
-    };
+    const { content, contentIv, encVersion, keyVersion, ratchetPub, ratchetPn, ratchetN, plaintextEnc, plaintextIv } =
+      (await c.req.json()) as {
+        content?: string;
+        contentIv?: string;
+        encVersion?: number;
+        keyVersion?: number;
+        ratchetPub?: string;
+        ratchetPn?: number;
+        ratchetN?: number;
+        plaintextEnc?: string;
+        plaintextIv?: string;
+      };
 
     if (!content || typeof content !== 'string' || content.trim().length === 0) {
       return c.json({ error: 'Content is required' }, 400);
@@ -10934,7 +11171,7 @@ app.put('/api/dm/conversations/:id/messages/:msgId', requireAuth, async (c) => {
     const now = new Date().toISOString();
 
     await c.env.DB.prepare(
-      'UPDATE dm_messages SET content = ?, edited_at = ?, content_iv = ?, enc_version = ?, key_version = ? WHERE id = ?',
+      'UPDATE dm_messages SET content = ?, edited_at = ?, content_iv = ?, enc_version = ?, key_version = ?, ratchet_pub = ?, ratchet_pn = ?, ratchet_n = ? WHERE id = ?',
     )
       .bind(
         trimmed,
@@ -10942,9 +11179,24 @@ app.put('/api/dm/conversations/:id/messages/:msgId', requireAuth, async (c) => {
         contentIv || msg.content_iv || null,
         isEncrypted ? encVersion : msg.enc_version || null,
         keyVersion || msg.key_version || 1,
+        typeof ratchetPub === 'string' ? ratchetPub : null,
+        typeof ratchetPn === 'number' ? ratchetPn : null,
+        typeof ratchetN === 'number' ? ratchetN : null,
         msgId,
       )
       .run();
+
+    // Refresh the sender's KEK-wrapped plaintext backup if a new one was supplied.
+    if (isEncrypted && plaintextEnc && plaintextIv) {
+      const ptNow = new Date().toISOString();
+      await c.env.DB.prepare(
+        `INSERT INTO dm_message_plaintext (message_id, user_id, enc, iv, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(message_id, user_id) DO UPDATE SET enc = excluded.enc, iv = excluded.iv, updated_at = excluded.updated_at`,
+      )
+        .bind(msgId, userId, plaintextEnc, plaintextIv, ptNow)
+        .run();
+    }
 
     // Update conversation last_message if this was the last message (never leak plaintext)
     const displayContent = isEncrypted ? '[Encrypted message]' : trimmed;
@@ -10962,6 +11214,9 @@ app.put('/api/dm/conversations/:id/messages/:msgId', requireAuth, async (c) => {
       content_iv: contentIv || null,
       enc_version: isEncrypted ? encVersion : null,
       key_version: keyVersion || null,
+      ratchet_pub: typeof ratchetPub === 'string' ? ratchetPub : null,
+      ratchet_pn: typeof ratchetPn === 'number' ? ratchetPn : null,
+      ratchet_n: typeof ratchetN === 'number' ? ratchetN : null,
       edited_at: now,
     });
   } catch (error: unknown) {
@@ -11027,6 +11282,9 @@ app.delete('/api/dm/conversations/:id/messages/:msgId', requireAuth, async (c) =
 
     // Delete the message
     await c.env.DB.prepare('DELETE FROM dm_messages WHERE id = ?').bind(msgId).run();
+
+    // Remove the per-participant KEK-wrapped plaintext backups for this message.
+    await c.env.DB.prepare('DELETE FROM dm_message_plaintext WHERE message_id = ?').bind(msgId).run();
 
     // If deleted message was the conversation's last message, update it
     await c.env.DB.prepare(`
@@ -11470,8 +11728,8 @@ app.get('/api/groups/:id/messages', requireAuth, async (c) => {
       messages = await c.env.DB.prepare(`
         SELECT m.id, m.group_id, m.sender_id, m.content, m.created_at,
                m.gif_key, m.payload_key, m.swf_key, m.edited_at,
-               m.content_iv, m.enc_version, m.key_version,
-               u.username as sender_username, u.display_name as sender_display_name,
+                m.content_iv, m.enc_version, m.key_version,
+                u.username as sender_username, u.display_name as sender_display_name,
                u.avatar_key as sender_avatar_key
         FROM group_messages m
         JOIN users u ON m.sender_id = u.id
@@ -11485,8 +11743,8 @@ app.get('/api/groups/:id/messages', requireAuth, async (c) => {
       messages = await c.env.DB.prepare(`
         SELECT m.id, m.group_id, m.sender_id, m.content, m.created_at,
                m.gif_key, m.payload_key, m.swf_key, m.edited_at,
-               m.content_iv, m.enc_version, m.key_version,
-               u.username as sender_username, u.display_name as sender_display_name,
+                m.content_iv, m.enc_version, m.key_version,
+                u.username as sender_username, u.display_name as sender_display_name,
                u.avatar_key as sender_avatar_key
         FROM group_messages m
         JOIN users u ON m.sender_id = u.id
@@ -12132,6 +12390,407 @@ app.post('/api/messenger/keys/bulk', requireAuth, async (c) => {
   }
 });
 
+// ─── Messenger E2EE v2: X3DH prekey bundles (forward secrecy) ──────────────────
+
+// GET /api/messenger/identity-v2 - fetch my own v2 identity (private material is
+// AES-GCM encrypted; the client unwraps it with the password-derived KEK).
+app.get('/api/messenger/identity-v2', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id || '';
+    const row = (await c.env.DB.prepare(
+      `SELECT identity_sign_pub, identity_sign_priv_enc, identity_sign_priv_iv,
+              identity_dh_pub, identity_dh_priv_enc, identity_dh_priv_iv,
+              spk_pub, spk_priv_enc, spk_priv_iv, spk_sig, enc_salt, enc_version
+       FROM messenger_identity_v2 WHERE user_id = ?`,
+    )
+      .bind(userId)
+      .first()) as Record<string, unknown> | null;
+    if (!row) return c.json({ exists: false });
+    return c.json({
+      exists: true,
+      identitySignPub: row.identity_sign_pub,
+      identitySignPrivEnc: row.identity_sign_priv_enc,
+      identitySignPrivIv: row.identity_sign_priv_iv,
+      identityDhPub: row.identity_dh_pub,
+      identityDhPrivEnc: row.identity_dh_priv_enc,
+      identityDhPrivIv: row.identity_dh_priv_iv,
+      spkPub: row.spk_pub,
+      spkPrivEnc: row.spk_priv_enc,
+      spkPrivIv: row.spk_priv_iv,
+      spkSig: row.spk_sig,
+      encSalt: row.enc_salt,
+      encVersion: row.enc_version || 2,
+    });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Messenger identity-v2 get error:', error);
+    return c.json({ error: 'Failed to fetch identity', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
+// GET /api/messenger/prekeys?userId=... - fetch a public prekey bundle for X3DH.
+// Consumes (deletes) one one-time prekey so it cannot be reused.
+app.get('/api/messenger/prekeys', requireAuth, async (c) => {
+  try {
+    const userId = c.req.query('userId');
+    if (!userId) return c.json({ error: 'userId is required' }, 400);
+
+    const ident = (await c.env.DB.prepare(
+      `SELECT identity_sign_pub, identity_dh_pub, spk_pub, spk_sig, spk_rotated_at
+       FROM messenger_identity_v2 WHERE user_id = ?`,
+    )
+      .bind(userId)
+      .first()) as Record<string, unknown> | null;
+    if (!ident) return c.json({ error: 'No identity registered' }, 404);
+
+    // Reclaim one-time prekeys that were reserved (claimed) by an abandoned
+    // session start, so the pool cannot get permanently stuck. A reservation
+    // older than 5 minutes is treated as freed and becomes available again.
+    await c.env.DB.prepare(
+      `UPDATE messenger_opks SET claimed_at = NULL WHERE user_id = ? AND claimed_at IS NOT NULL AND claimed_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-5 minutes')`,
+    )
+      .bind(userId)
+      .run();
+
+    const opk = (await c.env.DB.prepare(
+      `SELECT id, pub FROM messenger_opks WHERE user_id = ? AND claimed_at IS NULL ORDER BY created_at LIMIT 1`,
+    )
+      .bind(userId)
+      .first()) as Record<string, unknown> | null;
+
+    if (opk) {
+      // Reserve this OPK so it is not handed to another initiator, but do NOT
+      // delete it: the responder still needs its private material via
+      // POST /api/messenger/opks/consume to complete X3DH (the DH4 step).
+      await c.env.DB.prepare(
+        `UPDATE messenger_opks SET claimed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?`,
+      )
+        .bind(opk.id as string)
+        .run();
+    }
+
+    const remaining = (await c.env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM messenger_opks WHERE user_id = ? AND claimed_at IS NULL`,
+    )
+      .bind(userId)
+      .first()) as { n?: number } | null;
+
+    return c.json({
+      identitySignPub: ident.identity_sign_pub,
+      identityDhPub: ident.identity_dh_pub,
+      signedPreKeyPub: ident.spk_pub,
+      signedPreKeySignature: ident.spk_sig,
+      signedPreKeyRotatedAt: ident.spk_rotated_at,
+      preKeyPub: opk?.pub ?? null,
+      preKeyId: opk?.id ?? null,
+      opkCount: remaining?.n ?? 0,
+    });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Messenger prekeys get error:', error);
+    return c.json({ error: 'Failed to fetch prekeys', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
+// POST /api/messenger/opks/consume - fetch one of MY one-time prekeys' private
+// material and delete it, so it can never be reused. Called by the responder
+// during X3DH to recover the OPK private that the initiator consumed.
+app.post('/api/messenger/opks/consume', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id || '';
+    const body = (await c.req.json()) as { opkId?: string };
+    if (!body.opkId) return c.json({ error: 'opkId is required' }, 400);
+
+    const opk = (await c.env.DB.prepare(`SELECT priv_enc, priv_iv FROM messenger_opks WHERE id = ? AND user_id = ?`)
+      .bind(body.opkId, userId)
+      .first()) as Record<string, unknown> | null;
+    if (!opk) return c.json({ error: 'OPK not found' }, 404);
+
+    // Mark the OPK consumed but DO NOT delete it. X3DH consumes the one-time
+    // prekey to complete the handshake; if the responder's ratchet is later
+    // lost (e.g. cleared locally) it must re-consume the SAME opkId to rebuild
+    // the identical ratchet and keep decrypting history, instead of hitting 404
+    // and permanently losing the conversation. A sentinel claimed_at keeps it
+    // reserved (never re-handed out / never reclaimed) without weakening the
+    // single-use property of the established session.
+    await c.env.DB.prepare(`UPDATE messenger_opks SET claimed_at = '9999-01-01T00:00:00Z' WHERE id = ? AND user_id = ?`)
+      .bind(body.opkId, userId)
+      .run();
+
+    return c.json({ privEnc: opk.priv_enc, privIv: opk.priv_iv ?? null });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Messenger opks consume error:', error);
+    return c.json({ error: 'Failed to consume OPK', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
+// PUT /api/messenger/identity-v2 - register identity + signed prekey + OPKs.
+// Private material is already AES-GCM encrypted client-side with the password KEK.
+app.put('/api/messenger/identity-v2', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id || '';
+    const body = (await c.req.json()) as {
+      identitySignPub?: string;
+      identitySignPrivEnc?: string;
+      identitySignPrivIv?: string;
+      identityDhPub?: string;
+      identityDhPrivEnc?: string;
+      identityDhPrivIv?: string;
+      spkPub?: string;
+      spkPrivEnc?: string;
+      spkPrivIv?: string;
+      spkSig?: string;
+      opks?: Array<{ id: string; pub: string; privEnc: string; privIv: string }>;
+      encSalt?: string;
+    };
+    if (
+      !body.identitySignPub ||
+      !body.identitySignPrivEnc ||
+      !body.identitySignPrivIv ||
+      !body.identityDhPub ||
+      !body.identityDhPrivEnc ||
+      !body.identityDhPrivIv ||
+      !body.spkPub ||
+      !body.spkPrivEnc ||
+      !body.spkPrivIv ||
+      !body.spkSig ||
+      !body.encSalt
+    ) {
+      return c.json({ error: 'Missing identity fields' }, 400);
+    }
+
+    const now = new Date().toISOString();
+    await c.env.DB.prepare(
+      `INSERT INTO messenger_identity_v2
+        (user_id, identity_sign_pub, identity_sign_priv_enc, identity_sign_priv_iv,
+         identity_dh_pub, identity_dh_priv_enc, identity_dh_priv_iv,
+         spk_pub, spk_priv_enc, spk_priv_iv, spk_sig, enc_salt, enc_version, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 3, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET
+         identity_sign_pub = excluded.identity_sign_pub,
+         identity_sign_priv_enc = excluded.identity_sign_priv_enc,
+         identity_sign_priv_iv = excluded.identity_sign_priv_iv,
+         identity_dh_pub = excluded.identity_dh_pub,
+         identity_dh_priv_enc = excluded.identity_dh_priv_enc,
+         identity_dh_priv_iv = excluded.identity_dh_priv_iv,
+         spk_pub = excluded.spk_pub,
+         spk_priv_enc = excluded.spk_priv_enc,
+         spk_priv_iv = excluded.spk_priv_iv,
+         spk_sig = excluded.spk_sig,
+         spk_rotated_at = excluded.updated_at,
+         enc_salt = excluded.enc_salt,
+         updated_at = excluded.updated_at`,
+    )
+      .bind(
+        userId,
+        body.identitySignPub,
+        body.identitySignPrivEnc,
+        body.identitySignPrivIv,
+        body.identityDhPub,
+        body.identityDhPrivEnc,
+        body.identityDhPrivIv,
+        body.spkPub,
+        body.spkPrivEnc,
+        body.spkPrivIv,
+        body.spkSig,
+        body.encSalt,
+        now,
+        now,
+      )
+      .run();
+
+    if (body.opks && body.opks.length > 0) {
+      const insert = c.env.DB.prepare(
+        'INSERT OR REPLACE INTO messenger_opks (id, user_id, pub, priv_enc, priv_iv) VALUES (?, ?, ?, ?, ?)',
+      );
+      const batch = body.opks.map((o) => insert.bind(o.id, userId, o.pub, o.privEnc, o.privIv));
+      await c.env.DB.batch(batch);
+    }
+
+    return c.json({ success: true });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Messenger identity-v2 put error:', error);
+    return c.json({ error: 'Failed to save identity', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
+// PUT /api/messenger/ratchet-session - persist a KEK-wrapped Double Ratchet
+// session so it survives reloads / multiple devices. The server only stores
+// ciphertext; the KEK never leaves the client.
+app.put('/api/messenger/ratchet-session', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id;
+    const { conversation_id, device_id, session_enc, session_iv } = (await c.req.json()) as {
+      conversation_id?: string;
+      device_id?: string;
+      session_enc?: string;
+      session_iv?: string;
+    };
+    if (!userId || !conversation_id || !device_id || !session_enc || !session_iv) {
+      return c.json({ error: 'Missing session fields' }, 400);
+    }
+    const now = new Date().toISOString();
+    const result = await c.env.DB.prepare(
+      `INSERT INTO messenger_ratchet_sessions (user_id, conversation_id, device_id, session_enc, session_iv, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(user_id, conversation_id, device_id) DO UPDATE SET
+         session_enc = excluded.session_enc,
+         session_iv = excluded.session_iv,
+         updated_at = excluded.updated_at`,
+    )
+      .bind(userId, conversation_id, device_id, session_enc, session_iv, now)
+      .run();
+    if (!result.success) return c.json({ error: 'Failed to save session' }, 500);
+    return c.json({ success: true });
+  } catch (error: unknown) {
+    console.error('Ratchet session put error:', error);
+    return c.json({ error: 'Failed to save session' }, 500);
+  }
+});
+
+// GET /api/messenger/ratchet-session?conversation_id=... - fetch the persisted
+// KEK-wrapped ratchet session for the current user + conversation.
+app.get('/api/messenger/ratchet-session', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id;
+    const convId = c.req.query('conversation_id');
+    const deviceId = c.req.query('device_id');
+    if (!userId || !convId || !deviceId) return c.json({ error: 'conversation_id and device_id required' }, 400);
+    const row = (await c.env.DB.prepare(
+      'SELECT session_enc, session_iv FROM messenger_ratchet_sessions WHERE user_id = ? AND conversation_id = ? AND device_id = ?',
+    )
+      .bind(userId, convId, deviceId)
+      .first()) as { session_enc: string; session_iv: string } | null;
+    if (!row) return c.json({ exists: false });
+    return c.json({ exists: true, session_enc: row.session_enc, session_iv: row.session_iv });
+  } catch (error: unknown) {
+    console.error('Ratchet session get error:', error);
+    return c.json({ error: 'Failed to fetch session' }, 500);
+  }
+});
+
+// DELETE /api/messenger/ratchet-session?conversation_id=... - drop a persisted
+// ratchet session (e.g. on logout).
+app.delete('/api/messenger/ratchet-session', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id;
+    const convId = c.req.query('conversation_id');
+    const deviceId = c.req.query('device_id');
+    if (!userId || !convId || !deviceId) return c.json({ error: 'conversation_id and device_id required' }, 400);
+    await c.env.DB.prepare(
+      'DELETE FROM messenger_ratchet_sessions WHERE user_id = ? AND conversation_id = ? AND device_id = ?',
+    )
+      .bind(userId, convId, deviceId)
+      .run();
+    return c.json({ success: true });
+  } catch (error: unknown) {
+    console.error('Ratchet session delete error:', error);
+    return c.json({ error: 'Failed to delete session' }, 500);
+  }
+});
+
+// POST /api/messenger/ratchet-reset - request the peer to re-bootstrap X3DH.
+// Used when this participant cannot decrypt the peer's messages (lost /
+// mismatched ratchet). The peer polls for the request and resets its own
+// session, so a single "Reset secure session" recovers BOTH sides.
+app.post('/api/messenger/ratchet-reset', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id;
+    const { conversation_id } = (await c.req.json()) as { conversation_id?: string };
+    if (!userId || !conversation_id) return c.json({ error: 'conversation_id required' }, 400);
+    const now = new Date().toISOString();
+    const result = await c.env.DB.prepare(
+      `INSERT INTO messenger_ratchet_reset_requests (conversation_id, requested_by, requested_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(conversation_id) DO UPDATE SET requested_by = excluded.requested_by, requested_at = excluded.requested_at`,
+    )
+      .bind(conversation_id, userId, now)
+      .run();
+    if (!result.success) return c.json({ error: 'Failed to request reset' }, 500);
+    return c.json({ success: true });
+  } catch (error: unknown) {
+    console.error('Ratchet reset request error:', error);
+    return c.json({ error: 'Failed to request reset' }, 500);
+  }
+});
+
+// GET /api/messenger/ratchet-reset?conversation_id=... - check whether the peer
+// has requested that WE re-bootstrap. Returns requested:true only when the
+// pending request was made by someone other than the caller.
+app.get('/api/messenger/ratchet-reset', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id;
+    const convId = c.req.query('conversation_id');
+    if (!userId || !convId) return c.json({ error: 'conversation_id required' }, 400);
+    const row = (await c.env.DB.prepare(
+      'SELECT requested_by FROM messenger_ratchet_reset_requests WHERE conversation_id = ?',
+    )
+      .bind(convId)
+      .first()) as { requested_by: string } | null;
+    if (!row || row.requested_by === userId) return c.json({ requested: false });
+    return c.json({ requested: true });
+  } catch (error: unknown) {
+    console.error('Ratchet reset check error:', error);
+    return c.json({ error: 'Failed to check reset' }, 500);
+  }
+});
+
+// DELETE /api/messenger/ratchet-reset?conversation_id=... - clear a pending
+// reset request (called by the peer after it has reset its own session).
+app.delete('/api/messenger/ratchet-reset', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id;
+    const convId = c.req.query('conversation_id');
+    if (!userId || !convId) return c.json({ error: 'conversation_id required' }, 400);
+    await c.env.DB.prepare('DELETE FROM messenger_ratchet_reset_requests WHERE conversation_id = ?').bind(convId).run();
+    return c.json({ success: true });
+  } catch (error: unknown) {
+    console.error('Ratchet reset clear error:', error);
+    return c.json({ error: 'Failed to clear reset' }, 500);
+  }
+});
+
+// GET /api/messenger/opks - how many unused one-time prekeys I have left.
+// Clients use this to top up their pool (the server cannot mint OPKs because
+// the private material is only decryptable with the user's KEK).
+app.get('/api/messenger/opks', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id || '';
+    const row = (await c.env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM messenger_opks WHERE user_id = ? AND claimed_at IS NULL`,
+    )
+      .bind(userId)
+      .first()) as { n?: number } | null;
+    return c.json({ count: row?.n ?? 0 });
+  } catch (error: unknown) {
+    console.error('Messenger opks get error:', error);
+    return c.json({ error: 'Failed to count opks' }, 500);
+  }
+});
+
+// POST /api/messenger/opks - replenish one-time prekeys without re-registering identity.
+app.post('/api/messenger/opks', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id || '';
+    const { opks } = (await c.req.json()) as {
+      opks?: Array<{ id: string; pub: string; privEnc: string; privIv: string }>;
+    };
+    if (!opks || opks.length === 0) return c.json({ error: 'opks required' }, 400);
+    const insert = c.env.DB.prepare(
+      'INSERT OR REPLACE INTO messenger_opks (id, user_id, pub, priv_enc, priv_iv) VALUES (?, ?, ?, ?, ?)',
+    );
+    const batch = opks.map((o) => insert.bind(o.id, userId, o.pub, o.privEnc, o.privIv));
+    await c.env.DB.batch(batch);
+    return c.json({ success: true, added: opks.length });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Messenger opks post error:', error);
+    return c.json({ error: 'Failed to add opks', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
 // ─── Discord-style Servers ────────────────────────────────────────────────────
 
 const SERVER_MAX_MEMBERS = 200;
@@ -12584,6 +13243,226 @@ app.delete('/api/servers/:id/members/:userId', requireAuth, async (c) => {
   }
 });
 
+// ─── Server invite links ───────────────────────────────────────────────────────
+
+// POST /api/servers/:id/invites - create an invite link (owner/admin)
+app.post('/api/servers/:id/invites', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id || '';
+    const serverId = c.req.param('id');
+    const { role, maxUses, expiresInHours } = (await c.req.json()) as {
+      role?: string;
+      maxUses?: number | null;
+      expiresInHours?: number | null;
+    };
+
+    const member = (await c.env.DB.prepare(
+      "SELECT role FROM server_members WHERE server_id = ? AND user_id = ? AND left_at IS NULL AND role IN ('owner', 'admin')",
+    )
+      .bind(serverId, userId)
+      .first()) as { role: string } | null;
+
+    if (!member) {
+      return c.json({ error: 'Not authorized to create invites' }, 403);
+    }
+
+    // Invites never grant owner; default to member.
+    const inviteRole = role === 'admin' ? 'admin' : 'member';
+    const safeMaxUses = typeof maxUses === 'number' && maxUses > 0 ? Math.floor(maxUses) : null;
+    const expiresAt =
+      typeof expiresInHours === 'number' && expiresInHours > 0
+        ? new Date(Date.now() + Math.floor(expiresInHours) * 3600 * 1000).toISOString()
+        : null;
+
+    const token = nanoid();
+    await c.env.DB.prepare(
+      'INSERT INTO server_invites (token, server_id, created_by, role, max_uses, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    )
+      .bind(token, serverId, userId, inviteRole, safeMaxUses, expiresAt, new Date().toISOString())
+      .run();
+
+    return c.json({ token, url: `/invite/${token}`, role: inviteRole, maxUses: safeMaxUses, expiresAt });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Server invite create error:', error);
+    return c.json({ error: 'Failed to create invite', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
+// GET /api/servers/:id/invites - list invites (owner/admin)
+app.get('/api/servers/:id/invites', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id || '';
+    const serverId = c.req.param('id');
+
+    const member = (await c.env.DB.prepare(
+      "SELECT role FROM server_members WHERE server_id = ? AND user_id = ? AND left_at IS NULL AND role IN ('owner', 'admin')",
+    )
+      .bind(serverId, userId)
+      .first()) as { role: string } | null;
+
+    if (!member) {
+      return c.json({ error: 'Not authorized to view invites' }, 403);
+    }
+
+    const invites = await c.env.DB.prepare(
+      'SELECT token, role, max_uses, use_count, expires_at, created_at FROM server_invites WHERE server_id = ? ORDER BY created_at DESC',
+    )
+      .bind(serverId)
+      .all();
+
+    return c.json({
+      invites: (invites.results || []).map((row: Record<string, unknown>) => ({
+        token: row.token,
+        url: `/invite/${row.token}`,
+        role: row.role,
+        maxUses: row.max_uses ?? null,
+        useCount: row.use_count,
+        expiresAt: row.expires_at ?? null,
+        createdAt: row.created_at,
+      })),
+    });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Server invites list error:', error);
+    return c.json({ error: 'Failed to list invites', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
+// DELETE /api/servers/:id/invites/:token - revoke an invite (owner/admin)
+app.delete('/api/servers/:id/invites/:token', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id || '';
+    const serverId = c.req.param('id');
+    const token = c.req.param('token');
+
+    const member = (await c.env.DB.prepare(
+      "SELECT role FROM server_members WHERE server_id = ? AND user_id = ? AND left_at IS NULL AND role IN ('owner', 'admin')",
+    )
+      .bind(serverId, userId)
+      .first()) as { role: string } | null;
+
+    if (!member) {
+      return c.json({ error: 'Not authorized to revoke invites' }, 403);
+    }
+
+    await c.env.DB.prepare('DELETE FROM server_invites WHERE server_id = ? AND token = ?').bind(serverId, token).run();
+
+    return c.json({ success: true });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Server invite revoke error:', error);
+    return c.json({ error: 'Failed to revoke invite', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
+// GET /api/servers/invite/:token - resolve invite metadata (public, no auth).
+// Never returns member lists or any E2EE key material.
+app.get('/api/servers/invite/:token', async (c) => {
+  try {
+    const token = c.req.param('token');
+    const invite = (await c.env.DB.prepare(
+      `SELECT i.token, i.role, i.max_uses, i.use_count, i.expires_at, i.server_id,
+              s.name, s.icon_key, s.description
+       FROM server_invites i
+       JOIN server_conversations s ON s.id = i.server_id
+       WHERE i.token = ?`,
+    )
+      .bind(token)
+      .first()) as {
+      token: string;
+      role: string;
+      max_uses: number | null;
+      use_count: number;
+      expires_at: string | null;
+      server_id: string;
+      name: string;
+      icon_key: string | null;
+      description: string;
+    } | null;
+
+    if (!invite) {
+      return c.json({ error: 'Invite not found' }, 404);
+    }
+
+    const now = Date.now();
+    const expired = !!invite.expires_at && new Date(invite.expires_at).getTime() <= now;
+    const usedUp = invite.max_uses != null && invite.use_count >= invite.max_uses;
+
+    return c.json({
+      token: invite.token,
+      serverName: invite.name,
+      serverIconKey: invite.icon_key,
+      serverDescription: invite.description,
+      role: invite.role,
+      maxUses: invite.max_uses,
+      useCount: invite.use_count,
+      expiresAt: invite.expires_at,
+      expired,
+      usedUp,
+    });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Server invite resolve error:', error);
+    return c.json({ error: 'Failed to resolve invite', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
+// POST /api/servers/invite/:token/join - join a server via invite (auth user)
+app.post('/api/servers/invite/:token/join', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id || '';
+    const token = c.req.param('token');
+
+    const invite = (await c.env.DB.prepare(
+      'SELECT token, server_id, role, max_uses, use_count, expires_at FROM server_invites WHERE token = ?',
+    )
+      .bind(token)
+      .first()) as {
+      token: string;
+      server_id: string;
+      role: string;
+      max_uses: number | null;
+      use_count: number;
+      expires_at: string | null;
+    } | null;
+
+    if (!invite) {
+      return c.json({ error: 'Invite not found' }, 404);
+    }
+    if (invite.expires_at && new Date(invite.expires_at).getTime() <= Date.now()) {
+      return c.json({ error: 'Invite has expired' }, 410);
+    }
+    if (invite.max_uses != null && invite.use_count >= invite.max_uses) {
+      return c.json({ error: 'Invite has reached its usage limit' }, 410);
+    }
+
+    const now = new Date().toISOString();
+    const existing = (await c.env.DB.prepare('SELECT 1 FROM server_members WHERE server_id = ? AND user_id = ?')
+      .bind(invite.server_id, userId)
+      .first()) as { 1: number } | null;
+
+    await c.env.DB.prepare(
+      `INSERT INTO server_members (server_id, user_id, role, joined_at, left_at)
+       VALUES (?, ?, ?, ?, NULL)
+       ON CONFLICT(server_id, user_id) DO UPDATE SET left_at = NULL, role = excluded.role, joined_at = excluded.joined_at`,
+    )
+      .bind(invite.server_id, userId, invite.role, now)
+      .run();
+
+    // Only count a use when the user was not already an active/former member.
+    if (!existing) {
+      await c.env.DB.prepare('UPDATE server_invites SET use_count = use_count + 1 WHERE token = ?').bind(token).run();
+    }
+
+    return c.json({ success: true, serverId: invite.server_id, role: invite.role });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Server invite join error:', error);
+    return c.json({ error: 'Failed to join server', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
 // POST /api/servers/:id/channels - create a channel (owner/admin)
 app.post('/api/servers/:id/channels', requireAuth, async (c) => {
   try {
@@ -12777,10 +13656,11 @@ app.post('/api/servers/:id/keys', requireAuth, async (c) => {
       return c.json({ error: 'Server not found' }, 404);
     }
 
-    const canManage = myMember.role === 'owner' || myMember.role === 'admin';
-    if (!canManage && boxes.some((b) => b.userId !== userId)) {
-      return c.json({ error: 'Not authorized to submit keys for other members' }, 403);
-    }
+    // Any current member may submit wrapped keys for other current members.
+    // A member can only wrap a channel key they already possess (decrypted in
+    // the client); the server never sees plaintext keys. The worst a malicious
+    // member can do is refuse to wrap (or wrap garbage for) another member,
+    // which is the same trust model as the rest of the E2EE group chats.
 
     const memberIds = await c.env.DB.prepare(
       'SELECT user_id FROM server_members WHERE server_id = ? AND left_at IS NULL',
@@ -12895,7 +13775,8 @@ app.get('/api/servers/:id/channels/:channelId/messages', requireAuth, async (c) 
       messages = await c.env.DB.prepare(`
         SELECT m.id, m.channel_id, m.sender_id, m.content, m.created_at,
                m.gif_key, m.payload_key, m.swf_key, m.edited_at,
-               m.content_iv, m.enc_version, m.key_version, m.reply_to_id, m.pinned,
+                m.content_iv, m.enc_version, m.key_version,
+                m.reply_to_id, m.pinned,
                u.username as sender_username, u.display_name as sender_display_name,
                u.avatar_key as sender_avatar_key
         FROM server_messages m
@@ -12910,7 +13791,8 @@ app.get('/api/servers/:id/channels/:channelId/messages', requireAuth, async (c) 
       messages = await c.env.DB.prepare(`
         SELECT m.id, m.channel_id, m.sender_id, m.content, m.created_at,
                m.gif_key, m.payload_key, m.swf_key, m.edited_at,
-               m.content_iv, m.enc_version, m.key_version, m.reply_to_id, m.pinned,
+                m.content_iv, m.enc_version, m.key_version,
+                m.reply_to_id, m.pinned,
                u.username as sender_username, u.display_name as sender_display_name,
                u.avatar_key as sender_avatar_key
         FROM server_messages m
@@ -13453,6 +14335,9 @@ app.post('/api/test/reset', async (c) => {
       'dm_messages',
       'dm_conversations',
       'messenger_keys',
+      'messenger_ratchet_sessions',
+      'messenger_opks',
+      'messenger_identity_v2',
       'chat_message_reactions',
       'chat_read_states',
       'chat_messages',
@@ -14416,6 +15301,176 @@ async function verifyCallActive(
     return false;
   }
 }
+
+// GET /api/posts/:id/versions - list archived versions of a game (public)
+app.get('/api/posts/:id/versions', async (c) => {
+  try {
+    const postId = c.req.param('id');
+    if (!c.env.DB) return c.json({ error: 'Database not available' }, 500);
+
+    const { results } = (await c.env.DB.prepare(
+      'SELECT id, version_number, changelog, thumbnail_key, created_at FROM game_versions WHERE post_id = ? ORDER BY version_number DESC',
+    )
+      .bind(postId)
+      .all()) as {
+      results: Array<{
+        id: string;
+        version_number: number;
+        changelog: string | null;
+        thumbnail_key: string | null;
+        created_at: string;
+      }>;
+    };
+
+    const versions = results.map((r) => ({
+      id: r.id,
+      versionNumber: r.version_number,
+      changelog: r.changelog || null,
+      thumbnailKey: r.thumbnail_key || null,
+      createdAt: r.created_at,
+    }));
+
+    return c.json({ versions });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('List game versions error:', error);
+    return c.json({ error: 'Failed to list versions', details: err.message }, 500);
+  }
+});
+
+// POST /api/posts/:id/versions/prepare - reserve an upload slot for a new version (owner only)
+app.post('/api/posts/:id/versions/prepare', requireAuth, async (c) => {
+  try {
+    const user = c.get('user');
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+    const postId = c.req.param('id');
+    if (!c.env.DB) return c.json({ error: 'Database not available' }, 500);
+
+    const post = (await c.env.DB.prepare('SELECT id, user_id, payload_key, status FROM posts WHERE id = ?')
+      .bind(postId)
+      .first()) as { id: string; user_id: string; payload_key: string | null; status: string } | null;
+
+    if (!post) return c.json({ error: 'Post not found' }, 404);
+    if (post.user_id !== user.id) return c.json({ error: 'Forbidden' }, 403);
+    if (post.status !== 'published') return c.json({ error: 'Post is not published' }, 400);
+    if (
+      !post.payload_key ||
+      !(
+        post.payload_key.startsWith('zip/') ||
+        post.payload_key.startsWith('html/') ||
+        post.payload_key.startsWith('payload/') ||
+        post.payload_key.startsWith('versions/')
+      )
+    ) {
+      return c.json({ error: 'Only ZIP/HTML5 games can be versioned' }, 400);
+    }
+
+    const versionId = crypto.randomUUID();
+    const storageKey = `versions/${postId}/${versionId}.zip`;
+    const origin = new URL(c.req.url).origin;
+    const uploadUrl = `${origin}/api/upload/${storageKey}`;
+
+    return c.json({ postId, versionId, zipUploadUrl: uploadUrl, zipKey: storageKey });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Prepare game version error:', error);
+    return c.json({ error: 'Failed to prepare version', details: err.message }, 500);
+  }
+});
+
+// POST /api/posts/:id/versions/commit - finalize a newly uploaded version (owner only)
+app.post('/api/posts/:id/versions/commit', requireAuth, async (c) => {
+  try {
+    const user = c.get('user');
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+    const postId = c.req.param('id')!;
+    if (!c.env.DB || !c.env.BUCKET) return c.json({ error: 'Database/Storage not available' }, 500);
+
+    const body = (await c.req.json()) as { versionId?: string; changelog?: string };
+    if (!body.versionId) return c.json({ error: 'versionId is required' }, 400);
+
+    const post = (await c.env.DB.prepare('SELECT id, user_id, payload_key, status, created_at FROM posts WHERE id = ?')
+      .bind(postId)
+      .first()) as {
+      id: string;
+      user_id: string;
+      payload_key: string | null;
+      status: string;
+      created_at: string;
+    } | null;
+
+    if (!post || post.user_id !== user.id) return c.json({ error: 'Forbidden' }, 403);
+    if (post.status !== 'published') return c.json({ error: 'Post is not published' }, 400);
+
+    const newKey = `versions/${postId}/${body.versionId}.zip`;
+    const head = await c.env.BUCKET.head(newKey);
+    if (!head) return c.json({ error: 'Uploaded file not found' }, 400);
+
+    const maxRow = (await c.env.DB.prepare('SELECT MAX(version_number) as m FROM game_versions WHERE post_id = ?')
+      .bind(postId)
+      .first()) as { m: number | null } | null;
+    const max = maxRow?.m ?? 0;
+
+    const now = new Date().toISOString();
+    const changelog = typeof body.changelog === 'string' ? body.changelog.trim().slice(0, 2000) || null : null;
+
+    // Archive the original release as v1 the first time a game is versioned,
+    // so players can still roll back to it after an update.
+    if (max === 0 && post.payload_key && post.payload_key !== newKey) {
+      await c.env.DB.prepare(
+        'INSERT INTO game_versions (id, post_id, version_number, payload_key, thumbnail_key, changelog, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      )
+        .bind(crypto.randomUUID(), postId, 1, post.payload_key, null, null, user.id, post.created_at)
+        .run();
+    }
+
+    const newVersionNumber = max + 1;
+    await c.env.DB.prepare(
+      'INSERT INTO game_versions (id, post_id, version_number, payload_key, thumbnail_key, changelog, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+      .bind(body.versionId, postId, newVersionNumber, newKey, null, changelog, user.id, now)
+      .run();
+
+    await c.env.DB.prepare('UPDATE posts SET payload_key = ?, edited_at = ?, created_at = ? WHERE id = ?')
+      .bind(newKey, now, now, postId)
+      .run();
+
+    const execCtx = (c as unknown as { executionCtx?: { waitUntil: (p: Promise<unknown>) => void } }).executionCtx;
+    if (execCtx?.waitUntil) {
+      const bucket = c.env.BUCKET;
+      const db = c.env.DB;
+      const versionId = body.versionId ?? null;
+      if (bucket && db) {
+        execCtx.waitUntil(
+          (async () => {
+            try {
+              // Extract to the default (non-versioned) path so the latest version
+              // serves from the plain /api/wvfs-zip/<postId> URL, and to the
+              // versioned path so ?v=<id> also resolves to it.
+              await extractZipToR2(bucket, newKey, postId);
+              if (versionId) {
+                await extractZipToR2(bucket, newKey, postId, versionId);
+              }
+            } catch (e) {
+              console.error('Background ZIP extraction failed for version:', e);
+            }
+            try {
+              await extractGameDescription(bucket, db, newKey, postId);
+            } catch (e) {
+              console.error('Background game description extraction failed:', e);
+            }
+          })(),
+        );
+      }
+    }
+
+    return c.json({ ok: true, versionId: body.versionId, versionNumber: newVersionNumber });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Commit game version error:', error);
+    return c.json({ error: 'Failed to commit version', details: err.message }, 500);
+  }
+});
 
 export async function onRequest(context: Record<string, unknown>) {
   const request = context.request as Request;

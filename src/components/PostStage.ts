@@ -276,6 +276,21 @@ function createThumbnailWithOverlay(props: {
   return container;
 }
 
+// A post is a runnable ZIP/HTML5 game when its payload key lives under one of
+// the known game prefixes (payload/, zip/, html/, versions/). The latter is set
+// once a game has been published as a new version via the rolling-update flow.
+export function isZipGame(payloadKey?: string | null): boolean {
+  if (!payloadKey) return false;
+  return (
+    payloadKey.endsWith('.zip') ||
+    payloadKey.endsWith('.html') ||
+    payloadKey.startsWith('zip/') ||
+    payloadKey.startsWith('html/') ||
+    payloadKey.startsWith('payload/') ||
+    payloadKey.startsWith('versions/')
+  );
+}
+
 export function createPostStage(props: PostStageProps): HTMLElement {
   const container = document.createElement('div');
   container.className = 'post-stage';
@@ -317,10 +332,7 @@ async function updateStageContent(container: HTMLElement, props: PostStageProps)
   if (props.mode === PostCardMode.PREVIEW) {
     let mediaElement: HTMLElement = null!;
 
-    if (
-      props.post.payload_key &&
-      (props.post.payload_key.startsWith('zip/') || props.post.payload_key.startsWith('html/'))
-    ) {
+    if (isZipGame(props.post.payload_key)) {
       container.classList.add('post-stage--zip'); // Add zip class for 16:9
       if (props.post.thumbnail_key) {
         // Show thumbnail with overlay button
@@ -394,24 +406,16 @@ async function updateStageContent(container: HTMLElement, props: PostStageProps)
     container.appendChild(mediaElement);
 
     // Add click hint only for executable content (not images or audio)
-    if (
-      !props.post.payload_key?.startsWith('zip/') &&
-      !props.post.payload_key?.startsWith('html/') &&
-      !props.post.swf_key?.startsWith('swf/') &&
-      !props.post.gif_key
-    ) {
+    if (!isZipGame(props.post.payload_key) && !props.post.swf_key?.startsWith('swf/') && !props.post.gif_key) {
       const hint = document.createElement('div');
       hint.className = 'stage-hint';
       hint.textContent = t('post_stage.click_to_run');
       container.appendChild(hint);
     }
   } else {
-    if (
-      props.post.payload_key &&
-      (props.post.payload_key.startsWith('zip/') || props.post.payload_key.startsWith('html/'))
-    ) {
+    if (isZipGame(props.post.payload_key)) {
       // The executeZipAuto function will handle creating the iframe and cleanup
-      executeZipAuto(props.post.id, container).catch((error: Error) => {
+      executeZipAuto(props.post.id, container, undefined, props.versionId).catch((error: Error) => {
         console.error('Failed to execute ZIP:', error);
         container.innerHTML =
           '<div style="padding: 20px; text-align: center; color: var(--text-muted);">' +
@@ -433,6 +437,7 @@ async function updateStageContent(container: HTMLElement, props: PostStageProps)
       const sandboxFrame = createSandboxFrame({
         postId: props.post.id,
         sandboxOrigin: props.sandboxOrigin,
+        versionId: props.versionId,
       });
       container.appendChild(sandboxFrame);
     }

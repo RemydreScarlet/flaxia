@@ -84,11 +84,13 @@ export class LeftNav {
     if (this.props.currentUser) {
       // Full navigation for logged-in users
       const items = [
-        { id: 'home', label: t('nav.home'), icon: 'home' as IconName },
-        { id: 'explore', label: t('nav.explore'), icon: 'search' as IconName },
-        { id: 'arcade', label: t('nav.arcade'), icon: 'game' as IconName },
-        { id: 'messages', label: t('nav.messages'), icon: 'reply' as IconName },
-        { id: 'notifications', label: t('nav.notifications'), icon: 'bell' as IconName },
+        { id: 'home', label: t('nav.home'), icon: 'home' },
+        { id: 'explore', label: t('nav.explore'), icon: 'explore' },
+        { id: 'arcade', label: t('nav.arcade'), icon: 'arcade' },
+        // TODO: メッセージ機能を一時的に非表示中。戻すときは次行のコメントを外す
+        // { id: 'messages', label: t('nav.messages'), icon: 'messages' },
+        { id: 'bookmarks', label: t('nav.bookmarks'), icon: 'bookmark' },
+        { id: 'notifications', label: t('nav.notifications'), icon: 'notifications' },
       ] as const;
 
       items.forEach((item) => {
@@ -96,7 +98,10 @@ export class LeftNav {
         navItem.className = `nav-item ${this.activeItem === item.id ? 'nav-item--active' : ''}`;
         navItem.setAttribute('data-nav-id', item.id);
 
-        const iconSpan = this.buildIconSpan(item.icon);
+        const iconSpan = document.createElement('span');
+        iconSpan.style.marginRight = '0.75rem';
+        iconSpan.className = 'nav-item-icon';
+        iconSpan.appendChild(icon(item.icon as IconName, { width: '20', height: '20' }));
 
         const labelSpan = document.createElement('span');
         labelSpan.textContent = item.label;
@@ -105,26 +110,27 @@ export class LeftNav {
         navItem.appendChild(labelSpan);
 
         // Combined unread badge for messages (DM + groups)
-        if (item.id === 'messages') {
-          const totalUnread = (this.props.unreadDmCount || 0) + (this.props.unreadGroupCount || 0);
-          if (totalUnread > 0) {
-            const badge = document.createElement('span');
-            badge.className = 'nav-dm-badge';
-            badge.style.cssText = `
-              margin-left: auto;
-              background: var(--accent);
-              color: #000;
-              font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-              font-size: 0.75rem;
-              padding: 2px 8px;
-              border-radius: 9999px;
-              min-width: 20px;
-              text-align: center;
-            `;
-            badge.textContent = totalUnread >= 99 ? '99+' : String(totalUnread);
-            navItem.appendChild(badge);
-          }
-        }
+        // TODO: メッセージ機能を一時的に非表示中。戻すときは次のブロックのコメントを外す
+        // if (item.id === 'messages') {
+        //   const totalUnread = (this.props.unreadDmCount || 0) + (this.props.unreadGroupCount || 0);
+        //   if (totalUnread > 0) {
+        //     const badge = document.createElement('span');
+        //     badge.className = 'nav-dm-badge';
+        //     badge.style.cssText = `
+        //       margin-left: auto;
+        //       background: var(--accent);
+        //       color: #000;
+        //       font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        //       font-size: 0.75rem;
+        //       padding: 2px 8px;
+        //       border-radius: 9999px;
+        //       min-width: 20px;
+        //       text-align: center;
+        //     `;
+        //     badge.textContent = totalUnread >= 99 ? '99+' : String(totalUnread);
+        //     navItem.appendChild(badge);
+        //   }
+        // }
 
         // Unread badge for notifications
         if (item.id === 'notifications') {
@@ -153,9 +159,9 @@ export class LeftNav {
     } else {
       // Simplified navigation for guests
       const items = [
-        { id: 'home', label: t('nav.home'), icon: 'home' as IconName },
-        { id: 'explore', label: t('nav.explore'), icon: 'search' as IconName },
-        { id: 'arcade', label: t('nav.arcade'), icon: 'game' as IconName },
+        { id: 'home', label: t('nav.home'), icon: 'home' },
+        { id: 'explore', label: t('nav.explore'), icon: 'explore' },
+        { id: 'arcade', label: t('nav.arcade'), icon: 'arcade' },
       ];
 
       items.forEach((item) => {
@@ -163,7 +169,10 @@ export class LeftNav {
         navItem.className = `nav-item ${this.activeItem === item.id ? 'nav-item--active' : ''}`;
         navItem.setAttribute('data-nav-id', item.id);
 
-        const iconSpan = this.buildIconSpan(item.icon);
+        const iconSpan = document.createElement('span');
+        iconSpan.style.marginRight = '0.75rem';
+        iconSpan.className = 'nav-item-icon';
+        iconSpan.appendChild(icon(item.icon as IconName, { width: '20', height: '20' }));
 
         const labelSpan = document.createElement('span');
         labelSpan.textContent = item.label;
@@ -225,19 +234,21 @@ export class LeftNav {
       popup.className = 'nav-user-popup';
 
       const menuItems = [
-        { id: 'profile', label: t('nav.profile'), icon: 'user' as IconName },
-        { id: 'bookmarks', label: t('nav.bookmarks'), icon: 'bookmark' as IconName },
-        { id: 'settings', label: t('nav.settings'), icon: 'settings' as IconName },
+        { id: 'profile', label: t('nav.profile'), icon: 'profile' },
+        { id: 'settings', label: t('nav.settings'), icon: 'settings' },
       ];
 
       menuItems.forEach((item) => {
         const popupItem = document.createElement('button');
         popupItem.className = 'nav-user-popup-item';
         popupItem.setAttribute('data-nav-id', item.id);
-        popupItem.appendChild(this.buildIconSpan(item.icon, '0'));
-        const popupLabel = document.createElement('span');
-        popupLabel.textContent = item.label;
-        popupItem.appendChild(popupLabel);
+        const iconWrap = document.createElement('span');
+        iconWrap.className = 'nav-popup-icon';
+        iconWrap.appendChild(icon(item.icon as IconName, { width: '18', height: '18' }));
+        const labelWrap = document.createElement('span');
+        labelWrap.textContent = item.label;
+        popupItem.appendChild(iconWrap);
+        popupItem.appendChild(labelWrap);
 
         popupItem.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -645,43 +656,50 @@ export function updateLeftNavUser(
     if (currentUser) {
       // Full navigation for logged-in users
       const items = [
-        { id: 'home', label: t('nav.home'), icon: 'home' as IconName },
-        { id: 'explore', label: t('nav.explore'), icon: 'search' as IconName },
-        { id: 'arcade', label: t('nav.arcade'), icon: 'game' as IconName },
-        { id: 'messages', label: t('nav.messages'), icon: 'reply' as IconName },
-        { id: 'notifications', label: t('nav.notifications'), icon: 'bell' as IconName },
+        { id: 'home', label: t('nav.home'), icon: 'home' },
+        { id: 'explore', label: t('nav.explore'), icon: 'explore' },
+        { id: 'arcade', label: t('nav.arcade'), icon: 'arcade' },
+        // TODO: メッセージ機能を一時的に非表示中。戻すときは次行のコメントを外す
+        // { id: 'messages', label: t('nav.messages'), icon: 'messages' },
+        { id: 'bookmarks', label: t('nav.bookmarks'), icon: 'bookmark' },
+        { id: 'notifications', label: t('nav.notifications'), icon: 'notifications' },
       ] as const;
 
       items.forEach((item) => {
         const navItem = document.createElement('button');
         navItem.className = `nav-item ${leftNav.getActiveItem() === item.id ? 'nav-item--active' : ''}`;
         navItem.setAttribute('data-nav-id', item.id);
-        navItem.appendChild(leftNav.buildIconSpan(item.icon));
+        const iconSpan = document.createElement('span');
+        iconSpan.style.marginRight = '0.75rem';
+        iconSpan.className = 'nav-item-icon';
+        iconSpan.appendChild(icon(item.icon as IconName, { width: '20', height: '20' }));
         const labelSpan = document.createElement('span');
         labelSpan.textContent = item.label;
+        navItem.appendChild(iconSpan);
         navItem.appendChild(labelSpan);
 
         // Combined unread badge for messages (DM + groups)
-        if (item.id === 'messages') {
-          const totalUnread = (leftNav.props.unreadDmCount ?? 0) + (leftNav.props.unreadGroupCount ?? 0);
-          if (totalUnread > 0) {
-            const badge = document.createElement('span');
-            badge.className = 'nav-dm-badge';
-            badge.style.cssText = `
-              margin-left: auto;
-              background: var(--accent);
-              color: #000;
-              font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-              font-size: 0.75rem;
-              padding: 2px 8px;
-              border-radius: 9999px;
-              min-width: 20px;
-              text-align: center;
-            `;
-            badge.textContent = totalUnread >= 99 ? '99+' : String(totalUnread);
-            navItem.appendChild(badge);
-          }
-        }
+        // TODO: メッセージ機能を一時的に非表示中。戻すときは次のブロックのコメントを外す
+        // if (item.id === 'messages') {
+        //   const totalUnread = (leftNav.props.unreadDmCount ?? 0) + (leftNav.props.unreadGroupCount ?? 0);
+        //   if (totalUnread > 0) {
+        //     const badge = document.createElement('span');
+        //     badge.className = 'nav-dm-badge';
+        //     badge.style.cssText = `
+        //       margin-left: auto;
+        //       background: var(--accent);
+        //       color: #000;
+        //       font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        //       font-size: 0.75rem;
+        //       padding: 2px 8px;
+        //       border-radius: 9999px;
+        //       min-width: 20px;
+        //       text-align: center;
+        //     `;
+        //     badge.textContent = totalUnread >= 99 ? '99+' : String(totalUnread);
+        //     navItem.appendChild(badge);
+        //   }
+        // }
 
         // Unread badge for notifications
         if (item.id === 'notifications') {
@@ -714,18 +732,22 @@ export function updateLeftNavUser(
     } else {
       // Simplified navigation for guests
       const items = [
-        { id: 'home', label: t('nav.home'), icon: 'home' as IconName },
-        { id: 'explore', label: t('nav.explore'), icon: 'search' as IconName },
-        { id: 'arcade', label: t('nav.arcade'), icon: 'game' as IconName },
+        { id: 'home', label: t('nav.home'), icon: 'home' },
+        { id: 'explore', label: t('nav.explore'), icon: 'explore' },
+        { id: 'arcade', label: t('nav.arcade'), icon: 'arcade' },
       ];
 
       items.forEach((item) => {
         const navItem = document.createElement('button');
         navItem.className = `nav-item ${leftNav.getActiveItem() === item.id ? 'nav-item--active' : ''}`;
         navItem.setAttribute('data-nav-id', item.id);
-        navItem.appendChild(leftNav.buildIconSpan(item.icon));
+        const iconSpan = document.createElement('span');
+        iconSpan.style.marginRight = '0.75rem';
+        iconSpan.className = 'nav-item-icon';
+        iconSpan.appendChild(icon(item.icon as IconName, { width: '20', height: '20' }));
         const labelSpan = document.createElement('span');
         labelSpan.textContent = item.label;
+        navItem.appendChild(iconSpan);
         navItem.appendChild(labelSpan);
         navItem.addEventListener('click', () => {
           leftNav.setActiveItem(item.id);
@@ -877,19 +899,21 @@ export function updateLeftNavUser(
     popup.className = 'nav-user-popup';
 
     const menuItems = [
-      { id: 'profile', label: t('nav.profile'), icon: 'user' as IconName },
-      { id: 'bookmarks', label: t('nav.bookmarks'), icon: 'bookmark' as IconName },
-      { id: 'settings', label: t('nav.settings'), icon: 'settings' as IconName },
+      { id: 'profile', label: t('nav.profile'), icon: 'profile' },
+      { id: 'settings', label: t('nav.settings'), icon: 'settings' },
     ];
 
     menuItems.forEach((item) => {
       const popupItem = document.createElement('button');
       popupItem.className = 'nav-user-popup-item';
       popupItem.setAttribute('data-nav-id', item.id);
-      popupItem.appendChild(leftNav.buildIconSpan(item.icon, '0'));
-      const popupLabel = document.createElement('span');
-      popupLabel.textContent = item.label;
-      popupItem.appendChild(popupLabel);
+      const iconWrap = document.createElement('span');
+      iconWrap.className = 'nav-popup-icon';
+      iconWrap.appendChild(icon(item.icon as IconName, { width: '18', height: '18' }));
+      const labelWrap = document.createElement('span');
+      labelWrap.textContent = item.label;
+      popupItem.appendChild(iconWrap);
+      popupItem.appendChild(labelWrap);
 
       popupItem.addEventListener('click', (e) => {
         e.stopPropagation();

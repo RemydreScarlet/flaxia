@@ -344,6 +344,36 @@ export async function ensureChannelKeys(
   }
 }
 
+// Reconcile channel keys for a server channel: wrap the channel key we hold for
+// every supplied member and upload the (idempotent) boxes. Only a member who
+// already has the channel key in memory can reconcile, so the server never sees
+// plaintext keys. Used to deliver the key to members who joined after the
+// channel was created (e.g. via an invite link).
+export async function reconcileServerChannelKeys(
+  serverId: string,
+  channelId: string,
+  keyVersion: number,
+  memberIds: string[],
+): Promise<boolean> {
+  const key = getCachedChannelKey('server', channelId, keyVersion);
+  if (!key || memberIds.length === 0) return false;
+  try {
+    const pubKeys = await fetchUserPublicKeys(memberIds);
+    if (pubKeys.size === 0) return false;
+    const boxes = await wrapKeyForMembers(key, pubKeys);
+    if (boxes.length === 0) return false;
+    const res = await fetch(`/api/servers/${serverId}/keys`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ channelId, keyVersion, boxes }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 // ─── text encrypt / decrypt helpers ──────────────────────────────────────────
 
 export async function encryptDmText(

@@ -82,12 +82,12 @@ function waitForZipReady(postId: string): Promise<void> {
   });
 }
 
-async function fetchZip(postId: string, fallbackUrl?: string): Promise<ArrayBuffer> {
+async function fetchZip(postId: string, fallbackUrl?: string, versionId?: string): Promise<ArrayBuffer> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), ZIP_FETCH_TIMEOUT);
 
   try {
-    const zipUrl = fallbackUrl || `/api/zip/${postId}`;
+    const zipUrl = fallbackUrl || `/api/zip/${postId}${versionId ? `?v=${versionId}` : ''}`;
     const res = await fetch(zipUrl, { signal: controller.signal });
 
     if (!res.ok) {
@@ -258,6 +258,7 @@ export async function executeSwZip(
   fallbackUrl?: string,
   hideFullscreen: boolean = false,
   showLoading: boolean = true,
+  versionId?: string,
 ): Promise<SwZipExecutorHandle> {
   if (activeHandle) {
     activeHandle.destroy();
@@ -278,7 +279,7 @@ export async function executeSwZip(
     await navigator.serviceWorker.ready;
     await waitForController();
 
-    const zipData = await fetchZip(postId, fallbackUrl);
+    const zipData = await fetchZip(postId, fallbackUrl, versionId);
 
     const controller = navigator.serviceWorker.controller;
     if (!controller) {

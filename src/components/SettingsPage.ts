@@ -1,8 +1,24 @@
 import { clearMeCache } from '../lib/auth-cache';
+import { storeSrpSalt } from '../lib/auth-srp.js';
 import { createConfirmDialog } from '../lib/confirm-dialog.js';
 import { getLocale, setLocale, t } from '../lib/i18n.js';
+import { rewrapE2EEIdentityV2, unlockIdentityV2WithPassword } from '../lib/messenger-identity-v2.js';
 import { getReplyStyle, getShowNsfw, ReplyStyle, setReplyStyle, setShowNsfw } from '../lib/settings.js';
+import { clientStep1, clientStep2, computeVerifier, generateSalt } from '../lib/srp.js';
 import { getTheme, setTheme, Theme } from '../lib/theme.js';
+
+function b64(b: Uint8Array): string {
+  let binary = '';
+  for (const x of b) binary += String.fromCharCode(x);
+  return btoa(binary);
+}
+
+function unb64(s: string): Uint8Array {
+  const binary = atob(s);
+  const b = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) b[i] = binary.charCodeAt(i);
+  return b;
+}
 
 interface SettingsPageProps {
   currentUser?: {
@@ -1018,15 +1034,49 @@ export function createSettingsPage({ currentUser }: SettingsPageProps) {
     passwordSaveButton.style.opacity = '0.6';
 
     try {
+      // Derive a fresh SRP verifier from the new password so the single account
+      // password also protects E2EE after the change.
+      const salt = generateSalt();
+      const verifier = await computeVerifier(newPassword, salt);
+
+      // Prove knowledge of the CURRENT password via an SRP handshake so SRP-only
+      // accounts (no legacy hash) are still verified before the change.
+      let currentSrp: { challenge_id: string; A: string; M1: string } | undefined;
+      const reauth = await fetch('/api/auth/reauth/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      });
+      if (reauth.ok) {
+        const r = (await reauth.json()) as { challenge_id: string; salt: string; B: string };
+        const { A, a } = await clientStep1(currentPassword, unb64(r.salt));
+        const finish = await clientStep2(currentPassword, unb64(r.salt), a, unb64(r.B));
+        currentSrp = { challenge_id: r.challenge_id, A: b64(A), M1: b64(finish.M1) };
+      }
+
       const response = await fetch('/api/users/me/password', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword,
+          srp_salt: b64(salt),
+          srp_verifier: b64(verifier),
+          srp_group: '2048',
+          current_srp: currentSrp,
+        }),
       });
 
       if (response.ok) {
+        storeSrpSalt(salt);
+        // Ensure the E2EE identity is unlocked with the OLD password before
+        // re-wrapping, so the re-wrap never silently fails when the identity
+        // was not yet in memory this session.
+        await unlockIdentityV2WithPassword(currentPassword);
+        // Re-wrap the E2EE identity with the new KEK (keeps identity keys).
+        await rewrapE2EEIdentityV2(newPassword, salt);
         passwordMessage.textContent = t('settings.password_saved');
         passwordMessage.style.color = 'var(--success, #10b981)';
         currentPasswordInput2.value = '';
