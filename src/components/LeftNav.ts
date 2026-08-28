@@ -78,9 +78,10 @@ export class LeftNav {
         { id: 'home', label: t('nav.home'), icon: 'home' },
         { id: 'explore', label: t('nav.explore'), icon: 'explore' },
         { id: 'arcade', label: t('nav.arcade'), icon: 'arcade' },
-        { id: 'bookmarks', label: t('nav.bookmarks'), icon: 'bookmark' },
         // TODO: メッセージ機能を一時的に非表示中。戻すときは次行のコメントを外す
         // { id: 'messages', label: t('nav.messages'), icon: 'messages' },
+        { id: 'bookmarks', label: t('nav.bookmarks'), icon: 'bookmark' },
+        { id: 'notifications', label: t('nav.notifications'), icon: 'notifications' },
       ] as const;
 
       items.forEach((item) => {
@@ -121,6 +122,28 @@ export class LeftNav {
         //     navItem.appendChild(badge);
         //   }
         // }
+
+        // Unread badge for notifications
+        if (item.id === 'notifications') {
+          const count = this.props.unreadCount || 0;
+          if (count > 0) {
+            const badge = document.createElement('span');
+            badge.className = 'nav-dm-badge';
+            badge.style.cssText = `
+              margin-left: auto;
+              background: var(--accent);
+              color: #000;
+              font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              font-size: 0.75rem;
+              padding: 2px 8px;
+              border-radius: 9999px;
+              min-width: 20px;
+              text-align: center;
+            `;
+            badge.textContent = count >= 99 ? '99+' : String(count);
+            navItem.appendChild(badge);
+          }
+        }
 
         navItems.appendChild(navItem);
       });
@@ -203,7 +226,6 @@ export class LeftNav {
 
       const menuItems = [
         { id: 'profile', label: t('nav.profile'), icon: 'profile' },
-        { id: 'notifications', label: t('nav.notifications'), icon: 'notifications' },
         { id: 'settings', label: t('nav.settings'), icon: 'settings' },
       ];
 
@@ -503,22 +525,11 @@ export class LeftNav {
   public setUnreadCount(count: number): void {
     this.props.unreadCount = count;
 
-    // Update notifications nav item badge (notifications lives in the user popup menu)
-    const notifItem = this.element.querySelector(
-      '.nav-user-popup-item[data-nav-id="notifications"]',
-    ) as HTMLElement | null;
-    if (!notifItem) {
-      // Fallback: also support notifications rendered as a top-level nav item
-      const fallback = this.element.querySelector('.nav-item[data-nav-id="notifications"]') as HTMLElement | null;
-      if (!fallback) return;
-      this.applyUnreadBadge(fallback, count);
-      return;
-    }
-    this.applyUnreadBadge(notifItem, count);
-  }
+    // Update notifications nav item badge
+    const notifItem = this.element.querySelector('.nav-item[data-nav-id="notifications"]') as HTMLElement | null;
+    if (!notifItem) return;
 
-  private applyUnreadBadge(item: HTMLElement, count: number): void {
-    const existingBadge = item.querySelector('.nav-dm-badge') as HTMLElement | null;
+    const existingBadge = notifItem.querySelector('.nav-dm-badge') as HTMLElement | null;
     if (count > 0) {
       if (existingBadge) {
         existingBadge.textContent = count >= 99 ? '99+' : formatCount(count);
@@ -537,7 +548,7 @@ export class LeftNav {
           text-align: center;
         `;
         badge.textContent = count >= 99 ? '99+' : formatCount(count);
-        item.appendChild(badge);
+        notifItem.appendChild(badge);
       }
     } else if (existingBadge) {
       existingBadge.textContent = '';
@@ -639,9 +650,10 @@ export function updateLeftNavUser(
         { id: 'home', label: t('nav.home'), icon: 'home' },
         { id: 'explore', label: t('nav.explore'), icon: 'explore' },
         { id: 'arcade', label: t('nav.arcade'), icon: 'arcade' },
-        { id: 'bookmarks', label: t('nav.bookmarks'), icon: 'bookmark' },
         // TODO: メッセージ機能を一時的に非表示中。戻すときは次行のコメントを外す
         // { id: 'messages', label: t('nav.messages'), icon: 'messages' },
+        { id: 'bookmarks', label: t('nav.bookmarks'), icon: 'bookmark' },
+        { id: 'notifications', label: t('nav.notifications'), icon: 'notifications' },
       ] as const;
 
       items.forEach((item) => {
@@ -679,6 +691,28 @@ export function updateLeftNavUser(
         //     navItem.appendChild(badge);
         //   }
         // }
+
+        // Unread badge for notifications
+        if (item.id === 'notifications') {
+          const count = leftNav.props.unreadCount ?? 0;
+          if (count > 0) {
+            const badge = document.createElement('span');
+            badge.className = 'nav-dm-badge';
+            badge.style.cssText = `
+              margin-left: auto;
+              background: var(--accent);
+              color: #000;
+              font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              font-size: 0.75rem;
+              padding: 2px 8px;
+              border-radius: 9999px;
+              min-width: 20px;
+              text-align: center;
+            `;
+            badge.textContent = count >= 99 ? '99+' : String(count);
+            navItem.appendChild(badge);
+          }
+        }
 
         navItem.addEventListener('click', () => {
           leftNav.setActiveItem(item.id);
@@ -857,7 +891,6 @@ export function updateLeftNavUser(
 
     const menuItems = [
       { id: 'profile', label: t('nav.profile'), icon: 'profile' },
-      { id: 'notifications', label: t('nav.notifications'), icon: 'notifications' },
       { id: 'settings', label: t('nav.settings'), icon: 'settings' },
     ];
 
