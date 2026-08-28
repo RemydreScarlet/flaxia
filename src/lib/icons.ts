@@ -1,15 +1,18 @@
 import {
+  AlertTriangle,
   BarChart3,
   Bell,
   Bookmark,
   Copy,
   createElement,
   Eye,
+  Flag,
   Gamepad2,
   Home,
   type IconNode,
   ImagePlus,
   Leaf,
+  Maximize,
   MessageCircle,
   Music2,
   Quote,
@@ -49,7 +52,10 @@ export type IconName =
   | 'notifications'
   | 'messages'
   | 'profile'
-  | 'settings';
+  | 'settings'
+  | 'maximize'
+  | 'flag'
+  | 'warning';
 
 const ICON_NODES: Record<IconName, IconNode> = {
   fresh: Leaf,
@@ -76,6 +82,9 @@ const ICON_NODES: Record<IconName, IconNode> = {
   messages: MessageCircle,
   profile: User,
   settings: Settings,
+  maximize: Maximize,
+  flag: Flag,
+  warning: AlertTriangle,
 };
 
 export function icon(name: IconName, attrs: Record<string, string> = {}): SVGElement {

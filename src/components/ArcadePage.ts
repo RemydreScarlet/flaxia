@@ -1,6 +1,7 @@
 import { ArcadeCaptureClient } from '../lib/capture-client.js';
 import { formatCount } from '../lib/format.js';
 import { t } from '../lib/i18n.js';
+import { attachIcons, type IconName, icon } from '../lib/icons.js';
 import { impressionTracker } from '../lib/impression-tracker.js';
 import { registerModal } from '../lib/modal-state.js';
 import { getReplyStyle } from '../lib/settings.js';
@@ -209,14 +210,21 @@ export class ArcadePage {
     titleGroup.style.cssText = 'display: flex; flex-direction: column;';
 
     const title = document.createElement('h1');
-    title.textContent = t('arcade.title');
     title.style.cssText = `
       margin: 0;
       font-size: 1rem;
       font-weight: 600;
       color: var(--text-primary);
       white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
     `;
+    const titleIcon = icon('arcade', { width: '18', height: '18' });
+    const titleText = document.createElement('span');
+    titleText.textContent = t('arcade.title');
+    title.appendChild(titleIcon);
+    title.appendChild(titleText);
 
     titleGroup.appendChild(title);
     header.appendChild(titleGroup);
@@ -394,11 +402,17 @@ export class ArcadePage {
       color: var(--text-muted);
       display: none;
     `;
-    emptyState.innerHTML = `
-      <div style="font-size: 4rem; margin-bottom: 1rem;">🎮</div>
-      <div style="font-size: 1.25rem; margin-bottom: 0.5rem;">${t('arcade.no_games_title')}</div>
-      <div style="font-size: 0.875rem;">${t('arcade.no_games_subtitle')}</div>
-    `;
+    const emptyIcon = icon('game', { width: '64', height: '64' });
+    emptyIcon.style.cssText = 'margin-bottom: 1rem; opacity: 0.6;';
+    const emptyTitle = document.createElement('div');
+    emptyTitle.style.cssText = 'font-size: 1.25rem; margin-bottom: 0.5rem;';
+    emptyTitle.textContent = t('arcade.no_games_title');
+    const emptySub = document.createElement('div');
+    emptySub.style.cssText = 'font-size: 0.875rem;';
+    emptySub.textContent = t('arcade.no_games_subtitle');
+    emptyState.appendChild(emptyIcon);
+    emptyState.appendChild(emptyTitle);
+    emptyState.appendChild(emptySub);
     gameContainer.appendChild(emptyState);
 
     container.appendChild(header);
@@ -843,7 +857,7 @@ export class ArcadePage {
 
     // Fresh button
     const freshBtn = this.createActionButton(
-      '🍃',
+      'fresh',
       formatCount(game.freshCount || 0),
       () => this.handleFresh(),
       game.isFreshed || false,
@@ -852,20 +866,22 @@ export class ArcadePage {
     freshBtn.dataset.tutorial = 'fresh';
 
     // Fullscreen button
-    const fullscreenBtn = this.createActionButton('⛶', t('arcade.fullscreen'), () => this.handleFullscreen());
+    const fullscreenBtn = this.createActionButton('maximize', t('arcade.fullscreen'), () => this.handleFullscreen());
     fullscreenBtn.dataset.tutorial = 'fullscreen';
 
     // Share button
-    const shareBtn = this.createActionButton('🔗', '', () => this.handleShare());
+    const shareBtn = this.createActionButton('share', '', () => this.handleShare());
     shareBtn.dataset.tutorial = 'share';
 
     // Comments button
-    const commentsBtn = this.createActionButton('💬', formatCount(game.replyCount || 0), () => this.handleComments());
+    const commentsBtn = this.createActionButton('messages', formatCount(game.replyCount || 0), () =>
+      this.handleComments(),
+    );
     commentsBtn.dataset.tutorial = 'comments';
 
     // Bookmark (flag to save) button
     const bookmarkBtn = this.createActionButton(
-      '🔖',
+      'bookmark',
       formatCount(game.bookmarkCount || 0),
       () => this.handleBookmark(),
       game.isBookmarked || false,
@@ -873,7 +889,7 @@ export class ArcadePage {
     bookmarkBtn.title = t('arcade.bookmark');
 
     // Report (flag) button
-    const reportBtn = this.createActionButton('🚩', '', () => this.handleReport());
+    const reportBtn = this.createActionButton('flag', '', () => this.handleReport());
     reportBtn.title = t('arcade.report');
 
     container.appendChild(freshBtn);
@@ -1040,9 +1056,9 @@ export class ArcadePage {
     headerTitle.style.cssText = 'font-weight: 600; font-size: 0.95rem; color: var(--text-primary);';
     headerTitle.textContent = `${t('thread_view.title')} (${formatCount(game.replyCount || 0)})`;
     const closeBtn = document.createElement('button');
-    closeBtn.textContent = '✕';
     closeBtn.style.cssText =
-      'background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.1rem; padding: 0.25rem;';
+      'background: none; border: none; color: var(--text-muted); cursor: pointer; display: inline-flex; align-items: center; padding: 0.25rem;';
+    closeBtn.appendChild(icon('close', { width: '18', height: '18' }));
     closeBtn.addEventListener('click', () => this.closeCommentPanel());
     header.appendChild(headerTitle);
     header.appendChild(closeBtn);
@@ -1480,9 +1496,10 @@ export class ArcadePage {
           background: none;
           border: none;
           color: var(--text-muted);
-          font-size: 20px;
           cursor: pointer;
-        ">✕</button>
+          display: inline-flex;
+          align-items: center;
+        "><span data-icon="close" style="display: inline-flex;"></span></button>
       </div>
       <p style="margin: 0 0 16px 0; color: var(--text-muted); font-size: 14px;">${t('post.report_question')}</p>
       <div class="categories" style="margin-bottom: 24px;">
@@ -1552,6 +1569,7 @@ export class ArcadePage {
     `;
 
     overlay.appendChild(dialog);
+    attachIcons(dialog);
     document.body.appendChild(overlay);
 
     const submitBtn = dialog.querySelector('.submit-btn') as HTMLButtonElement;
@@ -1684,7 +1702,7 @@ export class ArcadePage {
   }
 
   private createActionButton(
-    icon: string,
+    iconName: IconName,
     label: string,
     onClick: () => void,
     isActive: boolean = false,
@@ -1713,13 +1731,13 @@ export class ArcadePage {
     `;
 
     const iconSpan = document.createElement('span');
-    iconSpan.textContent = icon;
     iconSpan.style.cssText = `
       display: flex;
       align-items: center;
       justify-content: center;
       line-height: 1;
     `;
+    iconSpan.appendChild(icon(iconName, { width: '22', height: '22' }));
 
     const labelSpan = document.createElement('span');
     labelSpan.textContent = label;
@@ -1843,14 +1861,14 @@ export class ArcadePage {
       const wrapper = document.createElement('div');
       wrapper.style.cssText = 'color: white; text-align: center; padding: 2rem;';
 
-      const icon = document.createElement('div');
-      icon.style.cssText = 'font-size: 3rem; margin-bottom: 1rem;';
-      icon.textContent = '⚠️';
+      const warnIconWrap = document.createElement('div');
+      warnIconWrap.style.cssText = 'margin-bottom: 1rem; color: var(--text-muted);';
+      warnIconWrap.appendChild(icon('warning', { width: '48', height: '48' }));
 
       const message = document.createElement('div');
       message.textContent = t('arcade.load_failed');
 
-      wrapper.appendChild(icon);
+      wrapper.appendChild(warnIconWrap);
       wrapper.appendChild(message);
       container.appendChild(wrapper);
     }
@@ -2387,20 +2405,21 @@ export class ArcadePage {
       `;
 
       const closeBtn = document.createElement('button');
-      closeBtn.textContent = '✕';
       closeBtn.style.cssText = `
         position: absolute;
         top: 0.75rem;
         right: 0.75rem;
         background: none;
         border: none;
-        font-size: 1.1rem;
         cursor: pointer;
         color: var(--text-muted, #888);
         padding: 0.25rem;
         line-height: 1;
         border-radius: 4px;
+        display: inline-flex;
+        align-items: center;
       `;
+      closeBtn.appendChild(icon('close', { width: '18', height: '18' }));
       closeBtn.addEventListener('click', closeTutorial);
       c.appendChild(closeBtn);
 
@@ -2455,16 +2474,16 @@ export class ArcadePage {
         ctx.fillStyle = '#fff';
         ctx.font = 'bold 14px sans-serif';
         ctx.textAlign = 'left';
-        ctx.fillText(`🍃 ${score}`, 10, 22);
+        ctx.fillText(`${score}`, 10, 22);
 
         ctx.textAlign = 'right';
-        ctx.fillText(`⏱ ${timeLeft}s`, w - 10, 22);
+        ctx.fillText(`${timeLeft}s`, w - 10, 22);
 
         if (gameOver) {
           ctx.textAlign = 'center';
           ctx.fillStyle = '#22c55e';
           ctx.font = 'bold 20px sans-serif';
-          ctx.fillText(`✨ Score: ${score}!`, w / 2, h / 2 - 10);
+          ctx.fillText(`Score: ${score}!`, w / 2, h / 2 - 10);
           ctx.fillStyle = '#aaa';
           ctx.font = '13px sans-serif';
           ctx.fillText(t('arcade.tutorial_demo_play_again'), w / 2, h / 2 + 20);
