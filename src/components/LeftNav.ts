@@ -1,5 +1,6 @@
 import { formatCount } from '../lib/format.js';
 import { t } from '../lib/i18n.js';
+import { type IconName, icon } from '../lib/icons.js';
 import { isModalOpen } from '../lib/modal-state';
 
 export interface LeftNavProps {
@@ -74,12 +75,12 @@ export class LeftNav {
     if (this.props.currentUser) {
       // Full navigation for logged-in users
       const items = [
-        { id: 'home', label: t('nav.home'), icon: '🏠' },
-        { id: 'explore', label: t('nav.explore'), icon: '🔍' },
-        { id: 'arcade', label: t('nav.arcade'), icon: '🕹️' },
+        { id: 'home', label: t('nav.home'), icon: 'home' },
+        { id: 'explore', label: t('nav.explore'), icon: 'explore' },
+        { id: 'arcade', label: t('nav.arcade'), icon: 'arcade' },
         // TODO: メッセージ機能を一時的に非表示中。戻すときは次行のコメントを外す
-        // { id: 'messages', label: t('nav.messages'), icon: '💬' },
-        { id: 'notifications', label: t('nav.notifications'), icon: '🔔' },
+        // { id: 'messages', label: t('nav.messages'), icon: 'messages' },
+        { id: 'notifications', label: t('nav.notifications'), icon: 'notifications' },
       ] as const;
 
       items.forEach((item) => {
@@ -89,7 +90,8 @@ export class LeftNav {
 
         const iconSpan = document.createElement('span');
         iconSpan.style.marginRight = '0.75rem';
-        iconSpan.textContent = item.icon;
+        iconSpan.className = 'nav-item-icon';
+        iconSpan.appendChild(icon(item.icon as IconName, { width: '20', height: '20' }));
 
         const labelSpan = document.createElement('span');
         labelSpan.textContent = item.label;
@@ -147,9 +149,9 @@ export class LeftNav {
     } else {
       // Simplified navigation for guests
       const items = [
-        { id: 'home', label: t('nav.home'), icon: '🏠' },
-        { id: 'explore', label: t('nav.explore'), icon: '🔍' },
-        { id: 'arcade', label: t('nav.arcade'), icon: '🕹️' },
+        { id: 'home', label: t('nav.home'), icon: 'home' },
+        { id: 'explore', label: t('nav.explore'), icon: 'explore' },
+        { id: 'arcade', label: t('nav.arcade'), icon: 'arcade' },
       ];
 
       items.forEach((item) => {
@@ -159,7 +161,8 @@ export class LeftNav {
 
         const iconSpan = document.createElement('span');
         iconSpan.style.marginRight = '0.75rem';
-        iconSpan.textContent = item.icon;
+        iconSpan.className = 'nav-item-icon';
+        iconSpan.appendChild(icon(item.icon as IconName, { width: '20', height: '20' }));
 
         const labelSpan = document.createElement('span');
         labelSpan.textContent = item.label;
@@ -221,16 +224,22 @@ export class LeftNav {
       popup.className = 'nav-user-popup';
 
       const menuItems = [
-        { id: 'profile', label: t('nav.profile'), icon: '👤' },
-        { id: 'bookmarks', label: t('nav.bookmarks'), icon: '🔖' },
-        { id: 'settings', label: t('nav.settings'), icon: '⚙️' },
+        { id: 'profile', label: t('nav.profile'), icon: 'profile' },
+        { id: 'bookmarks', label: t('nav.bookmarks'), icon: 'bookmark' },
+        { id: 'settings', label: t('nav.settings'), icon: 'settings' },
       ];
 
       menuItems.forEach((item) => {
         const popupItem = document.createElement('button');
         popupItem.className = 'nav-user-popup-item';
         popupItem.setAttribute('data-nav-id', item.id);
-        popupItem.innerHTML = `<span>${item.icon}</span><span>${item.label}</span>`;
+        const iconWrap = document.createElement('span');
+        iconWrap.className = 'nav-popup-icon';
+        iconWrap.appendChild(icon(item.icon as IconName, { width: '18', height: '18' }));
+        const labelWrap = document.createElement('span');
+        labelWrap.textContent = item.label;
+        popupItem.appendChild(iconWrap);
+        popupItem.appendChild(labelWrap);
 
         popupItem.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -638,19 +647,26 @@ export function updateLeftNavUser(
     if (currentUser) {
       // Full navigation for logged-in users
       const items = [
-        { id: 'home', label: t('nav.home'), icon: '🏠' },
-        { id: 'explore', label: t('nav.explore'), icon: '🔍' },
-        { id: 'arcade', label: t('nav.arcade'), icon: '🕹️' },
+        { id: 'home', label: t('nav.home'), icon: 'home' },
+        { id: 'explore', label: t('nav.explore'), icon: 'explore' },
+        { id: 'arcade', label: t('nav.arcade'), icon: 'arcade' },
         // TODO: メッセージ機能を一時的に非表示中。戻すときは次行のコメントを外す
-        // { id: 'messages', label: t('nav.messages'), icon: '💬' },
-        { id: 'notifications', label: t('nav.notifications'), icon: '🔔' },
+        // { id: 'messages', label: t('nav.messages'), icon: 'messages' },
+        { id: 'notifications', label: t('nav.notifications'), icon: 'notifications' },
       ] as const;
 
       items.forEach((item) => {
         const navItem = document.createElement('button');
         navItem.className = `nav-item ${leftNav.getActiveItem() === item.id ? 'nav-item--active' : ''}`;
         navItem.setAttribute('data-nav-id', item.id);
-        navItem.innerHTML = `<span style="margin-right: 0.75rem;">${item.icon}</span><span>${item.label}</span>`;
+        const iconSpan = document.createElement('span');
+        iconSpan.style.marginRight = '0.75rem';
+        iconSpan.className = 'nav-item-icon';
+        iconSpan.appendChild(icon(item.icon as IconName, { width: '20', height: '20' }));
+        const labelSpan = document.createElement('span');
+        labelSpan.textContent = item.label;
+        navItem.appendChild(iconSpan);
+        navItem.appendChild(labelSpan);
 
         // Combined unread badge for messages (DM + groups)
         // TODO: メッセージ機能を一時的に非表示中。戻すときは次のブロックのコメントを外す
@@ -706,16 +722,23 @@ export function updateLeftNavUser(
     } else {
       // Simplified navigation for guests
       const items = [
-        { id: 'home', label: t('nav.home'), icon: '🏠' },
-        { id: 'explore', label: t('nav.explore'), icon: '🔍' },
-        { id: 'arcade', label: t('nav.arcade'), icon: '🕹️' },
+        { id: 'home', label: t('nav.home'), icon: 'home' },
+        { id: 'explore', label: t('nav.explore'), icon: 'explore' },
+        { id: 'arcade', label: t('nav.arcade'), icon: 'arcade' },
       ];
 
       items.forEach((item) => {
         const navItem = document.createElement('button');
         navItem.className = `nav-item ${leftNav.getActiveItem() === item.id ? 'nav-item--active' : ''}`;
         navItem.setAttribute('data-nav-id', item.id);
-        navItem.innerHTML = `<span style="margin-right: 0.75rem;">${item.icon}</span><span>${item.label}</span>`;
+        const iconSpan = document.createElement('span');
+        iconSpan.style.marginRight = '0.75rem';
+        iconSpan.className = 'nav-item-icon';
+        iconSpan.appendChild(icon(item.icon as IconName, { width: '20', height: '20' }));
+        const labelSpan = document.createElement('span');
+        labelSpan.textContent = item.label;
+        navItem.appendChild(iconSpan);
+        navItem.appendChild(labelSpan);
         navItem.addEventListener('click', () => {
           leftNav.setActiveItem(item.id);
           leftNav.props.onNavigate?.(item.id);
@@ -866,16 +889,22 @@ export function updateLeftNavUser(
     popup.className = 'nav-user-popup';
 
     const menuItems = [
-      { id: 'profile', label: t('nav.profile'), icon: '👤' },
-      { id: 'bookmarks', label: t('nav.bookmarks'), icon: '🔖' },
-      { id: 'settings', label: t('nav.settings'), icon: '⚙️' },
+      { id: 'profile', label: t('nav.profile'), icon: 'profile' },
+      { id: 'bookmarks', label: t('nav.bookmarks'), icon: 'bookmark' },
+      { id: 'settings', label: t('nav.settings'), icon: 'settings' },
     ];
 
     menuItems.forEach((item) => {
       const popupItem = document.createElement('button');
       popupItem.className = 'nav-user-popup-item';
       popupItem.setAttribute('data-nav-id', item.id);
-      popupItem.innerHTML = `<span>${item.icon}</span><span>${item.label}</span>`;
+      const iconWrap = document.createElement('span');
+      iconWrap.className = 'nav-popup-icon';
+      iconWrap.appendChild(icon(item.icon as IconName, { width: '18', height: '18' }));
+      const labelWrap = document.createElement('span');
+      labelWrap.textContent = item.label;
+      popupItem.appendChild(iconWrap);
+      popupItem.appendChild(labelWrap);
 
       popupItem.addEventListener('click', (e) => {
         e.stopPropagation();

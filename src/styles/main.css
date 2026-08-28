@@ -673,6 +673,19 @@ h1 {
   font-weight: 600;
 }
 
+.nav-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-user-popup-item .nav-popup-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
 .nav-post-button {
   width: 100%;
   padding: 0.75rem 1rem;
