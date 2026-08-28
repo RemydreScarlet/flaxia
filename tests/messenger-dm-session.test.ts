@@ -1,6 +1,14 @@
 import assert from 'node:assert';
 import { describe, it } from 'node:test';
 import {
+  __setDmPlaintextStoreForTests,
+  clearDmPlaintext,
+  getDmPlaintext,
+  MemoryDmPlaintextStore,
+  putDmPlaintext,
+} from '../src/lib/messenger-dm-cache.ts';
+import {
+  __clearInMemoryPlaintextCacheForTests,
   __clearSessionsForTests,
   __setSessionForTests,
   buildInitiatorRatchet,
@@ -185,5 +193,59 @@ describe('DM session recovery (candidate sessions)', () => {
       ),
       /OPK_UNRECOVERABLE/,
     );
+  });
+});
+
+describe('Durable DM plaintext cache (reload recovery)', () => {
+  it('persists decrypted peer plaintext and survives an in-memory cache clear', async () => {
+    const A = fullIdentity();
+    const B = fullIdentity();
+    __clearSessionsForTests();
+    __setDmPlaintextStoreForTests(new MemoryDmPlaintextStore());
+    __setIdentityV2ForTests(B, await testKek());
+
+    const b = peerBundle(B);
+    const aInit = buildInitiatorRatchet(A, b.bundle);
+    const env = aInit.ratchet.encrypt('peer secret');
+    const bRatchet = buildResponderRatchet(B, b.opkPriv, aInit.bootstrap);
+    __setSessionForTests('dm-cache', 'alice', bRatchet);
+
+    // First decrypt succeeds and is cached durably.
+    const pt1 = await decryptDmMessageV2(
+      'dm-cache',
+      'alice',
+      JSON.stringify({ ct: env.ciphertext, x3dh: aInit.bootstrap }),
+      env.header,
+    );
+    assert.equal(pt1, 'peer secret');
+
+    // Simulate a reload: the in-memory cache is gone but the ratchet has already
+    // consumed this message, so re-derivation would fail without the store.
+    __clearInMemoryPlaintextCacheForTests();
+    const pt2 = await decryptDmMessageV2(
+      'dm-cache',
+      'alice',
+      JSON.stringify({ ct: env.ciphertext, x3dh: aInit.bootstrap }),
+      env.header,
+    );
+    assert.equal(pt2, 'peer secret');
+  });
+
+  it('store round-trips and clears only the requested conversation', async () => {
+    __setDmPlaintextStoreForTests(new MemoryDmPlaintextStore());
+    await putDmPlaintext('dm1:a:pub:0', 'hi');
+    await putDmPlaintext('dm1:a:pub:1', 'yo');
+    await putDmPlaintext('dm2:b:pub:0', 'nope');
+
+    assert.equal(await getDmPlaintext('dm1:a:pub:0'), 'hi');
+    assert.equal(await getDmPlaintext('dm1:a:pub:1'), 'yo');
+    assert.equal(await getDmPlaintext('dm2:b:pub:0'), 'nope');
+    assert.equal(await getDmPlaintext('dm1:a:pub:9'), null);
+
+    await clearDmPlaintext('dm1');
+    assert.equal(await getDmPlaintext('dm1:a:pub:0'), null);
+    assert.equal(await getDmPlaintext('dm1:a:pub:1'), null);
+    // Other conversations untouched.
+    assert.equal(await getDmPlaintext('dm2:b:pub:0'), 'nope');
   });
 });

@@ -5,6 +5,7 @@
 // Private material never leaves the client; the server only stores ciphertext.
 
 import { x25519 } from '@noble/curves/ed25519.js';
+import { clearDmPlaintext, getDmPlaintext, putDmPlaintext } from './messenger-dm-cache.ts';
 import { consumeOwnOpkPriv, getE2EEK, getIdentityV2, type IdentityV2 } from './messenger-identity-v2.ts';
 import { checkRatchetResetRequest, clearRatchetResetRequest, fetchPreKeyBundle } from './messenger-prekeys.ts';
 import { DoubleRatchet, type RatchetHeader } from './messenger-ratchet.ts';
@@ -320,6 +321,14 @@ async function decryptDmMessageV2Inner(
   if (cacheKey) {
     const cached = plaintextCache.get(cacheKey);
     if (cached !== undefined) return cached;
+    // After a reload / re-open the in-memory cache is gone and the ratchet has
+    // advanced past this message, so re-derivation would fail. Fall back to the
+    // durable KEK-encrypted plaintext cache before touching the ratchet.
+    const persisted = await getDmPlaintext(cacheKey);
+    if (persisted !== null) {
+      plaintextCache.set(cacheKey, persisted);
+      return persisted;
+    }
   }
 
   const tryDecrypt = async (session: DmSession): Promise<string> => {
@@ -338,6 +347,9 @@ async function decryptDmMessageV2Inner(
       if (first.value) plaintextCache.delete(first.value);
     }
     plaintextCache.set(cacheKey, plaintext);
+    // Durably persist so the plaintext survives a reload even though the ratchet
+    // can no longer recompute the consumed message key.
+    void putDmPlaintext(cacheKey, plaintext);
   };
 
   let list = sessions.get(key);
@@ -409,6 +421,7 @@ export function clearDmSessions(): void {
   for (const key of sessions.keys()) {
     const convId = key.split(':')[0];
     void clearDmRatchetOnServer(convId);
+    void clearDmPlaintext(convId);
   }
   sessions.clear();
 }
@@ -419,6 +432,7 @@ export function clearDmSessions(): void {
 export function resetDmRatchet(dmId: string, peerId: string): void {
   sessions.delete(sessionKey(dmId, peerId));
   void clearDmRatchetOnServer(dmId);
+  void clearDmPlaintext(dmId);
 }
 
 // Unit-test hooks: inject/clear candidate sessions without the unlock flow.
@@ -428,5 +442,12 @@ export function __setSessionForTests(dmId: string, peerId: string, ratchet: Doub
 
 export function __clearSessionsForTests(): void {
   sessions.clear();
+  plaintextCache.clear();
+}
+
+// Test hook: drop only the in-memory plaintext cache (simulating a reload while
+// the durable store is left intact) so the persisted-cache fallback can be
+// exercised.
+export function __clearInMemoryPlaintextCacheForTests(): void {
   plaintextCache.clear();
 }
