@@ -13,6 +13,8 @@ export interface ApiMessage {
   content_iv?: string | null;
   enc_version?: number | null;
   key_version?: number | null;
+  plaintext_enc?: string | null;
+  plaintext_iv?: string | null;
   ratchet_pub?: string | null;
   ratchet_pn?: number | null;
   ratchet_n?: number | null;
@@ -52,6 +54,8 @@ export function mapMessage(raw: ApiMessage, scope: MessageScope, contextId: stri
     content_iv: raw.content_iv ?? null,
     enc_version: raw.enc_version ?? null,
     key_version: raw.key_version ?? null,
+    plaintext_enc: raw.plaintext_enc ?? null,
+    plaintext_iv: raw.plaintext_iv ?? null,
     ratchet_pub: raw.ratchet_pub ?? null,
     ratchet_pn: raw.ratchet_pn ?? null,
     ratchet_n: raw.ratchet_n ?? null,

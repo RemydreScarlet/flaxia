@@ -10432,14 +10432,16 @@ app.get('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
                m.gif_key, m.payload_key, m.swf_key, m.edited_at,
                m.content_iv, m.enc_version, m.key_version,
                m.ratchet_pub, m.ratchet_pn, m.ratchet_n,
+               p.enc as plaintext_enc, p.iv as plaintext_iv,
                u.username as sender_username, u.display_name as sender_display_name
         FROM dm_messages m
         JOIN users u ON m.sender_id = u.id
+        LEFT JOIN dm_message_plaintext p ON p.message_id = m.id AND p.user_id = ?
         WHERE m.conversation_id = ? AND m.created_at < ?
         ORDER BY m.created_at DESC
         LIMIT ?
       `)
-        .bind(convId, cursor, limit)
+        .bind(userId, convId, cursor, limit)
         .all();
     } else {
       messages = await c.env.DB.prepare(`
@@ -10447,14 +10449,16 @@ app.get('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
                m.gif_key, m.payload_key, m.swf_key, m.edited_at,
                m.content_iv, m.enc_version, m.key_version,
                m.ratchet_pub, m.ratchet_pn, m.ratchet_n,
+               p.enc as plaintext_enc, p.iv as plaintext_iv,
                u.username as sender_username, u.display_name as sender_display_name
         FROM dm_messages m
         JOIN users u ON m.sender_id = u.id
+        LEFT JOIN dm_message_plaintext p ON p.message_id = m.id AND p.user_id = ?
         WHERE m.conversation_id = ?
         ORDER BY m.created_at DESC
         LIMIT ?
       `)
-        .bind(convId, limit)
+        .bind(userId, convId, limit)
         .all();
     }
 
@@ -10476,6 +10480,8 @@ app.get('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
         ratchet_pub: row.ratchet_pub || null,
         ratchet_pn: row.ratchet_pn ?? null,
         ratchet_n: row.ratchet_n ?? null,
+        plaintext_enc: row.plaintext_enc || null,
+        plaintext_iv: row.plaintext_iv || null,
         created_at: row.created_at,
         edited_at: row.edited_at || null,
         is_mine: row.sender_id === userId,
@@ -10511,6 +10517,8 @@ app.post('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
       ratchetPub,
       ratchetPn,
       ratchetN,
+      plaintextEnc,
+      plaintextIv,
     } = (await c.req.json()) as {
       content?: string;
       gifKey?: string;
@@ -10523,6 +10531,8 @@ app.post('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
       ratchetPub?: string;
       ratchetPn?: number;
       ratchetN?: number;
+      plaintextEnc?: string;
+      plaintextIv?: string;
     };
 
     const trimmed = content?.trim() || '';
@@ -10572,6 +10582,21 @@ app.post('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
         typeof ratchetN === 'number' ? ratchetN : null,
       )
       .run();
+
+    // Persist the sender's own KEK-wrapped plaintext so they can read this
+    // message on another device (where no ratchet session exists). Server never
+    // sees the raw plaintext; plaintext_enc/iv are AES-GCM wrapped with the
+    // user's password-derived KEK.
+    if (isEncrypted && plaintextEnc && plaintextIv) {
+      const ptNow = new Date().toISOString();
+      await c.env.DB.prepare(
+        `INSERT INTO dm_message_plaintext (message_id, user_id, enc, iv, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(message_id, user_id) DO UPDATE SET enc = excluded.enc, iv = excluded.iv, updated_at = excluded.updated_at`,
+      )
+        .bind(msgId, senderId, plaintextEnc, plaintextIv, ptNow)
+        .run();
+    }
 
     // Update conversation last_message and updated_at (never surface E2EE plaintext)
     const displayContent = isEncrypted
@@ -10643,6 +10668,50 @@ app.post('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
     const err = error as { message?: string };
     console.error('DM send message error:', error);
     return c.json({ error: 'Failed to send message', details: err.message || 'Unknown error' }, 500);
+  }
+});
+
+// PUT /api/dm/conversations/:id/messages/:msgId/plaintext - store the current
+// user's own KEK-wrapped plaintext for a DM message. Called after a participant
+// decrypts a message (e.g. on a device with no ratchet session) so they can read
+// it again on any device. The server only ever stores the KEK-wrapped blob.
+app.put('/api/dm/conversations/:id/messages/:msgId/plaintext', requireAuth, async (c) => {
+  try {
+    const userId = c.get('user')?.id || '';
+    const convId = c.req.param('id');
+    const msgId = c.req.param('msgId');
+    const { plaintextEnc, plaintextIv } = (await c.req.json()) as {
+      plaintextEnc?: string;
+      plaintextIv?: string;
+    };
+    if (!userId || !plaintextEnc || !plaintextIv) {
+      return c.json({ error: 'Missing plaintext fields' }, 400);
+    }
+
+    // Verify user is a participant of the conversation the message belongs to.
+    const msg = (await c.env.DB.prepare(
+      `SELECT m.id FROM dm_messages m
+       JOIN dm_conversations dc ON dc.id = m.conversation_id
+       WHERE m.id = ? AND m.conversation_id = ? AND (dc.user_a_id = ? OR dc.user_b_id = ?)`,
+    )
+      .bind(msgId, convId, userId, userId)
+      .first()) as { id: string } | null;
+    if (!msg) return c.json({ error: 'Message not found' }, 404);
+
+    const now = new Date().toISOString();
+    await c.env.DB.prepare(
+      `INSERT INTO dm_message_plaintext (message_id, user_id, enc, iv, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(message_id, user_id) DO UPDATE SET enc = excluded.enc, iv = excluded.iv, updated_at = excluded.updated_at`,
+    )
+      .bind(msgId, userId, plaintextEnc, plaintextIv, now)
+      .run();
+
+    return c.json({ success: true });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('DM plaintext put error:', error);
+    return c.json({ error: 'Failed to save plaintext', details: err.message || 'Unknown error' }, 500);
   }
 });
 
@@ -10825,15 +10894,18 @@ app.put('/api/dm/conversations/:id/messages/:msgId', requireAuth, async (c) => {
     const userId = c.get('user')?.id || '';
     const convId = c.req.param('id');
     const msgId = c.req.param('msgId');
-    const { content, contentIv, encVersion, keyVersion, ratchetPub, ratchetPn, ratchetN } = (await c.req.json()) as {
-      content?: string;
-      contentIv?: string;
-      encVersion?: number;
-      keyVersion?: number;
-      ratchetPub?: string;
-      ratchetPn?: number;
-      ratchetN?: number;
-    };
+    const { content, contentIv, encVersion, keyVersion, ratchetPub, ratchetPn, ratchetN, plaintextEnc, plaintextIv } =
+      (await c.req.json()) as {
+        content?: string;
+        contentIv?: string;
+        encVersion?: number;
+        keyVersion?: number;
+        ratchetPub?: string;
+        ratchetPn?: number;
+        ratchetN?: number;
+        plaintextEnc?: string;
+        plaintextIv?: string;
+      };
 
     if (!content || typeof content !== 'string' || content.trim().length === 0) {
       return c.json({ error: 'Content is required' }, 400);
@@ -10880,6 +10952,18 @@ app.put('/api/dm/conversations/:id/messages/:msgId', requireAuth, async (c) => {
         msgId,
       )
       .run();
+
+    // Refresh the sender's KEK-wrapped plaintext backup if a new one was supplied.
+    if (isEncrypted && plaintextEnc && plaintextIv) {
+      const ptNow = new Date().toISOString();
+      await c.env.DB.prepare(
+        `INSERT INTO dm_message_plaintext (message_id, user_id, enc, iv, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(message_id, user_id) DO UPDATE SET enc = excluded.enc, iv = excluded.iv, updated_at = excluded.updated_at`,
+      )
+        .bind(msgId, userId, plaintextEnc, plaintextIv, ptNow)
+        .run();
+    }
 
     // Update conversation last_message if this was the last message (never leak plaintext)
     const displayContent = isEncrypted ? '[Encrypted message]' : trimmed;
@@ -10965,6 +11049,9 @@ app.delete('/api/dm/conversations/:id/messages/:msgId', requireAuth, async (c) =
 
     // Delete the message
     await c.env.DB.prepare('DELETE FROM dm_messages WHERE id = ?').bind(msgId).run();
+
+    // Remove the per-participant KEK-wrapped plaintext backups for this message.
+    await c.env.DB.prepare('DELETE FROM dm_message_plaintext WHERE message_id = ?').bind(msgId).run();
 
     // If deleted message was the conversation's last message, update it
     await c.env.DB.prepare(`

@@ -6,6 +6,8 @@ import {
   getDmPlaintext,
   MemoryDmPlaintextStore,
   putDmPlaintext,
+  unwrapStringWithKek,
+  wrapStringWithKek,
 } from '../src/lib/messenger-dm-cache.ts';
 import {
   __clearInMemoryPlaintextCacheForTests,
@@ -248,4 +250,27 @@ describe('Durable DM plaintext cache (reload recovery)', () => {
     // Other conversations untouched.
     assert.equal(await getDmPlaintext('dm2:b:pub:0'), 'nope');
   });
+
+  it('KEK-wrapped string plaintext round-trips (cross-device backup)', async () => {
+    __setIdentityV2ForTests(await fullIdentityNoKeys(), await testKek());
+    const secret = 'top secret cross-device text';
+    const wrapped = await wrapStringWithKek(secret);
+    assert.notEqual(wrapped.enc, secret);
+    assert.equal(await unwrapStringWithKek(wrapped.enc, wrapped.iv), secret);
+  });
 });
+
+// A minimal identity (keys unused here) so getE2EEK() returns the test KEK for
+// the string wrap/unwrap round-trip above.
+async function fullIdentityNoKeys(): Promise<IdentityV2> {
+  const id = generateIdentityKeyPair();
+  return {
+    identitySignPub: id.signPub,
+    identitySignPriv: Uint8Array.from(atob(id.signPriv), (c) => c.charCodeAt(0)),
+    identityDhPub: id.dhPub,
+    identityDhPriv: Uint8Array.from(atob(id.dhPriv), (c) => c.charCodeAt(0)),
+    spkPub: '',
+    spkPriv: new Uint8Array(0),
+    spkSig: '',
+  };
+}

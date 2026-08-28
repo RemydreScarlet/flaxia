@@ -1,5 +1,6 @@
 import { getStoredSrpSalt } from '../../lib/auth-srp.js';
 import { t } from '../../lib/i18n.js';
+import { unwrapStringWithKek, wrapStringWithKek } from '../../lib/messenger-dm-cache.js';
 import { decryptDmMessageV2, encryptDmMessageV2, resetDmRatchet } from '../../lib/messenger-dm-session.js';
 import {
   ensureE2EEIdentityV2,
@@ -40,6 +41,9 @@ export class DmTransport implements MessageTransport {
   private peerUserId: string | null = null;
   private keyVersion = 1;
   private unlockPromise: Promise<boolean> | null = null;
+  // Message ids whose KEK-wrapped plaintext we've already pushed to the server,
+  // so a reload on another device can read history without the ratchet.
+  private plaintextUploaded = new Set<string>();
 
   constructor(private readonly conversationId: string) {}
 
@@ -198,6 +202,15 @@ export class DmTransport implements MessageTransport {
           body.ratchetPub = env.header.ratchetPub;
           body.ratchetPn = env.header.pn;
           body.ratchetN = env.header.n;
+          // Persist our own KEK-wrapped plaintext so we can read it on another
+          // device (where no ratchet session exists). Server never sees raw text.
+          try {
+            const wrapped = await wrapStringWithKek(content);
+            body.plaintextEnc = wrapped.enc;
+            body.plaintextIv = wrapped.iv;
+          } catch {
+            /* best-effort; the ratchet still decrypts locally */
+          }
           encryptedMessage = true;
         } catch {
           /* fall back to v1 */
@@ -245,12 +258,23 @@ export class DmTransport implements MessageTransport {
       if (await this.unlockV2()) {
         try {
           const env = await encryptDmMessageV2(this.conversationId, this.peerUserId, content);
+          let plaintextEnc: string | undefined;
+          let plaintextIv: string | undefined;
+          try {
+            const wrapped = await wrapStringWithKek(content);
+            plaintextEnc = wrapped.enc;
+            plaintextIv = wrapped.iv;
+          } catch {
+            /* best-effort */
+          }
           body = {
             content: JSON.stringify({ ct: env.ciphertext, x3dh: env.x3dh ?? undefined }),
             encVersion: 2,
             ratchetPub: env.header.ratchetPub,
             ratchetPn: env.header.pn,
             ratchetN: env.header.n,
+            plaintextEnc,
+            plaintextIv,
           };
         } catch {
           /* fall back to v1 */
@@ -322,6 +346,10 @@ export class DmTransport implements MessageTransport {
         );
         if (plain) return plain;
       }
+      // Cross-device fallback: our own KEK-wrapped plaintext backup.
+      if (msg.plaintext_enc && msg.plaintext_iv) {
+        return await unwrapStringWithKek(msg.plaintext_enc, msg.plaintext_iv);
+      }
     } catch {
       /* fall through to raw content */
     }
@@ -354,9 +382,12 @@ export class DmTransport implements MessageTransport {
             el.classList.remove('msg-row-encrypted');
             el.textContent = plain;
             await this.enrichText(el, plain);
-          } else if (el.isConnected) {
-            this.renderDmDecryptFailed(el);
+            // Persist our KEK-wrapped plaintext so we can read it on another
+            // device (where no ratchet session exists). Idempotent per message.
+            void this.uploadPlaintext(msg, plain);
+            return;
           }
+          if (el.isConnected) this.renderDmDecryptFailed(el);
           return;
         } catch (e) {
           const errMsg = (e as Error | undefined)?.message ?? '';
@@ -370,6 +401,22 @@ export class DmTransport implements MessageTransport {
           if (errMsg.startsWith('No ratchet session')) {
             if (el.isConnected) this.renderDmDecryptPending(el);
             return;
+          }
+          // Cross-device fallback: our own KEK-wrapped plaintext backup survives
+          // a missing/advanced ratchet (new device, cleared local cache). The
+          // server stores only the wrapped blob and cannot read it.
+          if (msg.plaintext_enc && msg.plaintext_iv) {
+            try {
+              const plain = await unwrapStringWithKek(msg.plaintext_enc, msg.plaintext_iv);
+              if (plain && el.isConnected) {
+                el.classList.remove('msg-row-encrypted');
+                el.textContent = plain;
+                await this.enrichText(el, plain);
+                return;
+              }
+            } catch {
+              /* fall through to failed UI */
+            }
           }
           // A failed decrypt must NOT auto-reset the ratchet: that destroys
           // decryptable history and can loop forever. The user re-establishes
@@ -411,6 +458,26 @@ export class DmTransport implements MessageTransport {
       if (await this.unlockV2()) await this.decryptTextInto(el, msg);
     });
     el.appendChild(btn);
+  }
+
+  // Push our own KEK-wrapped plaintext to the server so we can read this message
+  // on another device where no ratchet session exists. Best-effort and debounced
+  // per message id; the row is upserted server-side.
+  private async uploadPlaintext(msg: ChatMessage, plaintext: string): Promise<void> {
+    if (!msg.id || this.plaintextUploaded.has(msg.id)) return;
+    this.plaintextUploaded.add(msg.id);
+    try {
+      const wrapped = await wrapStringWithKek(plaintext);
+      await fetch(`/api/dm/conversations/${this.conversationId}/messages/${msg.id}/plaintext`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ plaintextEnc: wrapped.enc, plaintextIv: wrapped.iv }),
+      });
+    } catch {
+      /* best-effort: local ratchet + IndexedDB cache still cover this device */
+      this.plaintextUploaded.delete(msg.id);
+    }
   }
 
   private renderDmDecryptFailed(el: HTMLElement): void {

@@ -41,7 +41,7 @@ function randomBytes(n: number): Uint8Array {
 
 // KEK-wrap a plaintext string so the stored cache is opaque at rest. The KEK is
 // the same password-derived key used everywhere else in the E2EE stack.
-async function wrapStringWithKek(plain: string): Promise<{ enc: string; iv: string }> {
+export async function wrapStringWithKek(plain: string): Promise<{ enc: string; iv: string }> {
   const kek = getE2EEK();
   if (!kek) throw new Error('E2EE KEK unavailable');
   const iv = randomBytes(12);
@@ -53,7 +53,7 @@ async function wrapStringWithKek(plain: string): Promise<{ enc: string; iv: stri
   return { enc: bufToBase64(ct), iv: bufToBase64(iv) };
 }
 
-async function unwrapStringWithKek(encB64: string, ivB64: string): Promise<string> {
+export async function unwrapStringWithKek(encB64: string, ivB64: string): Promise<string> {
   const kek = getE2EEK();
   if (!kek) throw new Error('E2EE KEK unavailable');
   const pt = await subtle.decrypt(
