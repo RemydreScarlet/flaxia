@@ -778,17 +778,13 @@ h1 {
     font-size: 0.9rem;
   }
 
-  /* In mobile mode the fixed bottom nav (56px tall) overlays the arcade, so
-     force a 56px gap at the bottom of the game container. Absolutely-positioned
-     controls (down arrow, floating actions, game info) then clear the nav. */
+  /* In mobile mode the fixed bottom nav overlays the arcade, so force a gap at
+     the bottom of the game container. Absolutely-positioned controls (down
+     arrow, floating actions, game info) then clear the nav. Uses the shared
+     --bottom-nav-h variable (nav bar height + safe-area) instead of a hard-coded
+     px value. */
   .arcade-game-container {
-    padding-bottom: 56px;
-  }
-
-  /* Lounge / messages chat layout mounts directly into #app (not
-     .main-content), so reserve the nav height here too. */
-  .main-container--chat {
-    height: calc(100dvh - var(--bottom-nav-h));
+    padding-bottom: var(--bottom-nav-h);
   }
 }
 
@@ -7279,7 +7275,7 @@ html {
 @media (max-width: 768px) {
   .main-container--chat {
     height: 100vh;
-    height: 100dvh;
+    height: calc(100dvh - var(--bottom-nav-h));
   }
 
   .channel-list {
