@@ -156,23 +156,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     /**
-     * iOS Safari: the bottom nav is `position: fixed; bottom: 0`, anchored to the
-     * layout viewport, so when the browser's bottom toolbar appears on scroll-up
-     * it covers the bar. Offsetting the bar to the visual-viewport bottom and
-     * promoting it to a layer keeps it pinned and repainted correctly.
+     * iOS Safari & Firefox: the bottom nav is `position: fixed; bottom: 0`, anchored
+     * to the layout viewport, so when the browser's bottom toolbar appears on
+     * scroll-up it covers the bar and its icon images repaint incorrectly (shoot
+     * upward). Offsetting the bar to the visual-viewport bottom and promoting it to
+     * a layer keeps it pinned and repainted correctly.
      *
-     * On Android Chrome, a `transform` on a `position: fixed` element breaks fixed
-     * positioning (the bar scrolls away / floats), so we intentionally skip this
-     * there — the per-item compositing layer already prevents the icon-bleed glitch.
+     * On Android Chrome / WebView (Blink), a `transform` on a `position: fixed`
+     * element breaks fixed positioning (the bar scrolls away / floats), so we skip
+     * it there — the per-item compositing layer already prevents the glitch there.
      */
     const keepBottomNavAtViewportBottom = (nav: HTMLElement): void => {
       const ua = navigator.userAgent;
-      const platform =
-        (navigator as unknown as { userAgentData?: { platform?: string } }).userAgentData?.platform ||
-        navigator.platform ||
-        '';
-      const isIOS = /iPad|iPhone|iPod/.test(ua) || (/Mac/.test(platform) && navigator.maxTouchPoints > 1);
-      if (!isIOS) return;
+      const isAndroidChrome = /Android/.test(ua) && /Chrome|Chromium|CriOS/.test(ua) && !/Edg|OPR|Firefox/.test(ua);
+      if (isAndroidChrome) return;
 
       const vv = window.visualViewport;
       if (!vv) return;
