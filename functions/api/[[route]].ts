@@ -3622,6 +3622,7 @@ app.get('/api/users/:username', async (c) => {
 
     // Check if current user follows this user (if authenticated)
     let is_following = false;
+    let is_blocked = false;
     const token = getSessionToken(c.req.raw);
     const sessionData = token ? await getMeWithSession(c.env, token) : null;
     if (sessionData && sessionData.user.id !== user.id) {
@@ -3629,6 +3630,10 @@ app.get('/api/users/:username', async (c) => {
         .bind(sessionData.user.id, user.id)
         .first();
       is_following = followResult !== null;
+      const blockResult = await c.env.DB.prepare('SELECT 1 FROM blocks WHERE blocker_id = ? AND blocked_id = ?')
+        .bind(sessionData.user.id, user.id)
+        .first();
+      is_blocked = blockResult !== null;
     }
 
     return c.json({
@@ -3638,6 +3643,7 @@ app.get('/api/users/:username', async (c) => {
         following_count,
         posts_count,
         is_following,
+        is_blocked,
       },
     });
   } catch (error: unknown) {

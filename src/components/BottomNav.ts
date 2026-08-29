@@ -19,9 +19,9 @@ export interface BottomNavProps {
 
 /**
  * Mobile-only bottom navigation bar. Rendered as a single global instance and
- * shown only on small screens via CSS. Contains Home / Explore / Arcade / Lounge
- * plus a contextual right-most item: the account avatar (logged in) or a sign-in
- * button (guest).
+ * shown only on small screens via CSS. Contains Home / Explore / Arcade / Messages
+ * / Notifications plus a contextual right-most item: the account avatar (logged in)
+ * or a sign-in button (guest).
  */
 export class BottomNav {
   private element: HTMLElement;
@@ -49,6 +49,7 @@ export class BottomNav {
       { id: 'explore', label: t('nav.explore'), icon: 'search' as IconName },
       { id: 'arcade', label: t('nav.arcade'), icon: 'game' as IconName },
       { id: 'messages', label: t('nav.messages'), icon: 'reply' as IconName },
+      { id: 'notifications', label: t('nav.notifications'), icon: 'notifications' as IconName },
     ];
 
     items.forEach((item) => {
@@ -87,7 +88,7 @@ export class BottomNav {
     }
 
     btn.addEventListener('click', () => {
-      if (id === 'messages' && !this.props.currentUser) {
+      if ((id === 'messages' || id === 'notifications') && !this.props.currentUser) {
         this.props.onSignIn?.();
         return;
       }

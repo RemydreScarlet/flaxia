@@ -174,6 +174,9 @@
   "profile.view_bookmarks": "Bookmarks",
   "profile.likes_empty": "No liked posts yet",
   "profile.bookmarks_empty": "No bookmarked posts yet",
+  "profile.block": "Block",
+  "profile.unblock": "Unblock",
+  "profile.block_confirm": "Block {username}?",
 
   "composer.placeholder": "What's happening?",
   "composer.file_hint": "Optional: Add an image (GIF, PNG, JPG), audio (MP3, WAV, OGG, M4A, WebM), ZIP, or SWF file",

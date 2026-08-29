@@ -119,8 +119,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         case 'profile':
         case 'settings':
         case 'bookmarks':
-        case 'notifications':
           return 'account';
+        case 'notifications':
+          return 'notifications';
         default:
           return '';
       }
@@ -140,6 +141,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else if (item === 'messages') {
         window.history.pushState({}, '', '/messages');
         navigateTo('messages');
+      } else if (item === 'notifications') {
+        window.history.pushState({}, '', '/notifications');
+        navigateTo('notifications');
       } else if (item === 'account') {
         if (!currentUser) {
           window.history.pushState({}, '', '/login');
@@ -149,6 +153,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         window.history.pushState({}, '', `/profile/${currentUser.username}`);
         navigateTo('profile', undefined, currentUser.username);
       }
+    };
+
+    /**
+     * On mobile, the bottom nav is `position: fixed; bottom: 0`, which anchors it
+     * to the *layout* viewport. When the browser's URL/toolbar shows or hides on
+     * scroll, the visual viewport changes and the bar (and its icons) appears to
+     * shift or get covered. Keeping it offset to the visual viewport bottom fixes
+     * the jump so the icons stay put while scrolling.
+     */
+    const keepBottomNavAtViewportBottom = (nav: HTMLElement): void => {
+      const vv = window.visualViewport;
+      if (!vv) return;
+      const update = () => {
+        const offset = window.innerHeight - (vv.offsetTop + vv.height);
+        nav.style.transform = `translateY(${-offset}px)`;
+      };
+      vv.addEventListener('resize', update);
+      vv.addEventListener('scroll', update);
+      update();
     };
 
     /** Create the single global bottom-nav instance once and mount it. */
@@ -168,6 +191,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         },
       });
       document.body.appendChild(bottomNav.getElement());
+      keepBottomNavAtViewportBottom(bottomNav.getElement());
     };
     let currentUser: { username: string; id: string; display_name?: string; avatar_key?: string } | null = null;
     let unreadNotificationCount = 0;
@@ -2102,6 +2126,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               username,
               currentUser,
               sandboxOrigin,
+              onOpenSettings: () => navigateTo('settings'),
             });
           }
 

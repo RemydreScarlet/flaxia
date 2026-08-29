@@ -1,4 +1,5 @@
 import { clearMeCache } from '../lib/auth-cache.js';
+import { createConfirmDialog } from '../lib/confirm-dialog.js';
 import { safeRemoveFromBody } from '../lib/dom-utils.js';
 import { formatCount } from '../lib/format.js';
 import { t } from '../lib/i18n.js';
@@ -16,6 +17,7 @@ interface ProfilePageProps {
   username: string;
   currentUser: CurrentUser | null;
   sandboxOrigin: string;
+  onOpenSettings?: () => void;
 }
 
 interface ProfileUserData {
@@ -30,9 +32,10 @@ interface ProfileUserData {
   followers_count?: number;
   following_count?: number;
   is_following?: boolean;
+  is_blocked?: boolean;
 }
 
-export function createProfilePage({ username, currentUser, sandboxOrigin }: ProfilePageProps) {
+export function createProfilePage({ username, currentUser, sandboxOrigin, onOpenSettings }: ProfilePageProps) {
   // Create main container
   const container = document.createElement('div');
   container.className = 'profile-page';
@@ -115,6 +118,11 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
   usernameElement.className = 'profile-username';
   usernameElement.textContent = `@${username}`;
 
+  // Own-profile action buttons (Edit / Flaxia settings), shown between the
+  // username and the bio. Inserted into this row only for the user's own profile.
+  const ownActionsRow = document.createElement('div');
+  ownActionsRow.className = 'profile-own-actions';
+
   const bio = document.createElement('div');
   bio.className = 'profile-bio';
   bio.textContent = '';
@@ -127,6 +135,7 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
 
   info.appendChild(displayName);
   info.appendChild(usernameElement);
+  info.appendChild(ownActionsRow);
   info.appendChild(bio);
   info.appendChild(joinedDate);
 
@@ -173,10 +182,14 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
 
   let userData: ProfileUserData | null = null;
 
-  // Edit / Logout menu items (only for own profile)
+  // Edit / Settings buttons (own profile) and Logout (kebab menu)
   const editButton = document.createElement('button');
-  editButton.className = 'profile-menu-item';
+  editButton.className = 'profile-button profile-button--secondary';
   editButton.textContent = t('profile.edit');
+
+  const settingsButton = document.createElement('button');
+  settingsButton.className = 'profile-button profile-button--secondary';
+  settingsButton.textContent = t('nav.settings');
 
   const logoutButton = document.createElement('button');
   logoutButton.className = 'profile-menu-item';
@@ -188,10 +201,18 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
   followButton.textContent = t('profile.follow');
   followButton.style.display = own ? 'none' : 'block';
 
-  // Action buttons row (follow button, only for others' profiles)
+  // Block/Unblock button (only for others' profiles). Starts red; updateBlockButton
+  // switches it to the outline style once we know the user is already blocked.
+  const blockButton = document.createElement('button');
+  blockButton.className = 'profile-button profile-button--danger';
+  blockButton.textContent = t('profile.block');
+  blockButton.style.display = own ? 'none' : 'block';
+
+  // Action buttons row (follow + block buttons, only for others' profiles)
   const actionsRow = document.createElement('div');
   actionsRow.className = 'profile-actions';
   actionsRow.appendChild(followButton);
+  actionsRow.appendChild(blockButton);
 
   // Assemble page
   container.appendChild(header);
@@ -350,11 +371,14 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
     }
   }
 
-  // Kebab menu (own profile) in the top bar
+  // Own-profile controls: visible Edit + Flaxia settings buttons between the
+  // username and the bio, and a kebab menu (top-right) for logout etc.
   if (own) {
+    ownActionsRow.appendChild(editButton);
+    ownActionsRow.appendChild(settingsButton);
+
     const menu = document.createElement('div');
     menu.className = 'profile-kebab-menu';
-    menu.appendChild(editButton);
     menu.appendChild(logoutButton);
 
     const kebab = document.createElement('button');
@@ -371,8 +395,8 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
       menu.style.display = 'none';
     });
 
-    editButton.addEventListener('click', () => {
-      menu.style.display = 'none';
+    settingsButton.addEventListener('click', () => {
+      onOpenSettings?.();
     });
     logoutButton.addEventListener('click', () => {
       menu.style.display = 'none';
@@ -403,6 +427,7 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
 
   const _isEditing = false;
   let isFollowing = false;
+  let isBlocked = false;
 
   // Load user data
   const loadUserData = async () => {
@@ -473,6 +498,10 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
         // Update follow button state
         isFollowing = userData.is_following || false;
         updateFollowButton();
+
+        // Update block button state
+        isBlocked = userData.is_blocked || false;
+        updateBlockButton();
       } else {
         console.error('User not found');
       }
@@ -487,6 +516,14 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
     followButton.className = isFollowing
       ? 'profile-button profile-button--primary'
       : 'profile-button profile-button--secondary';
+  };
+
+  // Update block button text and state
+  const updateBlockButton = () => {
+    blockButton.textContent = isBlocked ? t('profile.unblock') : t('profile.block');
+    blockButton.className = isBlocked
+      ? 'profile-button profile-button--danger-outline'
+      : 'profile-button profile-button--danger';
   };
 
   // Edit profile functionality
@@ -696,6 +733,56 @@ export function createProfilePage({ username, currentUser, sandboxOrigin }: Prof
       updateFollowButton();
     } finally {
       followButton.disabled = false;
+    }
+  });
+
+  // Block / Unblock
+  blockButton.addEventListener('click', async () => {
+    if (!currentUser) {
+      showSignInPrompt(
+        'block',
+        () => {
+          window.history.pushState({}, '', '/login');
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        },
+        () => {
+          window.history.pushState({}, '', '/register');
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        },
+      );
+      return;
+    }
+
+    if (!userData) return;
+
+    if (!isBlocked) {
+      const confirmed = await createConfirmDialog(t('profile.block_confirm', { username: `@${username}` }));
+      if (!confirmed) return;
+    }
+
+    blockButton.disabled = true;
+
+    try {
+      const response = await fetch(`/api/users/${username}/block`, {
+        method: isBlocked ? 'DELETE' : 'POST',
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        isBlocked = !isBlocked;
+        updateBlockButton();
+        if (isBlocked) {
+          // Blocking also unfollows; reflect that on the follow button.
+          isFollowing = false;
+          updateFollowButton();
+        }
+      } else {
+        console.error('Failed to update block state:', await response.text());
+      }
+    } catch (error) {
+      console.error('Block/unblock error:', error);
+    } finally {
+      blockButton.disabled = false;
     }
   });
 
