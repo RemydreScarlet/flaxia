@@ -407,7 +407,7 @@ async function decryptDmMessageV2Inner(
     if (list.length === 0 && parsed.x3dh.opkId) {
       // Bootstrap present but its one-time prekey is gone (a message sent
       // before the X3DH OPK-handling fix deleted it). Permanently undecryptable.
-      throw new Error('OPK_UNRECOVERABLE');
+      throw new Error(`OPK_UNRECOVERABLE conv=${dmId} peer=${senderId} opkId=${parsed.x3dh.opkId}`);
     }
   }
 

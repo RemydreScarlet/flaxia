@@ -12504,7 +12504,20 @@ app.post('/api/messenger/opks/consume', requireAuth, async (c) => {
     const opk = (await c.env.DB.prepare(`SELECT priv_enc, priv_iv FROM messenger_opks WHERE id = ? AND user_id = ?`)
       .bind(body.opkId, userId)
       .first()) as Record<string, unknown> | null;
-    if (!opk) return c.json({ error: 'OPK not found' }, 404);
+    if (!opk) {
+      // 診断: user_id フィルタを外して存在するか確認し、404 の理由を特定する
+      const diag = (await c.env.DB.prepare(`SELECT id, user_id, claimed_at FROM messenger_opks WHERE id = ?`)
+        .bind(body.opkId)
+        .first()) as Record<string, unknown> | null;
+      if (!diag) {
+        console.warn(`[opks/consume] OPK ${body.opkId} はどのユーザーにも存在しません (requester=${userId})`);
+      } else {
+        console.warn(
+          `[opks/consume] OPK ${body.opkId} は別ユーザー ${diag.user_id} のもの (requester=${userId}, claimed_at=${diag.claimed_at})`,
+        );
+      }
+      return c.json({ error: 'OPK not found' }, 404);
+    }
 
     // Mark the OPK consumed but DO NOT delete it. X3DH consumes the one-time
     // prekey to complete the handshake; if the responder's ratchet is later

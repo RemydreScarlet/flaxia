@@ -473,6 +473,7 @@ export async function consumeOwnOpkPriv(opkId: string): Promise<Uint8Array | nul
       credentials: 'include',
       body: JSON.stringify({ opkId }),
     });
+    console.debug('[consumeOwnOpkPriv]', opkId, '->', res.status);
     if (!res.ok) {
       if (res.status === 404) deadOpkIds.add(opkId);
       return null;
