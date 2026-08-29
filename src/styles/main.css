@@ -28,6 +28,8 @@
   --accent-dark: #16a34a;
   --danger: #ef4444;
   --link: #60a5fa;
+  /* Occupied height of the fixed mobile bottom nav (3.5rem bar + safe area). */
+  --bottom-nav-h: 0px;
 }
 
 * {
@@ -775,6 +777,18 @@ h1 {
   .arcade-header h1 {
     font-size: 0.9rem;
   }
+
+  /* Shrink the full-height arcade page so its absolutely-positioned bottom
+     controls (down arrow, floating actions, game info) clear the fixed nav. */
+  .arcade-page {
+    height: calc(100dvh - var(--bottom-nav-h));
+  }
+
+  /* Lounge / messages chat layout mounts directly into #app (not
+     .main-content), so reserve the nav height here too. */
+  .main-container--chat {
+    height: calc(100dvh - var(--bottom-nav-h));
+  }
 }
 
 /* LeftNav Styles */
@@ -1035,9 +1049,14 @@ h1 {
 }
 
 @media (max-width: 768px) {
+  /* Occupied height of the fixed bottom bar (bar + safe-area inset) */
+  :root {
+    --bottom-nav-h: calc(3.5rem + env(safe-area-inset-bottom, 0));
+  }
+
   /* Leave room for the fixed bottom bar so it never covers content */
   .main-content {
-    padding-bottom: 4.5rem;
+    padding-bottom: var(--bottom-nav-h);
   }
 
   .bottom-nav {
