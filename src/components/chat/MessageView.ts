@@ -443,6 +443,13 @@ export abstract class MessageView {
     area.innerHTML = '';
     this.pendingEnrich = [];
 
+    // Collect decryption / enrichment work during the render loop so we can
+    // launch it newest-first afterwards (see below). This keeps the most
+    // recent messages — the ones the user is actually looking at — decrypting
+    // ahead of older history.
+    const decryptJobs: Array<{ el: HTMLElement; msg: ChatMessage }> = [];
+    const enrichJobs: Array<{ el: HTMLElement; content: string }> = [];
+
     if (this.loading && this.messages.length === 0) {
       const loader = document.createElement('div');
       loader.className = 'chat-loading';
@@ -539,11 +546,11 @@ export abstract class MessageView {
           text.textContent = t('messages.encrypted');
           text.classList.add('msg-row-encrypted');
           body.appendChild(text);
-          this.pendingEnrich.push(this.transport.decryptTextInto(text, msg));
+          decryptJobs.push({ el: text, msg });
         } else {
           text.textContent = msg.content;
           body.appendChild(text);
-          this.pendingEnrich.push(this.enrichText(text, msg.content));
+          enrichJobs.push({ el: text, content: msg.content });
 
           const previewContainer = document.createElement('div');
           previewContainer.className = 'post-link-preview-container';
@@ -576,6 +583,15 @@ export abstract class MessageView {
       area.appendChild(row);
 
       prevMsg = msg;
+    }
+
+    // Kick off decryption / enrichment newest-first so the bottom of the
+    // conversation (the latest messages) populates before older history.
+    for (let i = decryptJobs.length - 1; i >= 0; i--) {
+      this.pendingEnrich.push(this.transport.decryptTextInto(decryptJobs[i].el, decryptJobs[i].msg));
+    }
+    for (let i = enrichJobs.length - 1; i >= 0; i--) {
+      this.pendingEnrich.push(this.enrichText(enrichJobs[i].el, enrichJobs[i].content));
     }
   }
 
@@ -617,16 +633,17 @@ export abstract class MessageView {
   protected scrollToBottom(): void {
     const area = this.messagesArea;
     if (!area) return;
-    Promise.allSettled(this.pendingEnrich).then(() => {
-      if (!this.element.isConnected) return;
-      this.stabilizeScroll(area, 0);
-      setTimeout(() => {
-        if (this.element.isConnected) area.scrollTop = area.scrollHeight;
-      }, 300);
-      setTimeout(() => {
-        if (this.element.isConnected) area.scrollTop = area.scrollHeight;
-      }, 1000);
-    });
+    // Decryption runs newest-first (see renderMessages) and fills bubbles in
+    // the background, so jump to the latest message immediately instead of
+    // waiting for the whole history to decrypt.
+    this.stabilizeScroll(area, 0);
+    if (!this.element.isConnected) return;
+    setTimeout(() => {
+      if (this.element.isConnected) area.scrollTop = area.scrollHeight;
+    }, 300);
+    setTimeout(() => {
+      if (this.element.isConnected) area.scrollTop = area.scrollHeight;
+    }, 1000);
   }
 
   protected stabilizeScroll(area: HTMLElement, attempts: number): void {
