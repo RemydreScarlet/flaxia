@@ -1123,6 +1123,12 @@ h1 {
     font-size: 0.6rem;
     padding: 0;
     transition: color 0.2s ease;
+    /* Own compositing layer so the icon images repaint correctly while the
+     * fixed bar scrolls (iOS Safari / Firefox repaint glitch). Applied to the
+     * item, not the fixed bar, so it never breaks position: fixed on Android. */
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+    will-change: transform;
   }
 
   .bottom-nav-item--active {

@@ -156,18 +156,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     /**
-     * On mobile, the bottom nav is `position: fixed; bottom: 0`, which anchors it
-     * to the *layout* viewport. When the browser's URL/toolbar shows or hides on
-     * scroll, the visual viewport changes and the bar (and its icons) appears to
-     * shift or get covered. Keeping it offset to the visual viewport bottom fixes
-     * the jump so the icons stay put while scrolling.
+     * iOS Safari: the bottom nav is `position: fixed; bottom: 0`, anchored to the
+     * layout viewport, so when the browser's bottom toolbar appears on scroll-up
+     * it covers the bar. Offsetting the bar to the visual-viewport bottom and
+     * promoting it to a layer keeps it pinned and repainted correctly.
+     *
+     * On Android Chrome, a `transform` on a `position: fixed` element breaks fixed
+     * positioning (the bar scrolls away / floats), so we intentionally skip this
+     * there — the per-item compositing layer already prevents the icon-bleed glitch.
      */
     const keepBottomNavAtViewportBottom = (nav: HTMLElement): void => {
+      const ua = navigator.userAgent;
+      const platform =
+        (navigator as unknown as { userAgentData?: { platform?: string } }).userAgentData?.platform ||
+        navigator.platform ||
+        '';
+      const isIOS = /iPad|iPhone|iPod/.test(ua) || (/Mac/.test(platform) && navigator.maxTouchPoints > 1);
+      if (!isIOS) return;
+
       const vv = window.visualViewport;
       if (!vv) return;
+
       const update = () => {
         const offset = window.innerHeight - (vv.offsetTop + vv.height);
-        nav.style.transform = `translateY(${-offset}px)`;
+        nav.style.transform = `translate3d(0, ${-offset}px, 0)`;
       };
       vv.addEventListener('resize', update);
       vv.addEventListener('scroll', update);
