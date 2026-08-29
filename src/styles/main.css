@@ -1092,10 +1092,15 @@ h1 {
   }
 
   .bottom-nav {
-    position: fixed;
+    /* `position: sticky; bottom: 0` keeps the bar pinned to the bottom of the
+     * viewport without `position: fixed`. Fixed bottom bars mis-repaint on
+     * Firefox/Android (icons bleed upward), and a transform on a fixed element
+     * breaks fixed positioning on Chrome/Android. Sticky avoids both and keeps
+     * the window as the scroll container (infinite scroll / scroll restoration
+     * keep working). The bar is appended as the last child of <body>, so while
+     * the page is taller than the viewport it stays pinned to the bottom. */
+    position: sticky;
     bottom: 0;
-    left: 0;
-    right: 0;
     z-index: 1000;
     display: flex;
     align-items: stretch;
@@ -1123,12 +1128,6 @@ h1 {
     font-size: 0.6rem;
     padding: 0;
     transition: color 0.2s ease;
-    /* Own compositing layer so the icon images repaint correctly while the
-     * fixed bar scrolls (iOS Safari / Firefox repaint glitch). Applied to the
-     * item, not the fixed bar, so it never breaks position: fixed on Android. */
-    -webkit-transform: translateZ(0);
-    transform: translateZ(0);
-    will-change: transform;
   }
 
   .bottom-nav-item--active {

@@ -154,35 +154,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         navigateTo('profile', undefined, currentUser.username);
       }
     };
-
-    /**
-     * iOS Safari & Firefox: the bottom nav is `position: fixed; bottom: 0`, anchored
-     * to the layout viewport, so when the browser's bottom toolbar appears on
-     * scroll-up it covers the bar and its icon images repaint incorrectly (shoot
-     * upward). Offsetting the bar to the visual-viewport bottom and promoting it to
-     * a layer keeps it pinned and repainted correctly.
-     *
-     * On Android Chrome / WebView (Blink), a `transform` on a `position: fixed`
-     * element breaks fixed positioning (the bar scrolls away / floats), so we skip
-     * it there — the per-item compositing layer already prevents the glitch there.
-     */
-    const keepBottomNavAtViewportBottom = (nav: HTMLElement): void => {
-      const ua = navigator.userAgent;
-      const isAndroidChrome = /Android/.test(ua) && /Chrome|Chromium|CriOS/.test(ua) && !/Edg|OPR|Firefox/.test(ua);
-      if (isAndroidChrome) return;
-
-      const vv = window.visualViewport;
-      if (!vv) return;
-
-      const update = () => {
-        const offset = window.innerHeight - (vv.offsetTop + vv.height);
-        nav.style.transform = `translate3d(0, ${-offset}px, 0)`;
-      };
-      vv.addEventListener('resize', update);
-      vv.addEventListener('scroll', update);
-      update();
-    };
-
     /** Create the single global bottom-nav instance once and mount it. */
     const ensureBottomNav = (): void => {
       if (bottomNav) return;
@@ -200,7 +171,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         },
       });
       document.body.appendChild(bottomNav.getElement());
-      keepBottomNavAtViewportBottom(bottomNav.getElement());
     };
     let currentUser: { username: string; id: string; display_name?: string; avatar_key?: string } | null = null;
     let unreadNotificationCount = 0;
