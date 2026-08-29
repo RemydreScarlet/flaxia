@@ -6,6 +6,7 @@ import { t } from '../lib/i18n.js';
 import { registerModal } from '../lib/modal-state.js';
 import { openPostModal } from '../lib/post-modal.js';
 import { Post } from '../types/post.js';
+import { createBlockedUsersModal } from './BlockedUsersModal.js';
 import { createEditProfileModal } from './EditProfileModal.js';
 import { createFollowerListModal } from './FollowerListModal.js';
 import { createPostCard } from './PostCard.js';
@@ -118,10 +119,11 @@ export function createProfilePage({ username, currentUser, sandboxOrigin, onOpen
   usernameElement.className = 'profile-username';
   usernameElement.textContent = `@${username}`;
 
-  // Own-profile action buttons (Edit / Flaxia settings), shown between the
-  // username and the bio. Inserted into this row only for the user's own profile.
+  // Own-profile action buttons (Edit / Flaxia settings), shown below the bio.
+  // Inserted into this row only for the user's own profile.
   const ownActionsRow = document.createElement('div');
   ownActionsRow.className = 'profile-own-actions';
+  ownActionsRow.style.display = 'none';
 
   const bio = document.createElement('div');
   bio.className = 'profile-bio';
@@ -130,19 +132,21 @@ export function createProfilePage({ username, currentUser, sandboxOrigin, onOpen
   const joinedDate = document.createElement('div');
   joinedDate.className = 'profile-joined-date';
   joinedDate.style.cssText =
-    "color: var(--text-muted); font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 0.875rem; margin-top: 0.5rem;";
+    "color: var(--text-muted); font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 0.875rem; margin: 0.5rem 0;";
   joinedDate.textContent = t('profile.joined', { date: t('common.loading') });
 
   info.appendChild(displayName);
   info.appendChild(usernameElement);
-  info.appendChild(ownActionsRow);
   info.appendChild(bio);
   info.appendChild(joinedDate);
+  info.appendChild(ownActionsRow);
 
   avatarSection.appendChild(avatar);
   avatarSection.appendChild(info);
 
   header.appendChild(avatarSection);
+
+  const own = currentUser?.username === username;
 
   // Stats row
   const statsRow = document.createElement('div');
@@ -174,11 +178,21 @@ export function createProfilePage({ username, currentUser, sandboxOrigin, onOpen
   followingStat.appendChild(followingCountSpan);
   followingStat.appendChild(document.createTextNode(' ' + t('profile.following_label')));
 
+  // Blocked-users stat (own profile only), shown to the right of "Following"
+  const blockedStat = document.createElement('div');
+  blockedStat.className = 'profile-stat';
+  blockedStat.style.cssText = 'cursor: pointer; transition: background-color 0.2s;';
+  blockedStat.style.display = own ? 'flex' : 'none';
+  const blockedCountSpan = document.createElement('span');
+  blockedCountSpan.className = 'stat-number';
+  blockedCountSpan.textContent = '0';
+  blockedStat.appendChild(blockedCountSpan);
+  blockedStat.appendChild(document.createTextNode(' ' + t('profile.blocked_label')));
+
   statsRow.appendChild(postsStat);
   statsRow.appendChild(followersStat);
   statsRow.appendChild(followingStat);
-
-  const own = currentUser?.username === username;
+  statsRow.appendChild(blockedStat);
 
   let userData: ProfileUserData | null = null;
 
@@ -376,6 +390,7 @@ export function createProfilePage({ username, currentUser, sandboxOrigin, onOpen
   if (own) {
     ownActionsRow.appendChild(editButton);
     ownActionsRow.appendChild(settingsButton);
+    ownActionsRow.style.display = 'flex';
 
     const menu = document.createElement('div');
     menu.className = 'profile-kebab-menu';
@@ -502,6 +517,11 @@ export function createProfilePage({ username, currentUser, sandboxOrigin, onOpen
         // Update block button state
         isBlocked = userData.is_blocked || false;
         updateBlockButton();
+
+        // Load blocked-users count (own profile only)
+        if (own) {
+          loadBlockedCount();
+        }
       } else {
         console.error('User not found');
       }
@@ -524,6 +544,18 @@ export function createProfilePage({ username, currentUser, sandboxOrigin, onOpen
     blockButton.className = isBlocked
       ? 'profile-button profile-button--danger-outline'
       : 'profile-button profile-button--danger';
+  };
+
+  // Load the count of users this account has blocked (own profile only)
+  const loadBlockedCount = async () => {
+    try {
+      const res = await fetch('/api/users/me/blocked', { credentials: 'include' });
+      if (!res.ok) return;
+      const data = (await res.json()) as { users: unknown[] };
+      blockedCountSpan.textContent = formatCount(data.users.length || 0);
+    } catch {
+      /* ignore */
+    }
   };
 
   // Edit profile functionality
@@ -823,6 +855,27 @@ export function createProfilePage({ username, currentUser, sandboxOrigin, onOpen
   });
   followingStat.addEventListener('mouseleave', () => {
     followingStat.style.backgroundColor = 'transparent';
+  });
+
+  // Blocked-users stat (own profile): open the block management modal
+  blockedStat.addEventListener('click', () => {
+    const modal = createBlockedUsersModal({
+      onUnblock: () => {
+        const current = Number.parseInt(blockedCountSpan.textContent || '0', 10);
+        if (!Number.isNaN(current) && current > 0) {
+          blockedCountSpan.textContent = formatCount(current - 1);
+        } else {
+          loadBlockedCount();
+        }
+      },
+    });
+    document.body.appendChild(modal);
+  });
+  blockedStat.addEventListener('mouseenter', () => {
+    blockedStat.style.backgroundColor = 'var(--bg-secondary)';
+  });
+  blockedStat.addEventListener('mouseleave', () => {
+    blockedStat.style.backgroundColor = 'transparent';
   });
 
   // Load initial data

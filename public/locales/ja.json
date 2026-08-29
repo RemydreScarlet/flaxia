@@ -177,6 +177,7 @@
   "profile.block": "ブロック",
   "profile.unblock": "ブロック解除",
   "profile.block_confirm": "{username} をブロックしますか？",
+  "profile.blocked_label": "ブロック中",
 
   "composer.placeholder": "いまどうしてる？",
   "composer.file_hint": "オプション: 画像（GIF, PNG, JPG）、音声（MP3, WAV, OGG, M4A, WebM）、ZIP、SWFファイルを追加",

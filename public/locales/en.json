@@ -177,6 +177,7 @@
   "profile.block": "Block",
   "profile.unblock": "Unblock",
   "profile.block_confirm": "Block {username}?",
+  "profile.blocked_label": "Blocked",
 
   "composer.placeholder": "What's happening?",
   "composer.file_hint": "Optional: Add an image (GIF, PNG, JPG), audio (MP3, WAV, OGG, M4A, WebM), ZIP, or SWF file",

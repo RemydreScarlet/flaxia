@@ -329,6 +329,7 @@ p {
 /* Profile bio Markdown elements */
 .profile-bio p {
   margin: 0 0 0.5rem 0;
+  color: var(--text-primary);
 }
 
 .profile-bio p:last-child {
@@ -421,7 +422,7 @@ p {
 .profile-own-actions {
   display: flex;
   gap: 0.5rem;
-  margin: 0.5rem 0;
+  margin: 1rem 0 0.5rem;
 }
 
 .profile-top-bar {
