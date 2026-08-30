@@ -820,6 +820,21 @@ h1 {
      px value. */
   .arcade-game-container {
     padding-bottom: var(--bottom-nav-h);
+    box-sizing: border-box;
+  }
+
+  .arcade-viewport {
+    bottom: var(--bottom-nav-h) !important;
+  }
+
+  .arcade-nav-down {
+    bottom: calc(var(--bottom-nav-h) + 1rem) !important;
+  }
+
+  /* Prevent the bottom nav from overlapping the arcade page content */
+  .arcade-page {
+    flex: none !important;
+    height: calc(100dvh - var(--bottom-nav-h)) !important;
   }
 }
 
@@ -6238,6 +6253,7 @@ html {
 @media (max-width: 768px) {
   .chat-page {
     flex-direction: column;
+    height: calc(100dvh - var(--bottom-nav-h));
   }
 
   .chat-server-panel {

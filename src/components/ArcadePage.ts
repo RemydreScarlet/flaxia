@@ -162,8 +162,6 @@ export class ArcadePage {
       flex: 1;
       display: flex;
       flex-direction: column;
-      height: 100vh;
-      height: 100dvh;
       overflow: hidden;
       background: var(--bg-primary);
       position: relative;
