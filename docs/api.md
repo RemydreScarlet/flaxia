@@ -151,6 +151,42 @@ All API endpoints are served from `functions/api/[[route]].ts` via Hono framewor
 
 ---
 
+## Billing
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/billing/checkout` | Create Stripe Checkout session for subscription |
+| GET | `/api/billing/plan` | Get current user's plan |
+| POST | `/api/billing/webhook` | Stripe webhook receiver |
+
+### Checkout
+`POST /api/billing/checkout`
+- Auth: Required (session cookie)
+- Body: `{ planId: "flaxia_plus" | "flaxia_plus_plus" | "flaxia_sharp", mode?: "subscription" }`
+- Returns: `{ sessionId, url }` — redirect to Stripe Checkout
+
+### Get Plan
+`GET /api/billing/plan`
+- Auth: Optional
+- Returns: `{ plan: string | null, status: string | null, expiresAt: string | null }`
+
+---
+
+## Marketplace
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/market/checkout` | Create Stripe Checkout session for content purchase |
+
+### Market Checkout
+`POST /api/market/checkout`
+- Auth: Required (session cookie)
+- Body: `{ postId: string, amount: number (100-50000), title?: string }`
+- Returns: `{ sessionId, url }` — redirect to Stripe Checkout
+- Note: Flaxia++ / Flaxia# subscribers get free access
+
+---
+
 ## Admin
 
 | Method | Endpoint | Description |

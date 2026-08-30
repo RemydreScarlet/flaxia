@@ -14388,6 +14388,8 @@ app.post('/api/test/reset', async (c) => {
       'post_embeddings',
       'post_translations',
       'freshs',
+      'transactions',
+      'subscriptions',
       'follows',
       'posts',
       'actor_keys',

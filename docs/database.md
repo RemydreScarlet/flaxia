@@ -150,6 +150,36 @@ Flaxia uses Cloudflare D1 (SQLite-compatible) with migrations in `migrations/`.
 | key | TEXT | PK (e.g., 'every_n') |
 | value | TEXT | |
 
+### `subscriptions`
+| Column | Type | Notes |
+|---|---|---|
+| id | TEXT | PK |
+| user_id | TEXT | FK → users(id) |
+| stripe_subscription_id | TEXT | UNIQUE |
+| stripe_customer_id | TEXT | |
+| plan_id | TEXT | `flaxia_plus`, `flaxia_plus_plus`, `flaxia_sharp` |
+| status | TEXT | `active`, `canceled`, `past_due`, `incomplete`, `trialing` |
+| current_period_start | TEXT | ISO 8601 |
+| current_period_end | TEXT | ISO 8601 |
+| created_at | TEXT | ISO 8601 |
+| updated_at | TEXT | ISO 8601 |
+
+### `transactions`
+| Column | Type | Notes |
+|---|---|---|
+| id | TEXT | PK |
+| user_id | TEXT | FK → users(id) |
+| post_id | TEXT | FK → posts(id) (marketplace only) |
+| stripe_session_id | TEXT | UNIQUE |
+| stripe_payment_intent_id | TEXT | |
+| type | TEXT | `subscription` or `marketplace` |
+| plan_id | TEXT | (subscription only) |
+| amount | INTEGER | Amount in JPY |
+| currency | TEXT | Default: `jpy` |
+| status | TEXT | `pending`, `completed`, `failed`, `refunded` |
+| metadata | TEXT | JSON (optional) |
+| created_at | TEXT | ISO 8601 |
+
 ## Other Tables
 
 - `reports` — User reports with reason and status
