@@ -2,7 +2,7 @@ import { t } from '../../lib/i18n.js';
 import { loadLinkPreview } from '../../lib/link-preview.js';
 import { registerModal } from '../../lib/modal-state.js';
 import { showToast } from '../../lib/toast.js';
-import { linkifyHashtags, linkifyUrls, processText } from '../PostText.js';
+import { linkifyCustomEmoji, linkifyHashtags, linkifyUrls, processText } from '../PostText.js';
 import { closeStampPicker, openStampPicker } from '../StampPicker.js';
 import type { ChatMessage, MessageTransport } from './types.js';
 
@@ -488,7 +488,7 @@ export abstract class MessageView {
     // recent messages — the ones the user is actually looking at — decrypting
     // ahead of older history.
     const decryptJobs: Array<{ el: HTMLElement; msg: ChatMessage }> = [];
-    const enrichJobs: Array<{ el: HTMLElement; content: string }> = [];
+    const enrichJobs: Array<{ el: HTMLElement; content: string; authorId?: string }> = [];
 
     if (this.loading && this.messages.length === 0) {
       const loader = document.createElement('div');
@@ -602,7 +602,7 @@ export abstract class MessageView {
         } else {
           text.textContent = msg.content;
           body.appendChild(text);
-          enrichJobs.push({ el: text, content: msg.content });
+          enrichJobs.push({ el: text, content: msg.content, authorId: msg.sender?.id });
 
           const previewContainer = document.createElement('div');
           previewContainer.className = 'post-link-preview-container';
@@ -643,7 +643,7 @@ export abstract class MessageView {
       this.pendingEnrich.push(this.transport.decryptTextInto(decryptJobs[i].el, decryptJobs[i].msg));
     }
     for (let i = enrichJobs.length - 1; i >= 0; i--) {
-      this.pendingEnrich.push(this.enrichText(enrichJobs[i].el, enrichJobs[i].content));
+      this.pendingEnrich.push(this.enrichText(enrichJobs[i].el, enrichJobs[i].content, enrichJobs[i].authorId));
     }
   }
 
@@ -657,12 +657,13 @@ export abstract class MessageView {
     return c - p >= 0 && c - p <= 5 * 60 * 1000;
   }
 
-  protected async enrichText(el: HTMLElement, content: string): Promise<void> {
+  protected async enrichText(el: HTMLElement, content: string, authorId?: string): Promise<void> {
     try {
       const html = await processText(content);
       el.innerHTML = html;
       linkifyUrls(el);
       linkifyHashtags(el);
+      await linkifyCustomEmoji(el, authorId);
     } catch {
       /* ignore */
     }
