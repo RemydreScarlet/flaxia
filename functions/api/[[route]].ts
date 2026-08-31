@@ -7782,7 +7782,7 @@ app.get('/api/stamps', requireAuth, async (c) => {
       .all<{ id: string; name: string; image_key: string; created_at: string }>();
 
     const stamps = (rows.results || []).map((r) => {
-      const match = r.name.match(/^:[^:]+:(.+):$/);
+      const match = r.name.match(/^:[^:]+:([^:]+):$/);
       const bareName = match ? match[1] : r.name;
       return {
         id: r.id,
@@ -7846,7 +7846,7 @@ app.post('/api/stamps', requireAuth, async (c) => {
       return c.json({ error: 'Name must contain only letters, numbers, and underscores' }, 400);
     }
     // Store as :userId:name: for global uniqueness
-    const name = `:${userId}:${bareName}`;
+    const name = `:${userId}:${bareName}:`;
 
     // Check unique name per user
     const existing = await c.env.DB.prepare('SELECT 1 FROM custom_stamps WHERE user_id = ? AND name = ?')
@@ -7940,7 +7940,7 @@ app.get('/api/stamps/all', async (c) => {
 
     const stamps = (rows.results || []).map((r) => {
       // Extract bare name from :userId:name: format
-      const match = r.name.match(/^:[^:]+:(.+):$/);
+      const match = r.name.match(/^:[^:]+:([^:]+):$/);
       const bareName = match ? match[1] : r.name;
       return {
         id: r.id,
