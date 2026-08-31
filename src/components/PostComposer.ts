@@ -450,7 +450,8 @@ export class PostComposer {
 
     // Emoji picker button
     const emojiButton = this.element.querySelector('.composer-emoji-button')! as HTMLElement;
-    emojiButton.addEventListener('click', () => {
+    emojiButton.addEventListener('click', (e) => {
+      e.stopPropagation();
       this.openEmojiPicker(emojiButton);
     });
 
