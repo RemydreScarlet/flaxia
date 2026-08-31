@@ -24,7 +24,7 @@ async function getStampCache(): Promise<Map<string, string>> {
       .then((data) => {
         const map = new Map<string, string>();
         for (const s of data.stamps) {
-          map.set(s.name, s.url);
+          map.set(s.name.replace(/^:+|:+$/g, ''), s.url);
         }
         return map;
       })

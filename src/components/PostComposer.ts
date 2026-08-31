@@ -1022,7 +1022,7 @@ export class PostComposer {
         const start = textarea.selectionStart;
         const end = textarea.selectionEnd;
         const value = textarea.value;
-        const insertText = stampId ? `:${emoji}:` : emoji;
+        const insertText = emoji;
         textarea.value = value.slice(0, start) + insertText + value.slice(end);
         textarea.selectionStart = textarea.selectionEnd = start + insertText.length;
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
