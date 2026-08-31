@@ -20,6 +20,9 @@ export interface ApiMessage {
   ratchet_n?: number | null;
   reply_to_id?: string | null;
   pinned?: number | null;
+  stamp_id?: string | null;
+  stamp_url?: string | null;
+  stamp_name?: string | null;
   created_at: string;
   edited_at?: string | null;
   is_mine: boolean;
@@ -61,6 +64,9 @@ export function mapMessage(raw: ApiMessage, scope: MessageScope, contextId: stri
     ratchet_n: raw.ratchet_n ?? null,
     reply_to_id: raw.reply_to_id ?? null,
     pinned: raw.pinned ?? null,
+    stamp_id: raw.stamp_id ?? null,
+    stamp_url: raw.stamp_url ?? null,
+    stamp_name: raw.stamp_name ?? null,
     created_at: raw.created_at,
     edited_at: raw.edited_at ?? null,
     is_mine: raw.is_mine,

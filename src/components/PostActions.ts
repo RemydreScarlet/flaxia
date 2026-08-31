@@ -2,6 +2,7 @@ import { formatCount } from '../lib/format.js';
 import { t } from '../lib/i18n.js';
 import { type IconName, icon } from '../lib/icons.js';
 import { type PostActionsProps, type ReactionSummary } from '../types/post.js';
+import { openStampPicker } from './StampPicker.js';
 
 export function createPostActions(props: PostActionsProps): HTMLElement {
   const container = document.createElement('div');
@@ -85,11 +86,7 @@ function createReactionsRow(reactions: ReactionSummary[], onToggle: (emoji: stri
 
   addButton.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (activeAnchor === addButton) {
-      closeEmojiPicker();
-    } else {
-      openEmojiPicker(addButton, onToggle);
-    }
+    openEmojiPicker(addButton, onToggle);
   });
 
   row.appendChild(addButton);
@@ -108,7 +105,15 @@ function createReactionChip(reaction: ReactionSummary, onToggle: (emoji: string)
 
   const emojiSpan = document.createElement('span');
   emojiSpan.className = 'post-reaction-emoji';
-  emojiSpan.textContent = reaction.emoji;
+  if (reaction.stamp_url) {
+    const img = document.createElement('img');
+    img.src = reaction.stamp_url;
+    img.alt = reaction.emoji;
+    img.style.cssText = 'width: 1.2em; height: 1.2em; vertical-align: -0.2em;';
+    emojiSpan.appendChild(img);
+  } else {
+    emojiSpan.textContent = reaction.emoji;
+  }
 
   const countSpan = document.createElement('span');
   countSpan.className = 'post-reaction-count';
@@ -120,75 +125,8 @@ function createReactionChip(reaction: ReactionSummary, onToggle: (emoji: string)
   return chip;
 }
 
-let activeAnchor: HTMLElement | null = null;
-let activePicker: HTMLElement | null = null;
-let activeCleanup: (() => void) | null = null;
-let pickerToken = 0;
-
-function closeEmojiPicker(): void {
-  pickerToken++;
-  if (activePicker) {
-    activePicker.remove();
-    activePicker = null;
-  }
-  if (activeCleanup) {
-    activeCleanup();
-    activeCleanup = null;
-  }
-  activeAnchor = null;
-}
-
 function openEmojiPicker(anchor: HTMLElement, onPick: (emoji: string) => void): void {
-  closeEmojiPicker();
-  activeAnchor = anchor;
-  const token = pickerToken;
-
-  void import('emoji-picker-element').then((mod) => {
-    const { Picker } = mod;
-    if (token !== pickerToken) return;
-    if (!Picker || !anchor.isConnected) {
-      closeEmojiPicker();
-      return;
-    }
-
-    const picker = new Picker({ dataSource: '/emoji-data.json', locale: document.documentElement.lang || undefined });
-    picker.style.position = 'fixed';
-    picker.style.zIndex = '1000';
-    picker.style.width = '340px';
-    picker.style.maxHeight = '400px';
-
-    const rect = anchor.getBoundingClientRect();
-    const fitsBelow = rect.bottom + 400 + 8 <= window.innerHeight;
-    picker.style.top = `${fitsBelow ? rect.bottom + 4 : Math.max(8, rect.top - 400)}px`;
-    picker.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 340 - 8))}px`;
-
-    document.body.appendChild(picker);
-    activePicker = picker;
-
-    const onEmojiClick = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { emoji?: { unicode?: string } };
-      const unicode = detail?.emoji?.unicode;
-      if (unicode) onPick(unicode);
-      closeEmojiPicker();
-    };
-    const onKeydown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeEmojiPicker();
-    };
-    const onOutsideClick = (e: MouseEvent) => {
-      if (!activePicker) return;
-      if (!activePicker.contains(e.target as Node)) closeEmojiPicker();
-    };
-
-    picker.addEventListener('emoji-click', onEmojiClick);
-    document.addEventListener('keydown', onKeydown);
-    document.addEventListener('click', onOutsideClick);
-
-    activeCleanup = () => {
-      picker.removeEventListener('emoji-click', onEmojiClick);
-      document.removeEventListener('keydown', onKeydown);
-      document.removeEventListener('click', onOutsideClick);
-    };
-  });
+  openStampPicker(anchor, { onSelect: onPick });
 }
 
 function createActionButton(type: ActionButtonType, count: string, isActive: boolean, showCount: boolean): HTMLElement {

@@ -35,6 +35,7 @@ export interface ReactionSummary {
   emoji: string;
   count: number;
   reacted: boolean;
+  stamp_url?: string;
 }
 
 export interface Post {

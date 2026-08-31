@@ -97,7 +97,7 @@ export class ServerChannelTransport implements MessageTransport {
     return res.ok;
   }
 
-  async sendMessage(opts: { content: string; file: File | null }): Promise<ChatMessage | null> {
+  async sendMessage(opts: { content: string; file: File | null; stampId?: string }): Promise<ChatMessage | null> {
     if (!this.channelId) return null;
     const content = opts.content;
     let gifKey: string | undefined;
@@ -140,6 +140,7 @@ export class ServerChannelTransport implements MessageTransport {
     if (contentIv) body.contentIv = contentIv;
     if (encVersion) body.encVersion = encVersion;
     if (keyVersion !== undefined) body.keyVersion = keyVersion;
+    if (opts.stampId) body.stampId = opts.stampId;
 
     const res = await fetch(`/api/servers/${this.serverId}/channels/${this.channelId}/messages`, {
       method: 'POST',

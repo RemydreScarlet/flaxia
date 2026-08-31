@@ -27,6 +27,9 @@ export interface ChatMessage {
   ratchet_n?: number | null;
   reply_to_id?: string | null;
   pinned?: number | null;
+  stamp_id?: string | null;
+  stamp_url?: string | null;
+  stamp_name?: string | null;
   created_at: string;
   edited_at?: string | null;
   is_mine: boolean;
@@ -54,7 +57,7 @@ export interface MessageTransport {
   deleteMessage(messageId: string): Promise<boolean>;
 
   /** Send a new message (with optional file). Resolves with the created message, or null on failure. */
-  sendMessage(opts: { content: string; file: File | null }): Promise<ChatMessage | null>;
+  sendMessage(opts: { content: string; file: File | null; stampId?: string }): Promise<ChatMessage | null>;
 
   /** Edit an existing message. Resolves with the updated message fields, or null on failure. */
   editMessage(messageId: string, content: string): Promise<Partial<ChatMessage> | null>;

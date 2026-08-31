@@ -437,6 +437,28 @@ async function ensureReactionsTable(db: D1Database): Promise<void> {
   }
 }
 
+async function ensureCustomStampsTable(db: D1Database): Promise<void> {
+  try {
+    await db
+      .prepare(
+        `CREATE TABLE IF NOT EXISTS custom_stamps (
+           id         TEXT PRIMARY KEY,
+           user_id    TEXT NOT NULL REFERENCES users(id),
+           name       TEXT NOT NULL,
+           image_key  TEXT NOT NULL,
+           created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+         )`,
+      )
+      .run();
+    await db.prepare('CREATE INDEX IF NOT EXISTS idx_custom_stamps_user ON custom_stamps(user_id)').run();
+    await db
+      .prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_stamps_user_name ON custom_stamps(user_id, name)')
+      .run();
+  } catch (e) {
+    console.error('Failed to ensure custom_stamps table:', e);
+  }
+}
+
 async function markNsfwScan(db: D1Database, postId: string, status: string, taskId?: string): Promise<void> {
   try {
     if (status === 'submitted') {
@@ -7746,6 +7768,183 @@ app.post('/api/posts/:id/reactions', requireAuth, async (c) => {
   }
 });
 
+// ─── Custom Stamps API ────────────────────────────────────────────────────────
+
+// GET /api/stamps - list current user's custom stamps (protected)
+app.get('/api/stamps', requireAuth, async (c) => {
+  try {
+    await ensureCustomStampsTable(c.env.DB);
+    const userId = c.get('user')?.id || '';
+    const rows = await c.env.DB.prepare(
+      'SELECT id, name, image_key, created_at FROM custom_stamps WHERE user_id = ? ORDER BY created_at DESC',
+    )
+      .bind(userId)
+      .all<{ id: string; name: string; image_key: string; created_at: string }>();
+
+    const stamps = (rows.results || []).map((r) => ({
+      id: r.id,
+      name: r.name,
+      url: `/api/images/${r.image_key}`,
+      created_at: r.created_at,
+    }));
+
+    return c.json({ stamps });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('List stamps error:', error);
+    return c.json({ error: 'Failed to list stamps', details: err.message }, 500);
+  }
+});
+
+// POST /api/stamps - upload a new custom stamp (protected, multipart/form-data)
+app.post('/api/stamps', requireAuth, async (c) => {
+  try {
+    await ensureCustomStampsTable(c.env.DB);
+    const userId = c.get('user')?.id || '';
+
+    // Check plan for stamp limit
+    const sub =
+      (await c.env.DB.prepare(
+        "SELECT plan_id FROM subscriptions WHERE user_id = ? AND status IN ('active', 'trialing') ORDER BY created_at DESC LIMIT 1",
+      )
+        .bind(userId)
+        .first<{ plan_id: string }>()) || null;
+
+    const isPlus =
+      sub?.plan_id === 'flaxia_plus' || sub?.plan_id === 'flaxia_plus_plus' || sub?.plan_id === 'flaxia_sharp';
+
+    if (!isPlus) {
+      const countRow = await c.env.DB.prepare('SELECT COUNT(*) AS cnt FROM custom_stamps WHERE user_id = ?')
+        .bind(userId)
+        .first<{ cnt: number }>();
+      if ((countRow?.cnt ?? 0) >= 5) {
+        return c.json({ error: 'Free plan limited to 5 custom stamps' }, 403);
+      }
+    }
+
+    const formData = await c.req.formData();
+    const file = formData.get('file') as File | null;
+    const name = ((formData.get('name') as string) || '').trim();
+
+    if (!file || !(file instanceof File)) {
+      return c.json({ error: 'No file provided' }, 400);
+    }
+    if (!name || name.length === 0) {
+      return c.json({ error: 'Name is required' }, 400);
+    }
+    if (name.length > 32) {
+      return c.json({ error: 'Name too long (max 32 chars)' }, 400);
+    }
+    if (!/^:[a-zA-Z0-9_]+:$/.test(name)) {
+      return c.json({ error: 'Name must be in :colon_format: (letters, numbers, underscores)' }, 400);
+    }
+
+    // Check unique name per user
+    const existing = await c.env.DB.prepare('SELECT 1 FROM custom_stamps WHERE user_id = ? AND name = ?')
+      .bind(userId, name)
+      .first();
+    if (existing) {
+      return c.json({ error: 'A stamp with this name already exists' }, 409);
+    }
+
+    // Validate file size (5MB max)
+    if (file.size > 5 * 1024 * 1024) {
+      return c.json({ error: 'File too large (max 5MB)' }, 400);
+    }
+
+    const fileData = await file.arrayBuffer();
+    const detectedMime = detectMimeType(fileData);
+    if (!isAllowedImageMime(detectedMime)) {
+      return c.json({ error: 'Invalid image format. Allowed: PNG, JPEG, GIF, WebP' }, 400);
+    }
+
+    const ext =
+      detectedMime === 'image/jpeg'
+        ? 'jpg'
+        : detectedMime === 'image/png'
+          ? 'png'
+          : detectedMime === 'image/gif'
+            ? 'gif'
+            : 'webp';
+    const hashBuffer = await crypto.subtle.digest('SHA-256', fileData);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+    const r2Key = `stamp/${userId}/${hashHex}.${ext}`;
+
+    await c.env.BUCKET.put(r2Key, fileData, {
+      httpMetadata: { contentType: detectedMime },
+    });
+
+    const stampId = nanoid();
+    await c.env.DB.prepare('INSERT INTO custom_stamps (id, user_id, name, image_key) VALUES (?, ?, ?, ?)')
+      .bind(stampId, userId, name, r2Key)
+      .run();
+
+    return c.json(
+      {
+        id: stampId,
+        name,
+        url: `/api/images/${r2Key}`,
+      },
+      201,
+    );
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Upload stamp error:', error);
+    return c.json({ error: 'Failed to upload stamp', details: err.message }, 500);
+  }
+});
+
+// DELETE /api/stamps/:id - delete a custom stamp (protected)
+app.delete('/api/stamps/:id', requireAuth, async (c) => {
+  try {
+    await ensureCustomStampsTable(c.env.DB);
+    const userId = c.get('user')?.id || '';
+    const stampId = c.req.param('id');
+
+    const stamp = await c.env.DB.prepare('SELECT id, image_key FROM custom_stamps WHERE id = ? AND user_id = ?')
+      .bind(stampId, userId)
+      .first<{ id: string; image_key: string }>();
+
+    if (!stamp) {
+      return c.json({ error: 'Stamp not found' }, 404);
+    }
+
+    await c.env.BUCKET.delete(stamp.image_key);
+    await c.env.DB.prepare('DELETE FROM custom_stamps WHERE id = ?').bind(stampId).run();
+
+    return c.json({ deleted: true });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Delete stamp error:', error);
+    return c.json({ error: 'Failed to delete stamp', details: err.message }, 500);
+  }
+});
+
+// GET /api/stamps/all - list all custom stamps (for stamp picker, public)
+app.get('/api/stamps/all', async (c) => {
+  try {
+    await ensureCustomStampsTable(c.env.DB);
+    const rows = await c.env.DB.prepare(
+      'SELECT cs.id, cs.name, cs.image_key, cs.user_id, u.username FROM custom_stamps cs JOIN users u ON cs.user_id = u.id ORDER BY cs.created_at DESC',
+    ).all<{ id: string; name: string; image_key: string; user_id: string; username: string }>();
+
+    const stamps = (rows.results || []).map((r) => ({
+      id: r.id,
+      name: r.name,
+      url: `/api/images/${r.image_key}`,
+      user_id: r.user_id,
+      username: r.username,
+    }));
+
+    return c.json({ stamps });
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('List all stamps error:', error);
+    return c.json({ error: 'Failed to list stamps', details: err.message }, 500);
+  }
+});
+
 // GET /api/bookmarks - get bookmarked posts for current user (protected)
 app.get('/api/bookmarks', requireAuth, async (c) => {
   try {
@@ -9620,14 +9819,41 @@ async function enrichPostsWithReactions(
     }
   }
 
-  const grouped = new Map<string, Array<{ emoji: string; count: number; reacted: boolean }>>();
+  // Collect unique custom stamp names used in reactions
+  const stampNames = new Set<string>();
+  for (const row of summaryResult.results || []) {
+    if (/^:.+:$/.test(row.emoji)) {
+      stampNames.add(row.emoji);
+    }
+  }
+
+  // Resolve custom stamp names to image URLs
+  const stampUrlMap = new Map<string, string>();
+  if (stampNames.size > 0) {
+    const stampRows = await db
+      .prepare(
+        `SELECT name, image_key FROM custom_stamps WHERE name IN (${Array.from(stampNames)
+          .map(() => '?')
+          .join(',')})`,
+      )
+      .bind(...stampNames)
+      .all<{ name: string; image_key: string }>();
+    for (const s of stampRows.results || []) {
+      stampUrlMap.set(s.name, `/api/images/${s.image_key}`);
+    }
+  }
+
+  const grouped = new Map<string, Array<{ emoji: string; count: number; reacted: boolean; stamp_url?: string }>>();
   for (const row of summaryResult.results || []) {
     if (!grouped.has(row.post_id)) grouped.set(row.post_id, []);
-    grouped.get(row.post_id)!.push({
+    const entry: { emoji: string; count: number; reacted: boolean; stamp_url?: string } = {
       emoji: row.emoji,
       count: row.count,
       reacted: mine.has(`${row.post_id}:${row.emoji}`),
-    });
+    };
+    const stampUrl = stampUrlMap.get(row.emoji);
+    if (stampUrl) entry.stamp_url = stampUrl;
+    grouped.get(row.post_id)!.push(entry);
   }
 
   for (const post of posts) {
@@ -10671,6 +10897,7 @@ app.get('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
                m.gif_key, m.payload_key, m.swf_key, m.edited_at,
                m.content_iv, m.enc_version, m.key_version,
                m.ratchet_pub, m.ratchet_pn, m.ratchet_n,
+               m.stamp_id,
                p.enc as plaintext_enc, p.iv as plaintext_iv,
                u.username as sender_username, u.display_name as sender_display_name
         FROM dm_messages m
@@ -10688,6 +10915,7 @@ app.get('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
                m.gif_key, m.payload_key, m.swf_key, m.edited_at,
                m.content_iv, m.enc_version, m.key_version,
                m.ratchet_pub, m.ratchet_pn, m.ratchet_n,
+               m.stamp_id,
                p.enc as plaintext_enc, p.iv as plaintext_iv,
                u.username as sender_username, u.display_name as sender_display_name
         FROM dm_messages m
@@ -10704,31 +10932,52 @@ app.get('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
     const rows = (messages.results || []) as Array<Record<string, unknown>>;
     const nextCursor = rows.length === limit ? (rows[rows.length - 1].created_at as string) : null;
 
+    // Batch-fetch stamp data for messages that have stamp_id
+    const stampIds = [...new Set(rows.filter((r) => r.stamp_id).map((r) => r.stamp_id as string))];
+    const stampMap = new Map<string, { name: string; image_key: string }>();
+    if (stampIds.length > 0) {
+      const placeholders = stampIds.map(() => '?').join(',');
+      const stampRows = await c.env.DB.prepare(
+        `SELECT id, name, image_key FROM custom_stamps WHERE id IN (${placeholders})`,
+      )
+        .bind(...stampIds)
+        .all<{ id: string; name: string; image_key: string }>();
+      for (const s of stampRows.results || []) {
+        stampMap.set(s.id, { name: s.name, image_key: s.image_key });
+      }
+    }
+
     return c.json({
-      messages: rows.map((row) => ({
-        id: row.id,
-        conversation_id: row.conversation_id,
-        sender_id: row.sender_id,
-        content: row.content,
-        gif_key: row.gif_key || null,
-        payload_key: row.payload_key || null,
-        swf_key: row.swf_key || null,
-        content_iv: row.content_iv || null,
-        enc_version: row.enc_version || null,
-        key_version: row.key_version || null,
-        ratchet_pub: row.ratchet_pub || null,
-        ratchet_pn: row.ratchet_pn ?? null,
-        ratchet_n: row.ratchet_n ?? null,
-        plaintext_enc: row.plaintext_enc || null,
-        plaintext_iv: row.plaintext_iv || null,
-        created_at: row.created_at,
-        edited_at: row.edited_at || null,
-        is_mine: row.sender_id === userId,
-        sender: {
-          username: row.sender_username,
-          display_name: row.sender_display_name,
-        },
-      })),
+      messages: rows.map((row) => {
+        const stamp = row.stamp_id ? stampMap.get(row.stamp_id as string) : undefined;
+        return {
+          id: row.id,
+          conversation_id: row.conversation_id,
+          sender_id: row.sender_id,
+          content: row.content,
+          gif_key: row.gif_key || null,
+          payload_key: row.payload_key || null,
+          swf_key: row.swf_key || null,
+          content_iv: row.content_iv || null,
+          enc_version: row.enc_version || null,
+          key_version: row.key_version || null,
+          ratchet_pub: row.ratchet_pub || null,
+          ratchet_pn: row.ratchet_pn ?? null,
+          ratchet_n: row.ratchet_n ?? null,
+          plaintext_enc: row.plaintext_enc || null,
+          plaintext_iv: row.plaintext_iv || null,
+          stamp_id: row.stamp_id || null,
+          stamp_url: stamp ? `/api/images/${stamp.image_key}` : null,
+          stamp_name: stamp ? stamp.name : null,
+          created_at: row.created_at,
+          edited_at: row.edited_at || null,
+          is_mine: row.sender_id === userId,
+          sender: {
+            username: row.sender_username,
+            display_name: row.sender_display_name,
+          },
+        };
+      }),
       next_cursor: nextCursor,
     });
   } catch (error: unknown) {
@@ -10758,6 +11007,7 @@ app.post('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
       ratchetN,
       plaintextEnc,
       plaintextIv,
+      stampId,
     } = (await c.req.json()) as {
       content?: string;
       gifKey?: string;
@@ -10772,10 +11022,11 @@ app.post('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
       ratchetN?: number;
       plaintextEnc?: string;
       plaintextIv?: string;
+      stampId?: string;
     };
 
     const trimmed = content?.trim() || '';
-    if (!trimmed && !gifKey && !payloadKey && !swfKey) {
+    if (!trimmed && !gifKey && !payloadKey && !swfKey && !stampId) {
       return c.json({ error: 'Content or file attachment is required' }, 400);
     }
 
@@ -10800,9 +11051,23 @@ app.post('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
     const msgId = messageId || nanoid();
     const now = new Date().toISOString();
 
+    // Validate stampId if provided
+    let stampUrl: string | null = null;
+    let stampName: string | null = null;
+    if (stampId) {
+      const stamp = await c.env.DB.prepare('SELECT id, name, image_key FROM custom_stamps WHERE id = ? AND user_id = ?')
+        .bind(stampId, senderId)
+        .first<{ id: string; name: string; image_key: string }>();
+      if (!stamp) {
+        return c.json({ error: 'Stamp not found' }, 404);
+      }
+      stampUrl = `/api/images/${stamp.image_key}`;
+      stampName = stamp.name;
+    }
+
     // Insert message with optional attachment keys
     await c.env.DB.prepare(
-      'INSERT INTO dm_messages (id, conversation_id, sender_id, content, created_at, gif_key, payload_key, swf_key, content_iv, enc_version, key_version, ratchet_pub, ratchet_pn, ratchet_n) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO dm_messages (id, conversation_id, sender_id, content, created_at, gif_key, payload_key, swf_key, content_iv, enc_version, key_version, ratchet_pub, ratchet_pn, ratchet_n, stamp_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     )
       .bind(
         msgId,
@@ -10819,6 +11084,7 @@ app.post('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
         ratchetPub || null,
         typeof ratchetPn === 'number' ? ratchetPn : null,
         typeof ratchetN === 'number' ? ratchetN : null,
+        stampId || null,
       )
       .run();
 
@@ -10893,6 +11159,9 @@ app.post('/api/dm/conversations/:id/messages', requireAuth, async (c) => {
       ratchet_pub: ratchetPub || null,
       ratchet_pn: typeof ratchetPn === 'number' ? ratchetPn : null,
       ratchet_n: typeof ratchetN === 'number' ? ratchetN : null,
+      stamp_id: stampId || null,
+      stamp_url: stampUrl,
+      stamp_name: stampName,
       created_at: now,
       edited_at: null,
       is_mine: true,
@@ -11735,6 +12004,7 @@ app.get('/api/groups/:id/messages', requireAuth, async (c) => {
         SELECT m.id, m.group_id, m.sender_id, m.content, m.created_at,
                m.gif_key, m.payload_key, m.swf_key, m.edited_at,
                 m.content_iv, m.enc_version, m.key_version,
+                m.stamp_id,
                 u.username as sender_username, u.display_name as sender_display_name,
                u.avatar_key as sender_avatar_key
         FROM group_messages m
@@ -11750,6 +12020,7 @@ app.get('/api/groups/:id/messages', requireAuth, async (c) => {
         SELECT m.id, m.group_id, m.sender_id, m.content, m.created_at,
                m.gif_key, m.payload_key, m.swf_key, m.edited_at,
                 m.content_iv, m.enc_version, m.key_version,
+                m.stamp_id,
                 u.username as sender_username, u.display_name as sender_display_name,
                u.avatar_key as sender_avatar_key
         FROM group_messages m
@@ -11765,28 +12036,49 @@ app.get('/api/groups/:id/messages', requireAuth, async (c) => {
     const rows = (messages.results || []) as Array<Record<string, unknown>>;
     const nextCursor = rows.length === limit ? (rows[rows.length - 1].created_at as string) : null;
 
+    // Batch-fetch stamp data for messages that have stamp_id
+    const stampIds = [...new Set(rows.filter((r) => r.stamp_id).map((r) => r.stamp_id as string))];
+    const stampMap = new Map<string, { name: string; image_key: string }>();
+    if (stampIds.length > 0) {
+      const placeholders = stampIds.map(() => '?').join(',');
+      const stampRows = await c.env.DB.prepare(
+        `SELECT id, name, image_key FROM custom_stamps WHERE id IN (${placeholders})`,
+      )
+        .bind(...stampIds)
+        .all<{ id: string; name: string; image_key: string }>();
+      for (const s of stampRows.results || []) {
+        stampMap.set(s.id, { name: s.name, image_key: s.image_key });
+      }
+    }
+
     return c.json({
-      messages: rows.map((row) => ({
-        id: row.id,
-        group_id: row.group_id,
-        sender_id: row.sender_id,
-        content: row.content,
-        gif_key: row.gif_key || null,
-        payload_key: row.payload_key || null,
-        swf_key: row.swf_key || null,
-        content_iv: row.content_iv || null,
-        enc_version: row.enc_version || null,
-        key_version: row.key_version || null,
-        created_at: row.created_at,
-        edited_at: row.edited_at || null,
-        is_mine: row.sender_id === userId,
-        sender: {
-          id: row.sender_id,
-          username: row.sender_username,
-          display_name: row.sender_display_name,
-          avatar_key: row.sender_avatar_key || null,
-        },
-      })),
+      messages: rows.map((row) => {
+        const stamp = row.stamp_id ? stampMap.get(row.stamp_id as string) : undefined;
+        return {
+          id: row.id,
+          group_id: row.group_id,
+          sender_id: row.sender_id,
+          content: row.content,
+          gif_key: row.gif_key || null,
+          payload_key: row.payload_key || null,
+          swf_key: row.swf_key || null,
+          content_iv: row.content_iv || null,
+          enc_version: row.enc_version || null,
+          key_version: row.key_version || null,
+          stamp_id: row.stamp_id || null,
+          stamp_url: stamp ? `/api/images/${stamp.image_key}` : null,
+          stamp_name: stamp ? stamp.name : null,
+          created_at: row.created_at,
+          edited_at: row.edited_at || null,
+          is_mine: row.sender_id === userId,
+          sender: {
+            id: row.sender_id,
+            username: row.sender_username,
+            display_name: row.sender_display_name,
+            avatar_key: row.sender_avatar_key || null,
+          },
+        };
+      }),
       next_cursor: nextCursor,
     });
   } catch (error: unknown) {
@@ -11801,7 +12093,7 @@ app.post('/api/groups/:id/messages', requireAuth, async (c) => {
   try {
     const senderId = c.get('user')?.id || '';
     const groupId = c.req.param('id');
-    const { content, gifKey, payloadKey, swfKey, messageId, contentIv, encVersion, keyVersion } =
+    const { content, gifKey, payloadKey, swfKey, messageId, contentIv, encVersion, keyVersion, stampId } =
       (await c.req.json()) as {
         content?: string;
         gifKey?: string;
@@ -11811,10 +12103,11 @@ app.post('/api/groups/:id/messages', requireAuth, async (c) => {
         contentIv?: string;
         encVersion?: number;
         keyVersion?: number;
+        stampId?: string;
       };
 
     const trimmed = content?.trim() || '';
-    if (!trimmed && !gifKey && !payloadKey && !swfKey) {
+    if (!trimmed && !gifKey && !payloadKey && !swfKey && !stampId) {
       return c.json({ error: 'Content or file attachment is required' }, 400);
     }
     const isEncrypted = typeof encVersion === 'number' && encVersion > 0;
@@ -11832,11 +12125,25 @@ app.post('/api/groups/:id/messages', requireAuth, async (c) => {
       return c.json({ error: 'Group not found' }, 404);
     }
 
+    // Validate stampId if provided
+    let stampUrl: string | null = null;
+    let stampName: string | null = null;
+    if (stampId) {
+      const stamp = await c.env.DB.prepare('SELECT id, name, image_key FROM custom_stamps WHERE id = ? AND user_id = ?')
+        .bind(stampId, senderId)
+        .first<{ id: string; name: string; image_key: string }>();
+      if (!stamp) {
+        return c.json({ error: 'Stamp not found' }, 404);
+      }
+      stampUrl = `/api/images/${stamp.image_key}`;
+      stampName = stamp.name;
+    }
+
     const msgId = messageId || nanoid();
     const now = new Date().toISOString();
 
     await c.env.DB.prepare(
-      'INSERT INTO group_messages (id, group_id, sender_id, content, created_at, gif_key, payload_key, swf_key, content_iv, enc_version, key_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO group_messages (id, group_id, sender_id, content, created_at, gif_key, payload_key, swf_key, content_iv, enc_version, key_version, stamp_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     )
       .bind(
         msgId,
@@ -11850,6 +12157,7 @@ app.post('/api/groups/:id/messages', requireAuth, async (c) => {
         contentIv || null,
         isEncrypted ? encVersion : null,
         keyVersion || 1,
+        stampId || null,
       )
       .run();
 
@@ -11889,6 +12197,9 @@ app.post('/api/groups/:id/messages', requireAuth, async (c) => {
       content_iv: contentIv || null,
       enc_version: isEncrypted ? encVersion : null,
       key_version: isEncrypted ? keyVersion || 1 : null,
+      stamp_id: stampId || null,
+      stamp_url: stampUrl,
+      stamp_name: stampName,
       created_at: now,
       edited_at: null,
       is_mine: true,
@@ -13795,7 +14106,7 @@ app.get('/api/servers/:id/channels/:channelId/messages', requireAuth, async (c) 
         SELECT m.id, m.channel_id, m.sender_id, m.content, m.created_at,
                m.gif_key, m.payload_key, m.swf_key, m.edited_at,
                 m.content_iv, m.enc_version, m.key_version,
-                m.reply_to_id, m.pinned,
+                m.reply_to_id, m.pinned, m.stamp_id,
                u.username as sender_username, u.display_name as sender_display_name,
                u.avatar_key as sender_avatar_key
         FROM server_messages m
@@ -13811,7 +14122,7 @@ app.get('/api/servers/:id/channels/:channelId/messages', requireAuth, async (c) 
         SELECT m.id, m.channel_id, m.sender_id, m.content, m.created_at,
                m.gif_key, m.payload_key, m.swf_key, m.edited_at,
                 m.content_iv, m.enc_version, m.key_version,
-                m.reply_to_id, m.pinned,
+                m.reply_to_id, m.pinned, m.stamp_id,
                u.username as sender_username, u.display_name as sender_display_name,
                u.avatar_key as sender_avatar_key
         FROM server_messages m
@@ -13827,30 +14138,51 @@ app.get('/api/servers/:id/channels/:channelId/messages', requireAuth, async (c) 
     const rows = (messages.results || []) as Array<Record<string, unknown>>;
     const nextCursor = rows.length === limit ? (rows[rows.length - 1].created_at as string) : null;
 
+    // Batch-fetch stamp data for messages that have stamp_id
+    const stampIds = [...new Set(rows.filter((r) => r.stamp_id).map((r) => r.stamp_id as string))];
+    const stampMap = new Map<string, { name: string; image_key: string }>();
+    if (stampIds.length > 0) {
+      const placeholders = stampIds.map(() => '?').join(',');
+      const stampRows = await c.env.DB.prepare(
+        `SELECT id, name, image_key FROM custom_stamps WHERE id IN (${placeholders})`,
+      )
+        .bind(...stampIds)
+        .all<{ id: string; name: string; image_key: string }>();
+      for (const s of stampRows.results || []) {
+        stampMap.set(s.id, { name: s.name, image_key: s.image_key });
+      }
+    }
+
     return c.json({
-      messages: rows.map((row) => ({
-        id: row.id,
-        channel_id: row.channel_id,
-        sender_id: row.sender_id,
-        content: row.content,
-        gif_key: row.gif_key || null,
-        payload_key: row.payload_key || null,
-        swf_key: row.swf_key || null,
-        content_iv: row.content_iv || null,
-        enc_version: row.enc_version || null,
-        key_version: row.key_version || 1,
-        reply_to_id: row.reply_to_id || null,
-        pinned: row.pinned || 0,
-        created_at: row.created_at,
-        edited_at: row.edited_at || null,
-        is_mine: row.sender_id === userId,
-        sender: {
-          id: row.sender_id,
-          username: row.sender_username,
-          display_name: row.sender_display_name,
-          avatar_key: row.sender_avatar_key || null,
-        },
-      })),
+      messages: rows.map((row) => {
+        const stamp = row.stamp_id ? stampMap.get(row.stamp_id as string) : undefined;
+        return {
+          id: row.id,
+          channel_id: row.channel_id,
+          sender_id: row.sender_id,
+          content: row.content,
+          gif_key: row.gif_key || null,
+          payload_key: row.payload_key || null,
+          swf_key: row.swf_key || null,
+          content_iv: row.content_iv || null,
+          enc_version: row.enc_version || null,
+          key_version: row.key_version || 1,
+          reply_to_id: row.reply_to_id || null,
+          pinned: row.pinned || 0,
+          stamp_id: row.stamp_id || null,
+          stamp_url: stamp ? `/api/images/${stamp.image_key}` : null,
+          stamp_name: stamp ? stamp.name : null,
+          created_at: row.created_at,
+          edited_at: row.edited_at || null,
+          is_mine: row.sender_id === userId,
+          sender: {
+            id: row.sender_id,
+            username: row.sender_username,
+            display_name: row.sender_display_name,
+            avatar_key: row.sender_avatar_key || null,
+          },
+        };
+      }),
       next_cursor: nextCursor,
     });
   } catch (error: unknown) {
@@ -13867,7 +14199,7 @@ app.post('/api/servers/:id/channels/:channelId/messages', requireAuth, async (c)
     const senderId = user.id;
     const serverId = c.req.param('id');
     const channelId = c.req.param('channelId');
-    const { content, gifKey, payloadKey, swfKey, messageId, contentIv, encVersion, keyVersion } =
+    const { content, gifKey, payloadKey, swfKey, messageId, contentIv, encVersion, keyVersion, stampId } =
       (await c.req.json()) as {
         content?: string;
         gifKey?: string;
@@ -13877,10 +14209,11 @@ app.post('/api/servers/:id/channels/:channelId/messages', requireAuth, async (c)
         contentIv?: string;
         encVersion?: number;
         keyVersion?: number;
+        stampId?: string;
       };
 
     const trimmed = content?.trim() || '';
-    if (!trimmed && !gifKey && !payloadKey && !swfKey) {
+    if (!trimmed && !gifKey && !payloadKey && !swfKey && !stampId) {
       return c.json({ error: 'Content or file attachment is required' }, 400);
     }
     const isEncrypted = typeof encVersion === 'number' && encVersion > 0;
@@ -13907,11 +14240,25 @@ app.post('/api/servers/:id/channels/:channelId/messages', requireAuth, async (c)
       return c.json({ error: 'Channel not found' }, 404);
     }
 
+    // Validate stampId if provided
+    let stampUrl: string | null = null;
+    let stampName: string | null = null;
+    if (stampId) {
+      const stamp = await c.env.DB.prepare('SELECT id, name, image_key FROM custom_stamps WHERE id = ? AND user_id = ?')
+        .bind(stampId, senderId)
+        .first<{ id: string; name: string; image_key: string }>();
+      if (!stamp) {
+        return c.json({ error: 'Stamp not found' }, 404);
+      }
+      stampUrl = `/api/images/${stamp.image_key}`;
+      stampName = stamp.name;
+    }
+
     const msgId = messageId || nanoid();
     const now = new Date().toISOString();
 
     await c.env.DB.prepare(
-      'INSERT INTO server_messages (id, channel_id, sender_id, content, created_at, gif_key, payload_key, swf_key, content_iv, enc_version, key_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO server_messages (id, channel_id, sender_id, content, created_at, gif_key, payload_key, swf_key, content_iv, enc_version, key_version, stamp_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     )
       .bind(
         msgId,
@@ -13925,6 +14272,7 @@ app.post('/api/servers/:id/channels/:channelId/messages', requireAuth, async (c)
         contentIv || null,
         isEncrypted ? encVersion : null,
         keyVersion || 1,
+        stampId || null,
       )
       .run();
 
@@ -13963,6 +14311,9 @@ app.post('/api/servers/:id/channels/:channelId/messages', requireAuth, async (c)
       content_iv: contentIv || null,
       enc_version: isEncrypted ? encVersion : null,
       key_version: isEncrypted ? keyVersion || 1 : null,
+      stamp_id: stampId || null,
+      stamp_url: stampUrl,
+      stamp_name: stampName,
       created_at: now,
       edited_at: null,
       is_mine: true,

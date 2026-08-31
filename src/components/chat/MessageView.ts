@@ -3,6 +3,7 @@ import { loadLinkPreview } from '../../lib/link-preview.js';
 import { registerModal } from '../../lib/modal-state.js';
 import { showToast } from '../../lib/toast.js';
 import { linkifyHashtags, linkifyUrls, processText } from '../PostText.js';
+import { closeStampPicker, openStampPicker } from '../StampPicker.js';
 import type { ChatMessage, MessageTransport } from './types.js';
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
@@ -29,6 +30,7 @@ export abstract class MessageView {
   protected hasMore = true;
 
   protected selectedFile: File | null = null;
+  protected selectedStampId: string | null = null;
   protected editingMsgId: string | null = null;
   protected pendingEnrich: Promise<void>[] = [];
 
@@ -88,6 +90,29 @@ export abstract class MessageView {
     fileBtn.title = t('composer.attach_file');
     fileBtn.addEventListener('click', () => this.fileInputEl?.click());
 
+    const stampBtn = document.createElement('button');
+    stampBtn.id = `${this.domPrefix}-stamp-btn`;
+    stampBtn.className = 'chat-input-btn';
+    stampBtn.textContent = '😀';
+    stampBtn.title = t('settings.custom_emoji') || 'Custom Emoji';
+    stampBtn.style.cssText = 'font-size: 1.125rem;';
+    stampBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (this.selectedStampId) {
+        this.clearStampSelection();
+      } else {
+        openStampPicker(stampBtn, {
+          onSelect: (_emoji: string, stampId?: string) => {
+            if (stampId) {
+              this.selectedStampId = stampId;
+              stampBtn.style.background = 'var(--accent)';
+              stampBtn.style.color = 'white';
+            }
+          },
+        });
+      }
+    });
+
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
     fileInput.id = `${this.domPrefix}-file-input`;
@@ -140,6 +165,7 @@ export abstract class MessageView {
     filePreview.appendChild(fileRemoveBtn);
 
     inputArea.appendChild(fileBtn);
+    inputArea.appendChild(stampBtn);
     inputArea.appendChild(fileInput);
     inputArea.appendChild(input);
     inputArea.appendChild(charCount);
@@ -168,6 +194,16 @@ export abstract class MessageView {
   /** Hook for scope specific state that must reset when a file is cleared. */
   protected resetUploadState(): void {
     /* no-op by default */
+  }
+
+  protected clearStampSelection(): void {
+    this.selectedStampId = null;
+    const stampBtn = this.element.querySelector(`#${this.domPrefix}-stamp-btn`) as HTMLElement | null;
+    if (stampBtn) {
+      stampBtn.style.background = '';
+      stampBtn.style.color = '';
+    }
+    closeStampPicker();
   }
 
   // ─── composer behaviour ─────────────────────────────────────────────────────
@@ -314,7 +350,11 @@ export abstract class MessageView {
           this.cancelEdit();
         }
       } else {
-        const msg = await this.transport.sendMessage({ content, file: this.selectedFile });
+        const msg = await this.transport.sendMessage({
+          content,
+          file: this.selectedFile,
+          stampId: this.selectedStampId || undefined,
+        });
         if (msg) {
           this.messages.push(msg);
           this.renderMessages();
@@ -536,6 +576,18 @@ export abstract class MessageView {
         attachment.className = `${this.domPrefix}-bubble-attachment`;
         this.transport.renderAttachment(attachment, msg);
         body.appendChild(attachment);
+      }
+
+      if (msg.stamp_url && msg.stamp_name) {
+        const stampEl = document.createElement('div');
+        stampEl.className = 'msg-row-stamp';
+        stampEl.style.cssText = 'margin-bottom: 0.25rem;';
+        const stampImg = document.createElement('img');
+        stampImg.src = msg.stamp_url;
+        stampImg.alt = msg.stamp_name;
+        stampImg.style.cssText = 'width: 48px; height: 48px; object-fit: contain;';
+        stampEl.appendChild(stampImg);
+        body.appendChild(stampEl);
       }
 
       if (msg.content) {

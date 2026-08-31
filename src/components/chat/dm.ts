@@ -136,7 +136,7 @@ export class DmTransport implements MessageTransport {
     return res.ok;
   }
 
-  async sendMessage(opts: { content: string; file: File | null }): Promise<ChatMessage | null> {
+  async sendMessage(opts: { content: string; file: File | null; stampId?: string }): Promise<ChatMessage | null> {
     const content = opts.content;
     let gifKey: string | undefined;
     let payloadKey: string | undefined;
@@ -237,6 +237,7 @@ export class DmTransport implements MessageTransport {
     if (payloadKey) body.payloadKey = payloadKey;
     if (swfKey) body.swfKey = swfKey;
     if (messageId) body.messageId = messageId;
+    if (opts.stampId) body.stampId = opts.stampId;
 
     const res = await fetch(`/api/dm/conversations/${this.conversationId}/messages`, {
       method: 'POST',
