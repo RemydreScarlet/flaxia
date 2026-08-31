@@ -325,6 +325,11 @@
   "settings.custom_emoji_empty": "まだカスタム絵文字がありません。設定から作成しましょう！",
   "settings.custom_emoji_load_failed": "スタンプの読み込みに失敗しました",
   "settings.custom_emoji_network_error": "ネットワークエラー",
+  "settings.custom_emoji_too_large": "ファイルが大きすぎます（最大5MB）",
+  "settings.add_stamp_modal_title": "カスタム絵文字を追加",
+  "settings.add_stamp_tap_to_add": "タップして追加",
+  "settings.add_stamp_preview": "画像をクリックして選択",
+  "settings.add_stamp_uploading": "アップロード中...",
 
   "share.title": "シェア",
   "share.quote": "引用",

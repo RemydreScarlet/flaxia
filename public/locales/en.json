@@ -325,6 +325,11 @@
   "settings.custom_emoji_empty": "No custom emoji yet. Create some in Settings!",
   "settings.custom_emoji_load_failed": "Failed to load stamps",
   "settings.custom_emoji_network_error": "Network error",
+  "settings.custom_emoji_too_large": "File too large (max 5MB)",
+  "settings.add_stamp_modal_title": "Add Custom Emoji",
+  "settings.add_stamp_tap_to_add": "Tap to add",
+  "settings.add_stamp_preview": "Click to select image",
+  "settings.add_stamp_uploading": "Uploading...",
 
   "share.title": "Share",
   "share.quote": "Quote",

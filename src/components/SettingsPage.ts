@@ -6,6 +6,7 @@ import { rewrapE2EEIdentityV2, unlockIdentityV2WithPassword } from '../lib/messe
 import { getReplyStyle, getShowNsfw, ReplyStyle, setReplyStyle, setShowNsfw } from '../lib/settings.js';
 import { clientStep1, clientStep2, computeVerifier, generateSalt } from '../lib/srp.js';
 import { getTheme, setTheme, Theme } from '../lib/theme.js';
+import { createAddStampModal } from './AddStampModal.js';
 
 function b64(b: Uint8Array): string {
   let binary = '';
@@ -1006,50 +1007,6 @@ export function createSettingsPage({ currentUser }: SettingsPageProps) {
     emojiCountRow.appendChild(emojiCountLabel);
     emojiCountRow.appendChild(emojiCountValue);
 
-    // Upload form
-    const uploadRow = document.createElement('div');
-    uploadRow.style.cssText = 'display: flex; gap: 0.5rem; margin-bottom: 1rem; align-items: center;';
-
-    const nameInput = document.createElement('input');
-    nameInput.type = 'text';
-    nameInput.placeholder = ':name:';
-    nameInput.style.cssText = `
-      flex: 1;
-      padding: 0.5rem 0.75rem;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: var(--bg-input);
-      color: var(--text-primary);
-      font-size: 0.875rem;
-      font-family: monospace;
-    `;
-
-    const fileInput = document.createElement('input');
-    fileInput.type = 'file';
-    fileInput.accept = 'image/png,image/jpeg,image/gif,image/webp';
-    fileInput.style.cssText = 'font-size: 0.875rem;';
-
-    const uploadBtn = document.createElement('button');
-    uploadBtn.textContent = t('settings.custom_emoji_upload') || 'Upload';
-    uploadBtn.style.cssText = `
-      background: var(--accent);
-      color: white;
-      border: none;
-      padding: 0.5rem 1rem;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 0.875rem;
-      font-weight: 600;
-      white-space: nowrap;
-    `;
-
-    const uploadMsg = document.createElement('div');
-    uploadMsg.style.cssText = 'font-size: 0.8125rem; min-height: 1.25rem; margin-bottom: 0.5rem;';
-
-    uploadRow.appendChild(nameInput);
-    uploadRow.appendChild(fileInput);
-    uploadRow.appendChild(uploadBtn);
-
     // Stamps list
     const stampsGrid = document.createElement('div');
     stampsGrid.style.cssText =
@@ -1112,62 +1069,62 @@ export function createSettingsPage({ currentUser }: SettingsPageProps) {
                 return;
               const res = await fetch(`/api/stamps/${stamp.id}`, { method: 'DELETE', credentials: 'include' });
               if (res.ok) loadStamps();
-              else uploadMsg.textContent = t('settings.custom_emoji_delete_failed') || 'Failed to delete';
             });
             card.appendChild(delBtn);
             card.appendChild(img);
             card.appendChild(label);
             stampsGrid.appendChild(card);
           }
+
+          // Add "add" card
+          const addCard = document.createElement('div');
+          addCard.style.cssText = `
+            border: 2px dashed var(--border);
+            border-radius: 6px;
+            padding: 0.5rem;
+            text-align: center;
+            background: var(--bg-secondary);
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            gap: 0.25rem;
+            min-height: 80px;
+            transition: border-color 0.2s, background 0.2s;
+          `;
+          const addIcon = document.createElement('div');
+          addIcon.textContent = '+';
+          addIcon.style.cssText = 'font-size: 1.5rem; line-height: 1; color: var(--text-muted);';
+          const addLabel = document.createElement('div');
+          addLabel.style.cssText = 'font-size: 0.75rem; color: var(--text-muted);';
+          addLabel.textContent = t('settings.add_stamp_tap_to_add') || 'Tap to add';
+          addCard.appendChild(addIcon);
+          addCard.appendChild(addLabel);
+
+          addCard.addEventListener('mouseenter', () => {
+            addCard.style.borderColor = 'var(--accent)';
+            addCard.style.background = 'var(--bg-hover, rgba(0,0,0,0.02))';
+          });
+          addCard.addEventListener('mouseleave', () => {
+            addCard.style.borderColor = 'var(--border)';
+            addCard.style.background = 'var(--bg-secondary)';
+          });
+          addCard.addEventListener('click', () => {
+            createAddStampModal({ onUploaded: loadStamps });
+          });
+
+          stampsGrid.appendChild(addCard);
         })
         .catch(() => {
           stampsGrid.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:1rem;">${t('settings.custom_emoji_load_failed') || 'Failed to load stamps'}</div>`;
         });
     }
 
-    uploadBtn.addEventListener('click', async () => {
-      const name = nameInput.value.trim();
-      const file = fileInput.files?.[0];
-      if (!name || !file) {
-        uploadMsg.textContent = t('settings.custom_emoji_fill_all') || 'Please enter a name and select a file';
-        uploadMsg.style.color = 'var(--danger)';
-        return;
-      }
-      if (!/^:[a-zA-Z0-9_]+:$/.test(name)) {
-        uploadMsg.textContent = t('settings.custom_emoji_name_format') || 'Name must be in :colon_format:';
-        uploadMsg.style.color = 'var(--danger)';
-        return;
-      }
-      uploadBtn.disabled = true;
-      uploadMsg.textContent = '';
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('name', name);
-      try {
-        const res = await fetch('/api/stamps', { method: 'POST', credentials: 'include', body: formData });
-        if (res.ok) {
-          nameInput.value = '';
-          fileInput.value = '';
-          uploadMsg.textContent = t('settings.custom_emoji_uploaded') || 'Uploaded!';
-          uploadMsg.style.color = 'var(--success, #10b981)';
-          loadStamps();
-        } else {
-          const err = (await res.json()) as { error?: string };
-          uploadMsg.textContent = err.error || t('settings.custom_emoji_upload_failed') || 'Upload failed';
-          uploadMsg.style.color = 'var(--danger)';
-        }
-      } catch {
-        uploadMsg.textContent = t('settings.custom_emoji_network_error') || 'Network error';
-        uploadMsg.style.color = 'var(--danger)';
-      }
-      uploadBtn.disabled = false;
-    });
-
     emojiSection.appendChild(emojiTitle);
     emojiSection.appendChild(emojiDesc);
     emojiSection.appendChild(emojiCountRow);
-    emojiSection.appendChild(uploadRow);
-    emojiSection.appendChild(uploadMsg);
     emojiSection.appendChild(stampsGrid);
     container.appendChild(emojiSection);
 
