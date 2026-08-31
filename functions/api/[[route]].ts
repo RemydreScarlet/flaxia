@@ -7781,12 +7781,17 @@ app.get('/api/stamps', requireAuth, async (c) => {
       .bind(userId)
       .all<{ id: string; name: string; image_key: string; created_at: string }>();
 
-    const stamps = (rows.results || []).map((r) => ({
-      id: r.id,
-      name: r.name,
-      url: `/api/images/${r.image_key}`,
-      created_at: r.created_at,
-    }));
+    const stamps = (rows.results || []).map((r) => {
+      const match = r.name.match(/^:[^:]+:(.+)$/);
+      const bareName = match ? match[1] : r.name;
+      return {
+        id: r.id,
+        name: r.name,
+        bare_name: bareName,
+        url: `/api/images/${r.image_key}`,
+        created_at: r.created_at,
+      };
+    });
 
     return c.json({ stamps });
   } catch (error: unknown) {
@@ -7824,20 +7829,24 @@ app.post('/api/stamps', requireAuth, async (c) => {
 
     const formData = await c.req.formData();
     const file = formData.get('file') as File | null;
-    const name = ((formData.get('name') as string) || '').trim();
+    const rawName = ((formData.get('name') as string) || '').trim();
 
     if (!file || !(file instanceof File)) {
       return c.json({ error: 'No file provided' }, 400);
     }
-    if (!name || name.length === 0) {
+    if (!rawName || rawName.length === 0) {
       return c.json({ error: 'Name is required' }, 400);
     }
-    if (name.length > 32) {
-      return c.json({ error: 'Name too long (max 32 chars)' }, 400);
+    // Strip surrounding colons if user provided them
+    const bareName = rawName.replace(/^:+|:+$/g, '');
+    if (bareName.length === 0 || bareName.length > 30) {
+      return c.json({ error: 'Name too long (max 30 chars)' }, 400);
     }
-    if (!/^:[a-zA-Z0-9_]+:$/.test(name)) {
-      return c.json({ error: 'Name must be in :colon_format: (letters, numbers, underscores)' }, 400);
+    if (!/^[a-zA-Z0-9_]+$/.test(bareName)) {
+      return c.json({ error: 'Name must contain only letters, numbers, and underscores' }, 400);
     }
+    // Store as :userId:name: for global uniqueness
+    const name = `:${userId}:${bareName}`;
 
     // Check unique name per user
     const existing = await c.env.DB.prepare('SELECT 1 FROM custom_stamps WHERE user_id = ? AND name = ?')
@@ -7929,13 +7938,19 @@ app.get('/api/stamps/all', async (c) => {
       'SELECT cs.id, cs.name, cs.image_key, cs.user_id, u.username FROM custom_stamps cs JOIN users u ON cs.user_id = u.id ORDER BY cs.created_at DESC',
     ).all<{ id: string; name: string; image_key: string; user_id: string; username: string }>();
 
-    const stamps = (rows.results || []).map((r) => ({
-      id: r.id,
-      name: r.name,
-      url: `/api/images/${r.image_key}`,
-      user_id: r.user_id,
-      username: r.username,
-    }));
+    const stamps = (rows.results || []).map((r) => {
+      // Extract bare name from :userId:name: format
+      const match = r.name.match(/^:[^:]+:(.+)$/);
+      const bareName = match ? match[1] : r.name;
+      return {
+        id: r.id,
+        name: r.name,
+        bare_name: bareName,
+        url: `/api/images/${r.image_key}`,
+        user_id: r.user_id,
+        username: r.username,
+      };
+    });
 
     return c.json({ stamps });
   } catch (error: unknown) {

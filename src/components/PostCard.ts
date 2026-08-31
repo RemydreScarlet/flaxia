@@ -170,6 +170,7 @@ export class PostCard {
               text: displayText,
               mentions: this.props.post.mentions,
               enablePostRefs: this.props.enablePostRefs,
+              authorId: this.props.post.user_id,
             });
             textElement.replaceWith(richText);
           } catch (error) {
@@ -185,6 +186,7 @@ export class PostCard {
             text: displayText,
             mentions: this.props.post.mentions,
             enablePostRefs: this.props.enablePostRefs,
+            authorId: this.props.post.user_id,
           });
           textElement.replaceWith(richText);
         } catch (error) {

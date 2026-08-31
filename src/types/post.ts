@@ -113,6 +113,7 @@ export interface PostTextProps {
   text: string;
   mentions?: string;
   enablePostRefs?: boolean;
+  authorId?: string;
 }
 
 export interface PostStageProps {

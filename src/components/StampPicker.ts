@@ -3,7 +3,9 @@ import { t } from '../lib/i18n.js';
 export interface StampItem {
   id: string;
   name: string;
+  bare_name: string;
   url: string;
+  user_id: string;
 }
 
 interface StampPickerProps {
@@ -191,15 +193,15 @@ export function openStampPicker(anchor: HTMLElement, props: StampPickerProps): v
             align-items: center;
             gap: 2px;
           `;
-          btn.title = stamp.name;
+          btn.title = `:${stamp.bare_name}:`;
           const img = document.createElement('img');
           img.src = stamp.url;
-          img.alt = stamp.name;
+          img.alt = `:${stamp.bare_name}:`;
           img.style.cssText = 'width:32px;height:32px;object-fit:contain;';
           const label = document.createElement('span');
           label.style.cssText =
             'font-size:0.625rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:64px;';
-          label.textContent = stamp.name;
+          label.textContent = `:${stamp.bare_name}:`;
           btn.appendChild(img);
           btn.appendChild(label);
           btn.addEventListener('click', () => {
