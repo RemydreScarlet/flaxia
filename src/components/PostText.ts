@@ -27,11 +27,19 @@ async function getStampCache(): Promise<Map<string, { url: string; user_id: stri
         const map = new Map<string, { url: string; user_id: string }>();
         for (const s of data.stamps) {
           // Key: "userId:name" (e.g., "abc123:heart")
-          map.set(`${s.user_id}:${s.bare_name}`, { url: s.url, user_id: s.user_id });
+          const key = `${s.user_id}:${s.bare_name}`;
+          map.set(key, { url: s.url, user_id: s.user_id });
+        }
+        console.log('[StampCache] loaded', map.size, 'stamps');
+        for (const [k, v] of map) {
+          console.log('[StampCache] key:', k, 'url:', v.url, 'user_id:', v.user_id);
         }
         return map;
       })
-      .catch(() => new Map<string, { url: string; user_id: string }>());
+      .catch((e) => {
+        console.error('[StampCache] fetch failed:', e);
+        return new Map<string, { url: string; user_id: string }>();
+      });
   }
   return stampCachePromise;
 }
@@ -431,6 +439,7 @@ function linkifyUrls(container: HTMLElement): void {
 
 async function linkifyCustomEmoji(container: HTMLElement, authorId?: string): Promise<void> {
   const stampCache = await getStampCache();
+  console.log('[linkifyCustomEmoji] authorId:', authorId, 'cacheSize:', stampCache.size);
   if (stampCache.size === 0) return;
 
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
@@ -465,10 +474,19 @@ async function linkifyCustomEmoji(container: HTMLElement, authorId?: string): Pr
       const bareName = match[2];
       const cacheKey = `${userId}:${bareName}`;
       const stampData = stampCache.get(cacheKey);
+      console.log(
+        '[linkifyCustomEmoji] match:',
+        match[0],
+        'cacheKey:',
+        cacheKey,
+        'stampData:',
+        stampData ? 'found' : 'MISS',
+      );
 
       // For posts/chat: only render if userId matches authorId
       // For reactions (authorId is undefined): always render
       if (stampData && (authorId === undefined || stampData.user_id === authorId)) {
+        console.log('[linkifyCustomEmoji] RENDERING as img');
         const img = document.createElement('img');
         img.src = stampData.url;
         img.alt = `:${userId}:${bareName}:`;
@@ -476,6 +494,7 @@ async function linkifyCustomEmoji(container: HTMLElement, authorId?: string): Pr
         img.title = `:${bareName}:`;
         fragment.appendChild(img);
       } else {
+        console.log('[linkifyCustomEmoji] LEAVING as text');
         fragment.appendChild(document.createTextNode(match[0]));
       }
 
