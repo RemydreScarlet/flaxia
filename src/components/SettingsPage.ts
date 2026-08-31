@@ -1053,7 +1053,7 @@ export function createSettingsPage({ currentUser }: SettingsPageProps) {
     // Stamps list
     const stampsGrid = document.createElement('div');
     stampsGrid.style.cssText =
-      'display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 0.75rem;';
+      'display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 0.75rem; width: 100%;';
 
     function loadStamps() {
       fetch('/api/stamps', { credentials: 'include' })
@@ -1069,15 +1069,21 @@ export function createSettingsPage({ currentUser }: SettingsPageProps) {
               padding: 0.5rem;
               text-align: center;
               background: var(--bg-secondary);
+              overflow: hidden;
+              min-width: 0;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
               position: relative;
             `;
             const img = document.createElement('img');
             img.src = stamp.url;
             img.alt = stamp.name;
-            img.style.cssText = 'width: 48px; height: 48px; object-fit: contain; margin-bottom: 0.25rem;';
+            img.style.cssText =
+              'width: 48px; height: 48px; object-fit: contain; margin-bottom: 0.25rem; flex-shrink: 0;';
             const label = document.createElement('div');
             label.style.cssText =
-              'font-size: 0.75rem; color: var(--text-muted); font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+              'font-size: 0.75rem; color: var(--text-muted); font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%;';
             label.textContent = stamp.name;
             label.title = stamp.name;
             const delBtn = document.createElement('button');
@@ -1085,19 +1091,21 @@ export function createSettingsPage({ currentUser }: SettingsPageProps) {
             delBtn.style.cssText = `
               position: absolute;
               top: 2px;
-              right: 4px;
+              right: 2px;
               background: var(--danger, #ef4444);
               color: white;
               border: none;
               border-radius: 50%;
-              width: 18px;
-              height: 18px;
-              font-size: 10px;
+              width: 16px;
+              height: 16px;
+              font-size: 9px;
               cursor: pointer;
               display: flex;
               align-items: center;
               justify-content: center;
               line-height: 1;
+              padding: 0;
+              flex-shrink: 0;
             `;
             delBtn.addEventListener('click', async () => {
               if (!confirm(t('settings.custom_emoji_delete_confirm', { name: stamp.name }) || `Delete ${stamp.name}?`))
@@ -1106,9 +1114,9 @@ export function createSettingsPage({ currentUser }: SettingsPageProps) {
               if (res.ok) loadStamps();
               else uploadMsg.textContent = t('settings.custom_emoji_delete_failed') || 'Failed to delete';
             });
+            card.appendChild(delBtn);
             card.appendChild(img);
             card.appendChild(label);
-            card.appendChild(delBtn);
             stampsGrid.appendChild(card);
           }
         })
