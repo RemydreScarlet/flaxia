@@ -7782,7 +7782,7 @@ app.get('/api/stamps', requireAuth, async (c) => {
       .all<{ id: string; name: string; image_key: string; created_at: string }>();
 
     const stamps = (rows.results || []).map((r) => {
-      const match = r.name.match(/^:[^:]+:(.+)$/);
+      const match = r.name.match(/^:[^:]+:(.+):$/);
       const bareName = match ? match[1] : r.name;
       return {
         id: r.id,
@@ -7940,7 +7940,7 @@ app.get('/api/stamps/all', async (c) => {
 
     const stamps = (rows.results || []).map((r) => {
       // Extract bare name from :userId:name: format
-      const match = r.name.match(/^:[^:]+:(.+)$/);
+      const match = r.name.match(/^:[^:]+:(.+):$/);
       const bareName = match ? match[1] : r.name;
       return {
         id: r.id,
