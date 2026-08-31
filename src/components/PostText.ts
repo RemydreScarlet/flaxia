@@ -13,7 +13,6 @@ let katexLoadingPromise: Promise<void> | null = null;
 // Cache for custom emoji stamps
 interface StampCacheEntry {
   name: string;
-  bare_name: string;
   url: string;
   user_id: string;
 }
@@ -26,20 +25,11 @@ async function getStampCache(): Promise<Map<string, { url: string; user_id: stri
       .then((data) => {
         const map = new Map<string, { url: string; user_id: string }>();
         for (const s of data.stamps) {
-          // Key: "userId:name" (e.g., "abc123:heart")
-          const key = `${s.user_id}:${s.bare_name}`;
-          map.set(key, { url: s.url, user_id: s.user_id });
-        }
-        console.log('[StampCache] loaded', map.size, 'stamps');
-        for (const [k, v] of map) {
-          console.log('[StampCache] key:', k, 'url:', v.url, 'user_id:', v.user_id);
+          map.set(s.name, { url: s.url, user_id: s.user_id });
         }
         return map;
       })
-      .catch((e) => {
-        console.error('[StampCache] fetch failed:', e);
-        return new Map<string, { url: string; user_id: string }>();
-      });
+      .catch(() => new Map<string, { url: string; user_id: string }>());
   }
   return stampCachePromise;
 }
@@ -439,7 +429,6 @@ function linkifyUrls(container: HTMLElement): void {
 
 async function linkifyCustomEmoji(container: HTMLElement, authorId?: string): Promise<void> {
   const stampCache = await getStampCache();
-  console.log('[linkifyCustomEmoji] authorId:', authorId, 'cacheSize:', stampCache.size);
   if (stampCache.size === 0) return;
 
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
@@ -449,8 +438,8 @@ async function linkifyCustomEmoji(container: HTMLElement, authorId?: string): Pr
     textNodes.push(node as Text);
   }
 
-  // Match :userId:name: format (userId can contain letters, numbers, hyphens, underscores)
-  const emojiRegex = /:([a-zA-Z0-9_-]+):([a-zA-Z0-9_-]+):/g;
+  // Match :name: format
+  const emojiRegex = /:([a-zA-Z0-9_-]+):/g;
 
   for (const textNode of textNodes) {
     const text = textNode.textContent || '';
@@ -470,31 +459,19 @@ async function linkifyCustomEmoji(container: HTMLElement, authorId?: string): Pr
         fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
       }
 
-      const userId = match[1];
-      const bareName = match[2];
-      const cacheKey = `${userId}:${bareName}`;
-      const stampData = stampCache.get(cacheKey);
-      console.log(
-        '[linkifyCustomEmoji] match:',
-        match[0],
-        'cacheKey:',
-        cacheKey,
-        'stampData:',
-        stampData ? 'found' : 'MISS',
-      );
+      const stampName = match[0]; // e.g. ":hoge:"
+      const stampData = stampCache.get(stampName);
 
-      // For posts/chat: only render if userId matches authorId
+      // For posts/chat: only render if stamp owner matches authorId
       // For reactions (authorId is undefined): always render
       if (stampData && (authorId === undefined || stampData.user_id === authorId)) {
-        console.log('[linkifyCustomEmoji] RENDERING as img');
         const img = document.createElement('img');
         img.src = stampData.url;
-        img.alt = `:${userId}:${bareName}:`;
+        img.alt = stampName;
         img.className = 'custom-emoji';
-        img.title = `:${bareName}:`;
+        img.title = stampName;
         fragment.appendChild(img);
       } else {
-        console.log('[linkifyCustomEmoji] LEAVING as text');
         fragment.appendChild(document.createTextNode(match[0]));
       }
 

@@ -7781,17 +7781,12 @@ app.get('/api/stamps', requireAuth, async (c) => {
       .bind(userId)
       .all<{ id: string; name: string; image_key: string; created_at: string }>();
 
-    const stamps = (rows.results || []).map((r) => {
-      const match = r.name.match(/^:[^:]+:([^:]+):$/);
-      const bareName = match ? match[1] : r.name;
-      return {
-        id: r.id,
-        name: r.name,
-        bare_name: bareName,
-        url: `/api/images/${r.image_key}`,
-        created_at: r.created_at,
-      };
-    });
+    const stamps = (rows.results || []).map((r) => ({
+      id: r.id,
+      name: r.name,
+      url: `/api/images/${r.image_key}`,
+      created_at: r.created_at,
+    }));
 
     return c.json({ stamps });
   } catch (error: unknown) {
@@ -7845,8 +7840,8 @@ app.post('/api/stamps', requireAuth, async (c) => {
     if (!/^[a-zA-Z0-9_]+$/.test(bareName)) {
       return c.json({ error: 'Name must contain only letters, numbers, and underscores' }, 400);
     }
-    // Store as :userId:name: for global uniqueness
-    const name = `:${userId}:${bareName}:`;
+    // Store as :name: — ownership checked at render time
+    const name = `:${bareName}:`;
 
     // Check unique name per user
     const existing = await c.env.DB.prepare('SELECT 1 FROM custom_stamps WHERE user_id = ? AND name = ?')
@@ -7938,19 +7933,13 @@ app.get('/api/stamps/all', async (c) => {
       'SELECT cs.id, cs.name, cs.image_key, cs.user_id, u.username FROM custom_stamps cs JOIN users u ON cs.user_id = u.id ORDER BY cs.created_at DESC',
     ).all<{ id: string; name: string; image_key: string; user_id: string; username: string }>();
 
-    const stamps = (rows.results || []).map((r) => {
-      // Extract bare name from :userId:name: format
-      const match = r.name.match(/^:[^:]+:([^:]+):$/);
-      const bareName = match ? match[1] : r.name;
-      return {
-        id: r.id,
-        name: r.name,
-        bare_name: bareName,
-        url: `/api/images/${r.image_key}`,
-        user_id: r.user_id,
-        username: r.username,
-      };
-    });
+    const stamps = (rows.results || []).map((r) => ({
+      id: r.id,
+      name: r.name,
+      url: `/api/images/${r.image_key}`,
+      user_id: r.user_id,
+      username: r.username,
+    }));
 
     return c.json({ stamps });
   } catch (error: unknown) {
