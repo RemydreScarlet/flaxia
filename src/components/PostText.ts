@@ -10,6 +10,29 @@ let katexPromise: Promise<typeof import('katex')> | null = null;
 let markdownitPromise: Promise<typeof import('markdown-it')> | null = null;
 let katexLoadingPromise: Promise<void> | null = null;
 
+// Cache for custom emoji stamps
+interface StampCacheEntry {
+  name: string;
+  url: string;
+}
+let stampCachePromise: Promise<Map<string, string>> | null = null;
+
+async function getStampCache(): Promise<Map<string, string>> {
+  if (!stampCachePromise) {
+    stampCachePromise = fetch('/api/stamps/all', { credentials: 'include' })
+      .then((r) => r.json() as Promise<{ stamps: StampCacheEntry[] }>)
+      .then((data) => {
+        const map = new Map<string, string>();
+        for (const s of data.stamps) {
+          map.set(s.name, s.url);
+        }
+        return map;
+      })
+      .catch(() => new Map<string, string>());
+  }
+  return stampCachePromise;
+}
+
 async function getMarkdownIt() {
   if (!md) {
     const MarkdownItModule = await getMarkdownItModule();
@@ -66,11 +89,21 @@ export async function createPostText(props: PostTextProps): Promise<HTMLElement>
     linkifyPostRefs(container);
   }
 
+  await linkifyCustomEmoji(container);
+
   return container;
 }
 
 // Export processing functions for reuse
-export { linkifyHashtags, linkifyMentions, linkifyPostRefs, linkifyUrls, processText, renderMathElements };
+export {
+  linkifyCustomEmoji,
+  linkifyHashtags,
+  linkifyMentions,
+  linkifyPostRefs,
+  linkifyUrls,
+  processText,
+  renderMathElements,
+};
 
 /**
  * Unified text processing pipeline:
@@ -385,6 +418,62 @@ function linkifyUrls(container: HTMLElement): void {
     }
 
     // Add remaining text
+    if (lastIndex < text.length) {
+      fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
+    }
+
+    parent.replaceChild(fragment, textNode);
+  }
+}
+
+async function linkifyCustomEmoji(container: HTMLElement): Promise<void> {
+  const stampCache = await getStampCache();
+  if (stampCache.size === 0) return;
+
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
+  const textNodes: Text[] = [];
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    textNodes.push(node as Text);
+  }
+
+  const emojiRegex = /:([a-zA-Z0-9_-]+):/g;
+
+  for (const textNode of textNodes) {
+    const text = textNode.textContent || '';
+    if (!emojiRegex.test(text)) continue;
+
+    emojiRegex.lastIndex = 0;
+
+    const parent = textNode.parentNode;
+    if (!parent) continue;
+
+    const fragment = document.createDocumentFragment();
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = emojiRegex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+      }
+
+      const name = match[1];
+      const url = stampCache.get(name);
+
+      if (url) {
+        const img = document.createElement('img');
+        img.src = url;
+        img.alt = `:${name}:`;
+        img.className = 'custom-emoji';
+        img.title = `:${name}:`;
+        fragment.appendChild(img);
+      } else {
+        fragment.appendChild(document.createTextNode(match[0]));
+      }
+
+      lastIndex = match.index + match[0].length;
+    }
+
     if (lastIndex < text.length) {
       fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
     }

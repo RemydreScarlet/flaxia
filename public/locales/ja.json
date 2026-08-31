@@ -198,6 +198,7 @@
   "composer.attach_image_video": "画像・動画を添付",
   "composer.attach_audio": "音声を添付",
   "composer.attach_game": "ゲームを添付",
+  "composer.emoji_button": "絵文字を挿入",
   "composer.no_drafts": "保存された下書きはありません",
   "composer.draft_saved": "下書きを保存しました",
   "composer.draft_updated": "下書きを更新しました",

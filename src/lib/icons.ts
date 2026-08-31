@@ -22,6 +22,7 @@ import {
   Send,
   Settings,
   Share2,
+  Smile,
   SmilePlus,
   StickyNote,
   Upload,
@@ -38,6 +39,7 @@ export type IconName =
   | 'impressions'
   | 'attach'
   | 'poll'
+  | 'emoji'
   | 'save'
   | 'drafts'
   | 'close'
@@ -71,6 +73,7 @@ const ICON_NODES: Record<IconName, IconNode> = {
   impressions: Eye,
   attach: Upload,
   poll: BarChart3,
+  emoji: Smile,
   save: Save,
   drafts: StickyNote,
   close: X,

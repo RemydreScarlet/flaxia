@@ -3576,6 +3576,14 @@ html {
   border-radius: 4px;
 }
 
+.post-text img.custom-emoji {
+  display: inline;
+  width: 1.2em;
+  height: 1.2em;
+  vertical-align: -0.2em;
+  margin: 0;
+}
+
 /* Hashtag Links */
 .hashtag-link {
   color: var(--accent);
@@ -4002,6 +4010,20 @@ html {
 }
 
 .composer-poll-button:hover {
+  background: var(--bg-hover);
+}
+
+.composer-emoji-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 1rem;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.composer-emoji-button:hover {
   background: var(--bg-hover);
 }
 

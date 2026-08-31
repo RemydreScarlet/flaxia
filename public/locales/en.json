@@ -198,6 +198,7 @@
   "composer.attach_image_video": "Attach image or video",
   "composer.attach_audio": "Attach audio",
   "composer.attach_game": "Attach game",
+  "composer.emoji_button": "Insert emoji",
   "composer.no_drafts": "No saved drafts",
   "composer.draft_saved": "Draft saved",
   "composer.draft_updated": "Draft updated",

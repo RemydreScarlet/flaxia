@@ -2,7 +2,7 @@ import type { Post, QuotedPost } from '../types/post.js';
 
 export interface PostComposerProps {
   onPostCreated?: (post: Post) => void;
-  currentUser?: { username: string; display_name?: string; avatar_key?: string } | null;
+  currentUser?: { username: string; display_name?: string; avatar_key?: string; id?: string } | null;
   onDraftSaved?: () => void;
   quotedPost?: QuotedPost | null;
 }
@@ -16,6 +16,7 @@ import { registerModal } from '../lib/modal-state.js';
 import { showToast } from '../lib/toast.js';
 import { createAudioPlayer } from './AudioPlayer.js';
 import { createImagePreview } from './ImagePreview.js';
+import { closeStampPicker, openStampPicker } from './StampPicker.js';
 import { createVideoPlayer } from './VideoPlayer.js';
 
 export class PostComposer {
@@ -94,6 +95,9 @@ export class PostComposer {
             </div>
             <button class="composer-poll-button" type="button" title="${t('poll.toggle_button')}">
               <span class="action-icon" data-icon="poll"></span>
+            </button>
+            <button class="composer-emoji-button" type="button" title="${t('composer.emoji_button')}">
+              <span class="action-icon" data-icon="emoji"></span>
             </button>
             <span class="composer-char-count">${t('composer.char_count', { current: 0, max: 200 })}</span>
             <button class="composer-list-drafts" type="button" title="${t('composer.list_drafts')}"><span class="action-icon" data-icon="drafts"></span></button>
@@ -442,6 +446,12 @@ export class PostComposer {
     const pollButton = this.element.querySelector('.composer-poll-button')!;
     pollButton.addEventListener('click', () => {
       this.togglePollSection();
+    });
+
+    // Emoji picker button
+    const emojiButton = this.element.querySelector('.composer-emoji-button')! as HTMLElement;
+    emojiButton.addEventListener('click', () => {
+      this.openEmojiPicker(emojiButton);
     });
 
     // List drafts button
@@ -1002,6 +1012,23 @@ export class PostComposer {
     }
     this.updateSubmitButton();
     this.scheduleDraftSave();
+  }
+
+  private openEmojiPicker(anchor: HTMLElement): void {
+    openStampPicker(anchor, {
+      onSelect: (emoji: string, stampId?: string) => {
+        const textarea = this.textarea;
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const value = textarea.value;
+        const insertText = stampId ? `:${emoji}:` : emoji;
+        textarea.value = value.slice(0, start) + insertText + value.slice(end);
+        textarea.selectionStart = textarea.selectionEnd = start + insertText.length;
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        textarea.focus();
+      },
+      currentUser: this.props.currentUser?.id ? { id: this.props.currentUser.id } : null,
+    });
   }
 
   private addPollOption(): void {
