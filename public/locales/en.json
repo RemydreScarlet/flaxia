@@ -867,5 +867,20 @@
   "game.play_version": "Play this version",
   "game.play_latest": "Play latest",
   "game.no_versions": "No version history yet",
-  "game.version_history_error": "Failed to load history"
+  "game.version_history_error": "Failed to load history",
+
+  "settings.billing": "Billing & Plans",
+  "settings.current_plan": "Current Plan",
+  "settings.free_plan": "Flaxia Free",
+  "settings.subscribe": "Subscribe",
+  "settings.redirecting": "Redirecting...",
+  "settings.plan_plus_f1": "Unlimited custom stamps",
+  "settings.plan_plus_f2": "GIF & MP4 stamps/icons/intro",
+  "settings.plan_plus_f3": "Improved call quality",
+  "settings.plan_plusplus_f1": "Everything in Flaxia+",
+  "settings.plan_plusplus_f2": "Offline games, images, videos & music",
+  "settings.plan_plusplus_f3": "Premium call quality",
+  "settings.plan_sharp_f1": "Everything in Flaxia++",
+  "settings.plan_sharp_f2": "Access to preview branches",
+  "settings.plan_sharp_f3": "Use experimental features"
 }

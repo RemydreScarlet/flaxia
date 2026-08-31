@@ -64,7 +64,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       | 'groups'
       | 'servers'
       | 'serverInvite'
-      | 'call' = 'timeline';
+      | 'call'
+      | 'billing-success'
+      | 'billing-canceled' = 'timeline';
     let currentPostId: string | null = null;
     let _currentUsername: string | null = null;
     let currentTag: string | null = null;
@@ -1196,6 +1198,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         return { view: 'settings' as const, postId: null, username: null, tag: null };
       }
 
+      // Billing routes
+      if (cleanPath === '/billing/success') {
+        console.log('Billing success route detected');
+        return { view: 'billing-success' as const, postId: null, username: null, tag: null };
+      }
+      if (cleanPath === '/billing/canceled') {
+        console.log('Billing canceled route detected');
+        return { view: 'billing-canceled' as const, postId: null, username: null, tag: null };
+      }
+
       // Sandbox route - public, no auth required
       const sandboxMatch = cleanPath.match(/^\/sandbox\/post\/([^/]+)$/);
       if (sandboxMatch) {
@@ -1302,7 +1314,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         | 'groups'
         | 'servers'
         | 'serverInvite'
-        | 'call',
+        | 'call'
+        | 'billing-success'
+        | 'billing-canceled',
       postId?: string,
       username?: string,
       tag?: string,
@@ -1597,6 +1611,26 @@ document.addEventListener('DOMContentLoaded', async () => {
           });
 
           app.appendChild(docsPage.getElement());
+          hidePageLoader();
+          return;
+        }
+
+        // Handle billing success/canceled pages
+        if (view === 'billing-success' || view === 'billing-canceled') {
+          if (leftNavOverlay) {
+            leftNavOverlay.remove();
+            leftNavOverlay = null;
+          }
+          currentView = view;
+          currentPostId = null;
+          _currentUsername = null;
+
+          const { createBillingResultPage } = await import('./components/BillingResultPage.js');
+          const billingPage = createBillingResultPage({
+            success: view === 'billing-success',
+          });
+
+          app.appendChild(billingPage.getElement());
           hidePageLoader();
           return;
         }
