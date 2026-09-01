@@ -1,24 +1,26 @@
-import { formatCount } from '../lib/format.js';
 import { t } from '../lib/i18n.js';
 import { impressionTracker } from '../lib/impression-tracker.js';
 import { loadLinkPreview } from '../lib/link-preview.js';
-import { registerModal } from '../lib/modal-state.js';
+import { createModalOverlay } from '../lib/modal-overlay.js';
 import { openPostModal } from '../lib/post-modal.js';
 import { useSandboxBridge } from '../lib/sandbox-bridge.js';
 import { getShowNsfw } from '../lib/settings.js';
+import { showToast } from '../lib/toast.js';
 import { PostCardMode, type PostCardProps, type QuotedPost, type ReactionSummary } from '../types/post.js';
-import { createAudioPlayer } from './AudioPlayer.js';
+import { openCounterNoticeModal } from './CounterNoticeModal.js';
 import { openGameUpdateModal } from './GameUpdateModal.js';
-import { createImagePreview } from './ImagePreview.js';
+import { createPollElement } from './PollWidget.js';
 import { createPostActions } from './PostActions.js';
 import { createPostHeader } from './PostHeader.js';
-import { createPostStage, isZipGame, updatePostStage } from './PostStage.js';
+import { createMenuButton, createPostMenuDropdown, setupMenuCloseHandler } from './PostMenu.js';
+import { createPostStage, updatePostStage } from './PostStage.js';
 import { createPostText } from './PostText.js';
+import { createQuotedPostCard } from './QuotedPostCard.js';
 import { createReplyComposer, ReplyComposer } from './ReplyComposer.js';
+import { openReportModal } from './ReportModal.js';
 import { createShareModal } from './ShareModal.js';
 import { showSignInPrompt } from './SignInPrompt.js';
 import { openVersionHistoryModal } from './VersionHistoryModal.js';
-import { createVideoPlayer } from './VideoPlayer.js';
 
 // How many 100ms attempts to make before giving up on attaching the sandbox
 // bridge. The iframe is created synchronously once a post starts executing, so
@@ -133,7 +135,7 @@ export class PostCard {
 
     // ... menu button
     const isOwnPost = this.props.currentUser?.username === this.props.post.username;
-    const menuButton = this.createMenuButton(isOwnPost);
+    const menuButton = createMenuButton(() => this.toggleMenu(isOwnPost));
     menuButton.style.marginLeft = 'auto';
     headerContainer.appendChild(menuButton);
 
@@ -204,7 +206,7 @@ export class PostCard {
 
     // Poll section
     if (this.props.post.poll) {
-      const pollEl = this.createPollElement({ ...this.props.post.poll, expired: false });
+      const pollEl = createPollElement({ ...this.props.post.poll, expired: false });
       container.appendChild(pollEl);
     }
 
@@ -217,7 +219,11 @@ export class PostCard {
 
     // Quoted post card
     if (this.props.post.quoted_post_id) {
-      const quotedCard = this.createQuotedPostCard(this.props.post.quoted_post ?? null);
+      const quotedCard = createQuotedPostCard({
+        quoted: this.props.post.quoted_post ?? null,
+        disableNavigation: this.props.disableNavigation,
+        onNavigateToThread: (postId) => this.navigateToThread(postId),
+      });
       if (quotedCard) container.appendChild(quotedCard);
     }
 
@@ -760,194 +766,6 @@ export class PostCard {
     );
   }
 
-  private createQuotedPostCard(quoted: QuotedPost | null): HTMLElement {
-    const card = document.createElement('div');
-    card.className = 'quoted-post-card';
-    card.style.cssText = `
-      margin: 0 0 1rem 0;
-      border: 1px solid var(--border);
-      border-radius: 0.5rem;
-      padding: 0.75rem;
-      cursor: ${this.props.disableNavigation ? 'default' : 'pointer'};
-      background: var(--bg-secondary, rgba(0,0,0,0.02));
-    `;
-
-    if (!quoted) {
-      const unavailable = document.createElement('div');
-      unavailable.className = 'quoted-post-unavailable';
-      unavailable.style.cssText = `
-        color: var(--text-muted);
-        font-size: 0.85rem;
-        font-style: italic;
-      `;
-      unavailable.textContent = t('post.quote_unavailable');
-      card.appendChild(unavailable);
-      return card;
-    }
-
-    card.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.navigateToThread(quoted.id);
-    });
-
-    const nameRow = document.createElement('div');
-    nameRow.className = 'quoted-post-author';
-    nameRow.style.cssText = `
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      margin-bottom: 0.25rem;
-    `;
-
-    const avatar = document.createElement('span');
-    avatar.className = 'quoted-post-avatar';
-    avatar.style.cssText = `
-      width: 1.25rem;
-      height: 1.25rem;
-      border-radius: 50%;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.75rem;
-      font-weight: 600;
-      color: #fff;
-      background: var(--accent);
-      flex-shrink: 0;
-      overflow: hidden;
-    `;
-    if (quoted.avatar_key) {
-      avatar.style.backgroundImage = `url(/api/images/${quoted.avatar_key})`;
-      avatar.style.backgroundSize = 'cover';
-      avatar.style.backgroundPosition = 'center';
-      avatar.textContent = '';
-    } else {
-      avatar.textContent = (quoted.display_name || quoted.username || '?').charAt(0).toUpperCase();
-    }
-
-    const name = document.createElement('span');
-    name.className = 'quoted-post-name';
-    name.style.cssText = `
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: var(--text-primary);
-    `;
-    name.textContent = quoted.display_name || quoted.username || '';
-
-    const username = document.createElement('span');
-    username.className = 'quoted-post-username';
-    username.style.cssText = `
-      font-size: 0.8rem;
-      color: var(--text-muted);
-    `;
-    username.textContent = quoted.username ? `@${quoted.username}` : '';
-
-    nameRow.appendChild(avatar);
-    nameRow.appendChild(name);
-    nameRow.appendChild(username);
-    card.appendChild(nameRow);
-
-    const body = document.createElement('div');
-    body.className = 'quoted-post-text';
-    body.style.cssText = `
-      font-size: 0.9rem;
-      line-height: 1.5;
-      color: var(--text-primary);
-      white-space: pre-wrap;
-      word-break: break-word;
-    `;
-    body.textContent = quoted.text || '';
-    card.appendChild(body);
-
-    const attachment = this.createQuotedPostAttachment(quoted);
-    if (attachment) card.appendChild(attachment);
-
-    return card;
-  }
-
-  private createQuotedPostAttachment(quoted: QuotedPost): HTMLElement | null {
-    if (!quoted.gif_key && !quoted.payload_key && !quoted.swf_key && !quoted.thumbnail_key) {
-      return null;
-    }
-
-    const wrap = document.createElement('div');
-    wrap.className = 'quoted-post-attachment';
-    wrap.style.cssText = `
-      margin-top: 0.5rem;
-      border-radius: 0.5rem;
-      overflow: hidden;
-      position: relative;
-    `;
-
-    // Clicking the attachment still navigates to the quoted thread via the
-    // card's click handler (stopPropagation is left to the media players).
-    const gifKey = quoted.gif_key || '';
-    if (gifKey.startsWith('video/')) {
-      wrap.appendChild(createVideoPlayer({ gifKey, postId: quoted.id }));
-      return wrap;
-    }
-    if (gifKey.startsWith('audio/')) {
-      wrap.appendChild(createAudioPlayer({ gifKey: gifKey, postId: quoted.id }));
-      return wrap;
-    }
-    if (gifKey) {
-      wrap.appendChild(createImagePreview({ gifKey, postId: quoted.id, ratio: '16:9' }));
-      return wrap;
-    }
-
-    const isExecutable = isZipGame(quoted.payload_key) || (!!quoted.swf_key && quoted.swf_key.startsWith('swf/'));
-
-    if (quoted.thumbnail_key) {
-      wrap.appendChild(
-        createImagePreview({
-          gifKey: quoted.thumbnail_key,
-          postId: quoted.id,
-          isThumbnail: true,
-          ratio: '16:9',
-        }),
-      );
-      if (isExecutable) {
-        const badge = document.createElement('div');
-        badge.className = 'quoted-post-attachment-badge';
-        badge.style.cssText = `
-          position: absolute;
-          left: 50%;
-          top: 50%;
-          transform: translate(-50%, -50%);
-          background: rgba(0, 0, 0, 0.7);
-          color: #fff;
-          padding: 6px 14px;
-          border-radius: 20px;
-          font-size: 0.85rem;
-          font-weight: 600;
-          pointer-events: none;
-        `;
-        if (quoted.swf_key?.startsWith('swf/')) badge.textContent = t('post_stage.play_flash');
-        else badge.textContent = t('post_stage.run_zip');
-        wrap.appendChild(badge);
-      }
-      return wrap;
-    }
-
-    if (isExecutable) {
-      const pill = document.createElement('div');
-      pill.style.cssText = `
-        padding: 0.75rem;
-        border-radius: 0.5rem;
-        background: var(--bg-secondary);
-        color: var(--text-muted);
-        font-size: 0.85rem;
-        font-weight: 600;
-        text-align: center;
-      `;
-      if (quoted.swf_key?.startsWith('swf/')) pill.textContent = t('post_stage.click_play_flash');
-      else pill.textContent = t('post_stage.click_to_run');
-      wrap.appendChild(pill);
-      return wrap;
-    }
-
-    return null;
-  }
-
   private navigateToThread(postId: string): void {
     if (this.props.disableNavigation) return;
     const threadUrl = `/thread/${postId}`;
@@ -1081,36 +899,6 @@ export class PostCard {
     this.updateActions();
   }
 
-  private createMenuButton(isOwnPost: boolean): HTMLElement {
-    const menuButton = document.createElement('button');
-    menuButton.className = 'post-menu-button';
-    menuButton.textContent = '⋯';
-    menuButton.style.cssText = `
-      background: none;
-      border: none;
-      color: var(--text-muted);
-      font-size: 18px;
-      cursor: pointer;
-      padding: 4px 8px;
-      border-radius: 4px;
-      transition: color 0.2s ease;
-    `;
-
-    menuButton.addEventListener('mouseenter', () => {
-      menuButton.style.color = 'var(--text-primary)';
-    });
-    menuButton.addEventListener('mouseleave', () => {
-      menuButton.style.color = 'var(--text-muted)';
-    });
-
-    menuButton.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.toggleMenu(isOwnPost);
-    });
-
-    return menuButton;
-  }
-
   private toggleMenu(isOwnPost: boolean): void {
     if (this.menuDropdown) {
       this.menuDropdown.remove();
@@ -1118,290 +906,34 @@ export class PostCard {
       return;
     }
 
-    const dropdown = document.createElement('div');
-    dropdown.className = 'post-menu-dropdown';
-    dropdown.style.cssText = `
-      position: absolute;
-      top: 30px;
-      right: 0;
-      background: var(--bg-primary);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-      z-index: 100;
-      min-width: 120px;
-    `;
-
-    const historyItem = document.createElement('button');
-    historyItem.style.cssText = `
-      display: block;
-      width: 100%;
-      padding: 10px 16px;
-      background: none;
-      border: none;
-      color: var(--text-primary);
-      text-align: left;
-      cursor: pointer;
-      font-size: 14px;
-      transition: background 0.2s;
-    `;
-    historyItem.textContent = t('game.version_history');
-    historyItem.addEventListener('mouseenter', () => {
-      historyItem.style.background = 'var(--bg-secondary)';
-    });
-    historyItem.addEventListener('mouseleave', () => {
-      historyItem.style.background = 'none';
-    });
-    historyItem.addEventListener('click', (e) => {
-      e.stopPropagation();
-      dropdown.remove();
-      this.menuDropdown = undefined;
-      openVersionHistoryModal({
-        postId: this.props.post.id,
-        sandboxOrigin: this.props.sandboxOrigin,
-        currentVersionId: this.currentVersionId,
-        onPlay: (versionId) => this.playVersion(versionId),
-      });
-    });
-    dropdown.appendChild(historyItem);
-
-    if (isOwnPost) {
-      if (this.props.showPinOption) {
-        const pinItem = document.createElement('button');
-        pinItem.style.cssText = `
-          display: block;
-          width: 100%;
-          padding: 10px 16px;
-          background: none;
-          border: none;
-          color: var(--text-primary);
-          text-align: left;
-          cursor: pointer;
-          font-size: 14px;
-          transition: background 0.2s;
-        `;
-        pinItem.textContent = this.props.pinned ? t('post.menu_unpin') : t('post.menu_pin');
-        pinItem.addEventListener('mouseenter', () => {
-          pinItem.style.background = 'var(--bg-secondary)';
-        });
-        pinItem.addEventListener('mouseleave', () => {
-          pinItem.style.background = 'none';
-        });
-        pinItem.addEventListener('click', (e) => {
-          e.stopPropagation();
-          dropdown.remove();
-          this.menuDropdown = undefined;
-          this.props.onTogglePin?.(this.props.post.id);
-        });
-        dropdown.appendChild(pinItem);
-      }
-
-      if (this.props.post.hidden === 1) {
-        const counterItem = document.createElement('button');
-        counterItem.style.cssText = `
-          display: block;
-          width: 100%;
-          padding: 10px 16px;
-          background: none;
-          border: none;
-          color: var(--text-primary);
-          text-align: left;
-          cursor: pointer;
-          font-size: 14px;
-          transition: background 0.2s;
-        `;
-        counterItem.textContent = t('post.menu_counter_notice');
-        counterItem.addEventListener('mouseenter', () => {
-          counterItem.style.background = 'var(--bg-secondary)';
-        });
-        counterItem.addEventListener('mouseleave', () => {
-          counterItem.style.background = 'none';
-        });
-        counterItem.addEventListener('click', (e) => {
-          e.stopPropagation();
-          dropdown.remove();
-          this.menuDropdown = undefined;
-          this.showCounterNoticeModal();
-        });
-        dropdown.appendChild(counterItem);
-      }
-
-      const editItem = document.createElement('button');
-      editItem.style.cssText = `
-        display: block;
-        width: 100%;
-        padding: 10px 16px;
-        background: none;
-        border: none;
-        color: var(--text-primary);
-        text-align: left;
-        cursor: pointer;
-        font-size: 14px;
-        transition: background 0.2s;
-      `;
-      editItem.textContent = t('post.menu_edit');
-      editItem.addEventListener('mouseenter', () => {
-        editItem.style.background = 'var(--bg-secondary)';
-      });
-      editItem.addEventListener('mouseleave', () => {
-        editItem.style.background = 'none';
-      });
-      editItem.addEventListener('click', (e) => {
-        e.stopPropagation();
-        dropdown.remove();
-        this.menuDropdown = undefined;
-        this.startEditing();
-      });
-      dropdown.appendChild(editItem);
-
-      const isZipGamePost = isZipGame(this.props.post.payload_key);
-      if (isZipGamePost) {
-        const updateItem = document.createElement('button');
-        updateItem.style.cssText = `
-          display: block;
-          width: 100%;
-          padding: 10px 16px;
-          background: none;
-          border: none;
-          color: var(--text-primary);
-          text-align: left;
-          cursor: pointer;
-          font-size: 14px;
-          transition: background 0.2s;
-        `;
-        updateItem.textContent = t('game.update');
-        updateItem.addEventListener('mouseenter', () => {
-          updateItem.style.background = 'var(--bg-secondary)';
-        });
-        updateItem.addEventListener('mouseleave', () => {
-          updateItem.style.background = 'none';
-        });
-        updateItem.addEventListener('click', (e) => {
-          e.stopPropagation();
-          dropdown.remove();
-          this.menuDropdown = undefined;
+    const dropdown = createPostMenuDropdown({
+      isOwnPost,
+      showPinOption: this.props.showPinOption,
+      pinned: this.props.pinned,
+      payloadKey: this.props.post.payload_key,
+      currentUser: this.props.currentUser,
+      actions: {
+        onVersionHistory: () =>
+          openVersionHistoryModal({
+            postId: this.props.post.id,
+            sandboxOrigin: this.props.sandboxOrigin,
+            currentVersionId: this.currentVersionId,
+            onPlay: (versionId) => this.playVersion(versionId),
+          }),
+        onTogglePin: () => this.props.onTogglePin?.(this.props.post.id),
+        onCounterNotice: () => this.showCounterNoticeModal(),
+        onEdit: () => this.startEditing(),
+        onUpdate: () =>
           openGameUpdateModal({
             postId: this.props.post.id,
             sandboxOrigin: this.props.sandboxOrigin,
             onUpdated: () => this.playVersion(null),
-          });
-        });
-        dropdown.appendChild(updateItem);
-      }
-
-      const deleteItem = document.createElement('button');
-      deleteItem.style.cssText = `
-        display: block;
-        width: 100%;
-        padding: 10px 16px;
-        background: none;
-        border: none;
-        color: var(--danger, #e74c3c);
-        text-align: left;
-        cursor: pointer;
-        font-size: 14px;
-        transition: background 0.2s;
-      `;
-      deleteItem.textContent = t('post.menu_delete');
-      deleteItem.addEventListener('mouseenter', () => {
-        deleteItem.style.background = 'var(--bg-secondary)';
-      });
-      deleteItem.addEventListener('mouseleave', () => {
-        deleteItem.style.background = 'none';
-      });
-      deleteItem.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.showDeleteConfirmation();
-        dropdown.remove();
-        this.menuDropdown = undefined;
-      });
-      dropdown.appendChild(deleteItem);
-    } else {
-      const blockItem = document.createElement('button');
-      blockItem.style.cssText = `
-        display: block;
-        width: 100%;
-        padding: 10px 16px;
-        background: none;
-        border: none;
-        color: var(--danger, #e74c3c);
-        text-align: left;
-        cursor: pointer;
-        font-size: 14px;
-        transition: background 0.2s;
-      `;
-      blockItem.textContent = t('post.menu_block');
-      blockItem.addEventListener('mouseenter', () => {
-        blockItem.style.background = 'var(--bg-secondary)';
-      });
-      blockItem.addEventListener('mouseleave', () => {
-        blockItem.style.background = 'none';
-      });
-      blockItem.addEventListener('click', (e) => {
-        e.stopPropagation();
-        dropdown.remove();
-        this.menuDropdown = undefined;
-        if (!this.props.currentUser) {
-          showSignInPrompt(
-            'block',
-            () => {
-              window.history.pushState({}, '', '/login');
-              window.dispatchEvent(new PopStateEvent('popstate'));
-            },
-            () => {
-              window.history.pushState({}, '', '/register');
-              window.dispatchEvent(new PopStateEvent('popstate'));
-            },
-          );
-          return;
-        }
-        this.blockUser();
-      });
-      dropdown.appendChild(blockItem);
-
-      const reportItem = document.createElement('button');
-      reportItem.style.cssText = `
-        display: block;
-        width: 100%;
-        padding: 10px 16px;
-        background: none;
-        border: none;
-        color: var(--text-primary);
-        text-align: left;
-        cursor: pointer;
-        font-size: 14px;
-        transition: background 0.2s;
-      `;
-      reportItem.textContent = t('post.menu_report');
-      reportItem.addEventListener('mouseenter', () => {
-        reportItem.style.background = 'var(--bg-secondary)';
-      });
-      reportItem.addEventListener('mouseleave', () => {
-        reportItem.style.background = 'none';
-      });
-      reportItem.addEventListener('click', (e) => {
-        e.stopPropagation();
-        dropdown.remove();
-        this.menuDropdown = undefined;
-        // Check if user is logged in before showing report modal
-        if (!this.props.currentUser) {
-          showSignInPrompt(
-            'report',
-            () => {
-              window.history.pushState({}, '', '/login');
-              window.dispatchEvent(new PopStateEvent('popstate'));
-            },
-            () => {
-              window.history.pushState({}, '', '/register');
-              window.dispatchEvent(new PopStateEvent('popstate'));
-            },
-          );
-          return;
-        }
-        this.showReportModal();
-      });
-      dropdown.appendChild(reportItem);
-    }
+          }),
+        onDelete: () => this.showDeleteConfirmation(),
+        onBlock: () => this.blockUser(),
+        onReport: () => this.showReportModal(),
+      },
+    });
 
     const headerContainer = this.element.querySelector('.post-menu-button')?.parentElement;
     if (headerContainer) {
@@ -1410,42 +942,13 @@ export class PostCard {
     }
 
     this.menuDropdown = dropdown;
-
-    const closeMenu = (e: MouseEvent) => {
-      if (!dropdown.contains(e.target as Node)) {
-        dropdown.remove();
-        this.menuDropdown = undefined;
-        document.removeEventListener('click', closeMenu);
-      }
-    };
-    setTimeout(() => document.addEventListener('click', closeMenu), 0);
+    setupMenuCloseHandler(dropdown, () => {
+      this.menuDropdown = undefined;
+    });
   }
 
   private showDeleteConfirmation(): void {
-    const overlay = document.createElement('div');
-    const unregister = registerModal();
-    overlay.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0,0,0,0.5);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
-    `;
-
-    const dialog = document.createElement('div');
-    dialog.style.cssText = `
-      background: var(--bg-primary);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 24px;
-      max-width: 400px;
-      width: 90%;
-    `;
+    const { overlay, dialog, close } = createModalOverlay('400px');
 
     const title = document.createElement('h3');
     title.style.cssText = 'margin: 0 0 16px 0; font-size: 18px; color: var(--text-primary);';
@@ -1477,25 +980,13 @@ export class PostCard {
     dialog.appendChild(message);
     dialog.appendChild(buttonRow);
 
-    overlay.appendChild(dialog);
     document.body.appendChild(overlay);
 
-    cancelBtn.addEventListener('click', () => {
-      unregister();
-      overlay.remove();
-    });
+    cancelBtn.addEventListener('click', close);
 
     deleteBtn.addEventListener('click', async () => {
-      unregister();
-      overlay.remove();
+      close();
       await this.deletePost();
-    });
-
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) {
-        unregister();
-        overlay.remove();
-      }
     });
   }
 
@@ -1519,10 +1010,10 @@ export class PostCard {
         this.destroy();
       }, 300);
 
-      this.showToast(t('post.deleted'));
+      showToast(t('post.deleted'));
     } catch (error) {
       console.error('Delete post error:', error);
-      this.showToast(t('post.delete_failed'), true);
+      showToast(t('post.delete_failed'), true);
     }
   }
 
@@ -1539,7 +1030,7 @@ export class PostCard {
         throw new Error(data?.error || 'Failed to block user');
       }
 
-      this.showToast(t('post.blocked', { username }));
+      showToast(t('post.blocked', { username }));
 
       this.element.style.transition = 'opacity 0.3s, transform 0.3s';
       this.element.style.opacity = '0';
@@ -1549,463 +1040,16 @@ export class PostCard {
       }, 300);
     } catch (error) {
       console.error('Block user error:', error);
-      this.showToast(t('post.block_failed'), true);
+      showToast(t('post.block_failed'), true);
     }
   }
 
   private showReportModal(): void {
-    const overlay = document.createElement('div');
-    const unregister = registerModal();
-    overlay.className = 'report-modal-overlay';
-    overlay.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0,0,0,0.5);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
-    `;
-
-    const dialog = document.createElement('div');
-    dialog.style.cssText = `
-      background: var(--bg-primary);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 24px;
-      max-width: 420px;
-      width: 90%;
-      max-height: 80vh;
-      overflow-y: auto;
-    `;
-
-    const categories = [
-      { value: 'spam', label: t('post.report_category_spam') },
-      { value: 'harassment', label: t('post.report_category_harassment') },
-      { value: 'hate_speech', label: t('post.report_category_hate_speech') },
-      { value: 'inappropriate', label: t('post.report_category_inappropriate') },
-      { value: 'misinformation', label: t('post.report_category_misinformation') },
-      { value: 'privacy', label: t('post.report_category_privacy') },
-      { value: 'copyright', label: t('post.report_category_copyright') },
-      { value: 'malware', label: t('post.report_category_malware') },
-      { value: 'csam', label: t('post.report_category_csam') },
-      { value: 'nsfw_untagged', label: t('post.report_category_nsfw_untagged') },
-      { value: 'other', label: t('post.report_category_other') },
-    ];
-
-    dialog.innerHTML = `
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-        <h3 style="margin: 0; font-size: 18px; color: var(--text-primary);">${t('post.report_title')}</h3>
-        <button class="close-btn" style="
-          background: none;
-          border: none;
-          color: var(--text-muted);
-          font-size: 20px;
-          cursor: pointer;
-        ">✕</button>
-      </div>
-      <p style="margin: 0 0 16px 0; color: var(--text-muted); font-size: 14px;">${t('post.report_question')}</p>
-      <div class="categories" style="margin-bottom: 24px;">
-        ${categories
-          .map(
-            (c) => `
-          <label style="
-            display: flex;
-            align-items: center;
-            padding: 10px 0;
-            cursor: pointer;
-            color: var(--text-primary);
-          ">
-            <input type="radio" name="report-category" value="${c.value}" style="margin-right: 12px;">
-            <span>${c.label}</span>
-          </label>
-        `,
-          )
-          .join('')}
-      </div>
-      <div class="dmca-section" style="display: none; margin-bottom: 24px; padding: 16px; background: var(--bg-secondary); border-radius: 8px;">
-        <h4 style="margin: 0 0 12px 0; font-size: 14px; color: var(--text-primary);">${t('post.report_dmca_title')}</h4>
-        <div style="margin-bottom: 12px;">
-          <label style="display: block; margin-bottom: 4px; font-size: 12px; color: var(--text-muted);">${t('post.report_dmca_work_label')}</label>
-          <input type="text" class="dmca-work" style="
-            width: 100%;
-            padding: 8px;
-            border: 1px solid var(--border);
-            border-radius: 4px;
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            font-size: 14px;
-            box-sizing: border-box;
-          " placeholder="${t('post.report_dmca_work_placeholder')}">
-        </div>
-        <div style="margin-bottom: 12px;">
-          <label style="display: block; margin-bottom: 4px; font-size: 12px; color: var(--text-muted);">${t('post.report_dmca_email_label')}</label>
-          <input type="email" class="dmca-email" style="
-            width: 100%;
-            padding: 8px;
-            border: 1px solid var(--border);
-            border-radius: 4px;
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            font-size: 14px;
-            box-sizing: border-box;
-          " placeholder="${t('post.report_dmca_email_placeholder')}">
-        </div>
-        <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer;">
-          <input type="checkbox" class="dmca-sworn" style="margin-top: 2px;">
-          <span style="font-size: 12px; color: var(--text-muted);">${t('post.report_dmca_swear')}</span>
-        </label>
-      </div>
-      <div style="display: flex; justify-content: flex-end;">
-        <button class="submit-btn" disabled style="
-          padding: 10px 24px;
-          background: var(--accent);
-          border: none;
-          border-radius: 9999px;
-          color: #000;
-          font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          font-size: 14px;
-          cursor: pointer;
-          opacity: 0.5;
-        ">${t('common.submit')}</button>
-      </div>
-    `;
-
-    overlay.appendChild(dialog);
-    document.body.appendChild(overlay);
-
-    const submitBtn = dialog.querySelector('.submit-btn') as HTMLButtonElement;
-    const closeBtn = dialog.querySelector('.close-btn');
-    const radioInputs = dialog.querySelectorAll('input[name="report-category"]');
-    const dmcaSection = dialog.querySelector('.dmca-section') as HTMLElement;
-    const dmcaWorkInput = dialog.querySelector('.dmca-work') as HTMLInputElement;
-    const dmcaEmailInput = dialog.querySelector('.dmca-email') as HTMLInputElement;
-    const dmcaSwornCheckbox = dialog.querySelector('.dmca-sworn') as HTMLInputElement;
-
-    let selectedCategory: string | null = null;
-
-    radioInputs.forEach((input) => {
-      input.addEventListener('change', (e) => {
-        selectedCategory = (e.target as HTMLInputElement).value;
-        submitBtn.disabled = false;
-        submitBtn.style.opacity = '1';
-
-        // Show/hide DMCA section
-        if (selectedCategory === 'copyright') {
-          dmcaSection.style.display = 'block';
-        } else {
-          dmcaSection.style.display = 'none';
-        }
-      });
-    });
-
-    const checkSubmitEnabled = () => {
-      if (!selectedCategory) {
-        return false;
-      }
-      if (selectedCategory === 'copyright') {
-        const workDescription = dmcaWorkInput.value.trim();
-        const email = dmcaEmailInput.value.trim();
-        const sworn = dmcaSwornCheckbox.checked;
-        return workDescription.length > 0 && email.length > 0 && sworn;
-      }
-      return true;
-    };
-
-    dmcaWorkInput?.addEventListener('input', () => {
-      submitBtn.disabled = !checkSubmitEnabled();
-      submitBtn.style.opacity = checkSubmitEnabled() ? '1' : '0.5';
-    });
-
-    dmcaEmailInput?.addEventListener('input', () => {
-      submitBtn.disabled = !checkSubmitEnabled();
-      submitBtn.style.opacity = checkSubmitEnabled() ? '1' : '0.5';
-    });
-
-    dmcaSwornCheckbox?.addEventListener('change', () => {
-      submitBtn.disabled = !checkSubmitEnabled();
-      submitBtn.style.opacity = checkSubmitEnabled() ? '1' : '0.5';
-    });
-
-    closeBtn?.addEventListener('click', () => {
-      unregister();
-      overlay.remove();
-    });
-
-    submitBtn?.addEventListener('click', async () => {
-      if (!selectedCategory) return;
-
-      let dmcaData: { work_description: string; reporter_email: string; sworn: boolean } | undefined;
-      if (selectedCategory === 'copyright') {
-        dmcaData = {
-          work_description: dmcaWorkInput.value.trim(),
-          reporter_email: dmcaEmailInput.value.trim(),
-          sworn: dmcaSwornCheckbox.checked,
-        };
-      }
-
-      unregister();
-      overlay.remove();
-      await this.submitReport(selectedCategory, dmcaData);
-    });
-
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) {
-        unregister();
-        overlay.remove();
-      }
-    });
-  }
-
-  private async submitReport(
-    category: string,
-    dmcaData?: { work_description: string; reporter_email: string; sworn: boolean },
-  ): Promise<void> {
-    try {
-      const body: {
-        post_id: string;
-        category: string;
-        dmca?: { work_description: string; reporter_email: string; sworn: boolean };
-      } = { post_id: this.props.post.id, category };
-      if (dmcaData) {
-        body.dmca = dmcaData;
-      }
-
-      const response = await fetch('/api/report', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(body),
-      });
-
-      if (response.status === 409) {
-        this.showToast(t('post.report_already'));
-        return;
-      }
-
-      if (!response.ok) {
-        const errorData = (await response.json()) as { error?: string };
-        throw new Error(errorData?.error || 'Failed to submit report');
-      }
-
-      this.showToast(t('post.report_submitted'));
-    } catch (error) {
-      console.error('Report error:', error);
-      console.error('Error details:', {
-        message: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : 'No stack trace',
-        post_id: this.props.post.id,
-        category: category || 'unknown',
-      });
-      this.showToast(t('post.report_failed'), true);
-    }
+    openReportModal(this.props.post.id);
   }
 
   private showCounterNoticeModal(): void {
-    const overlay = document.createElement('div');
-    const unregister = registerModal();
-    overlay.className = 'counter-notice-modal-overlay';
-    overlay.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0,0,0,0.5);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
-    `;
-
-    const dialog = document.createElement('div');
-    dialog.style.cssText = `
-      background: var(--bg-primary);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 24px;
-      max-width: 520px;
-      width: 90%;
-      max-height: 80vh;
-      overflow-y: auto;
-    `;
-
-    dialog.innerHTML = `
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-        <h3 style="margin: 0; font-size: 18px; color: var(--text-primary);">${t('post.counter_notice_title')}</h3>
-        <button class="close-btn" style="
-          background: none;
-          border: none;
-          color: var(--text-muted);
-          font-size: 20px;
-          cursor: pointer;
-        ">✕</button>
-      </div>
-      <p style="margin: 0 0 16px 0; color: var(--text-muted); font-size: 14px;">${t('post.counter_notice_explanation')}</p>
-      <div style="margin-bottom: 16px;">
-        <label style="display: block; margin-bottom: 4px; font-size: 12px; color: var(--text-muted);">${t('post.counter_notice_name_label')}</label>
-        <input type="text" class="cn-name" style="
-          width: 100%; padding: 8px; border: 1px solid var(--border);
-          border-radius: 4px; background: var(--bg-primary); color: var(--text-primary);
-          font-size: 14px; box-sizing: border-box;
-        " placeholder="${t('post.counter_notice_name_placeholder')}">
-      </div>
-      <div style="margin-bottom: 16px;">
-        <label style="display: block; margin-bottom: 4px; font-size: 12px; color: var(--text-muted);">${t('post.counter_notice_email_label')}</label>
-        <input type="email" class="cn-email" style="
-          width: 100%; padding: 8px; border: 1px solid var(--border);
-          border-radius: 4px; background: var(--bg-primary); color: var(--text-primary);
-          font-size: 14px; box-sizing: border-box;
-        " placeholder="${t('post.counter_notice_email_placeholder')}">
-      </div>
-      <div style="margin-bottom: 16px;">
-        <label style="display: block; margin-bottom: 4px; font-size: 12px; color: var(--text-muted);">${t('post.counter_notice_address_label')}</label>
-        <input type="text" class="cn-address" style="
-          width: 100%; padding: 8px; border: 1px solid var(--border);
-          border-radius: 4px; background: var(--bg-primary); color: var(--text-primary);
-          font-size: 14px; box-sizing: border-box;
-        " placeholder="${t('post.counter_notice_address_placeholder')}">
-      </div>
-      <div style="margin-bottom: 16px;">
-        <label style="display: block; margin-bottom: 4px; font-size: 12px; color: var(--text-muted);">${t('post.counter_notice_phone_label')}</label>
-        <input type="tel" class="cn-phone" style="
-          width: 100%; padding: 8px; border: 1px solid var(--border);
-          border-radius: 4px; background: var(--bg-primary); color: var(--text-primary);
-          font-size: 14px; box-sizing: border-box;
-        " placeholder="${t('post.counter_notice_phone_placeholder')}">
-      </div>
-      <label style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; cursor: pointer;">
-        <input type="checkbox" class="cn-statement" style="margin-top: 2px;">
-        <span style="font-size: 12px; color: var(--text-muted);">${t('post.counter_notice_statement')}</span>
-      </label>
-      <label style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 16px; cursor: pointer;">
-        <input type="checkbox" class="cn-consent" style="margin-top: 2px;">
-        <span style="font-size: 12px; color: var(--text-muted);">${t('post.counter_notice_consent')}</span>
-      </label>
-      <div style="display: flex; justify-content: flex-end;">
-        <button class="submit-btn" disabled style="
-          padding: 10px 24px; background: var(--accent); border: none;
-          border-radius: 9999px; color: #000;
-          font-family: 'Noto Sans', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          font-size: 14px; cursor: pointer; opacity: 0.5;
-        ">${t('common.submit')}</button>
-      </div>
-    `;
-
-    overlay.appendChild(dialog);
-    document.body.appendChild(overlay);
-
-    const submitBtn = dialog.querySelector('.submit-btn') as HTMLButtonElement;
-    const closeBtn = dialog.querySelector('.close-btn');
-    const nameInput = dialog.querySelector('.cn-name') as HTMLInputElement;
-    const emailInput = dialog.querySelector('.cn-email') as HTMLInputElement;
-    const addressInput = dialog.querySelector('.cn-address') as HTMLInputElement;
-    const phoneInput = dialog.querySelector('.cn-phone') as HTMLInputElement;
-    const statementCheckbox = dialog.querySelector('.cn-statement') as HTMLInputElement;
-    const consentCheckbox = dialog.querySelector('.cn-consent') as HTMLInputElement;
-
-    const checkEnabled = () => {
-      const valid =
-        nameInput.value.trim().length > 0 &&
-        emailInput.value.trim().length > 0 &&
-        addressInput.value.trim().length > 0 &&
-        phoneInput.value.trim().length > 0 &&
-        statementCheckbox.checked &&
-        consentCheckbox.checked;
-      submitBtn.disabled = !valid;
-      submitBtn.style.opacity = valid ? '1' : '0.5';
-    };
-
-    [nameInput, emailInput, addressInput, phoneInput].forEach((el) => {
-      el.addEventListener('input', checkEnabled);
-    });
-    statementCheckbox.addEventListener('change', checkEnabled);
-    consentCheckbox.addEventListener('change', checkEnabled);
-
-    closeBtn?.addEventListener('click', () => {
-      unregister();
-      overlay.remove();
-    });
-
-    submitBtn?.addEventListener('click', async () => {
-      unregister();
-      overlay.remove();
-      await this.submitCounterNotice({
-        name: nameInput.value.trim(),
-        email: emailInput.value.trim(),
-        address: addressInput.value.trim(),
-        phone: phoneInput.value.trim(),
-        statement: statementCheckbox.checked,
-        consent_jurisdiction: consentCheckbox.checked,
-      });
-    });
-
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) {
-        unregister();
-        overlay.remove();
-      }
-    });
-  }
-
-  private async submitCounterNotice(data: {
-    name: string;
-    email: string;
-    address: string;
-    phone: string;
-    statement: boolean;
-    consent_jurisdiction: boolean;
-  }): Promise<void> {
-    try {
-      const response = await fetch(`/api/posts/${this.props.post.id}/counter-notice`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(data),
-      });
-
-      if (response.status === 409) {
-        this.showToast(t('post.counter_notice_already'));
-        return;
-      }
-
-      if (!response.ok) {
-        const errorData = (await response.json()) as { error?: string };
-        throw new Error(errorData?.error || 'Failed to submit counter-notice');
-      }
-
-      this.showToast(t('post.counter_notice_submitted'));
-    } catch (error) {
-      console.error('Counter-notice error:', error);
-      this.showToast(t('post.counter_notice_failed'), true);
-    }
-  }
-
-  private showToast(message: string, isError: boolean = false): void {
-    const toast = document.createElement('div');
-    toast.style.cssText = `
-      position: fixed;
-      bottom: 24px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: ${isError ? 'var(--danger, #e74c3c)' : 'var(--accent)'};
-      color: ${isError ? '#fff' : '#000'};
-      padding: 12px 24px;
-      border-radius: 4px;
-      font-size: 14px;
-      z-index: 2000;
-      animation: fadeInUp 0.3s ease;
-    `;
-    toast.textContent = message;
-    document.body.appendChild(toast);
-
-    setTimeout(() => {
-      toast.style.animation = 'fadeOut 0.3s ease';
-      setTimeout(() => toast.remove(), 300);
-    }, 3000);
+    openCounterNoticeModal(this.props.post.id);
   }
 
   public destroy(): void {
@@ -2099,149 +1143,6 @@ export class PostCard {
     });
 
     return container;
-  }
-
-  private createPollElement(poll: {
-    id: string;
-    question: string;
-    userVote: string | null;
-    expired: boolean;
-    multipleChoice: boolean;
-    endsAt?: string | null;
-    options: Array<{ id: string; label: string; votes_count: number }>;
-  }): HTMLElement {
-    const totalVotes = poll.options.reduce(
-      (sum: number, opt: { id: string; label: string; votes_count: number }) => sum + Number(opt.votes_count || 0),
-      0,
-    );
-    const hasVoted = !!poll.userVote;
-    const isExpired = poll.expired;
-    const showResults = hasVoted || isExpired;
-    const canChangeVote = hasVoted && !isExpired;
-
-    const container = document.createElement('div');
-    container.className = 'post-poll';
-    container.style.cssText = `margin: 12px 0; padding: 12px; background: var(--bg-secondary); border-radius: 8px;`;
-
-    const question = document.createElement('div');
-    question.className = 'poll-question';
-    question.style.cssText = `font-weight: 600; margin-bottom: 8px; color: var(--text-primary);`;
-    question.textContent = poll.question;
-    container.appendChild(question);
-
-    if (isExpired) {
-      const endedBadge = document.createElement('div');
-      endedBadge.style.cssText = `font-size: 0.75rem; color: var(--text-muted); margin-bottom: 6px;`;
-      endedBadge.textContent = t('poll.ended');
-      container.appendChild(endedBadge);
-    }
-
-    poll.options.forEach((opt: { id: string; label: string; votes_count: number }) => {
-      const optEl = document.createElement('div');
-      optEl.className = 'poll-option';
-      const pct = totalVotes > 0 ? Math.round((opt.votes_count / totalVotes) * 100) : 0;
-      const isOwnVote = opt.id === poll.userVote;
-      const clickable = !isExpired && !isOwnVote;
-      optEl.style.cssText = `
-        position: relative; padding: 8px 12px; margin-bottom: 6px; border-radius: 6px;
-        cursor: ${clickable ? 'pointer' : 'default'};
-        background: var(--bg-primary); overflow: hidden;
-        transition: opacity 0.2s; border: 1px solid var(--border);
-        ${showResults || opt.votes_count > 0 ? '' : 'opacity: 0.9;'}
-        ${isOwnVote ? 'border-color: var(--accent);' : ''}
-      `;
-
-      const bar = document.createElement('div');
-      bar.className = 'poll-bar';
-      bar.style.cssText = `
-        position: absolute; top: 0; left: 0; height: 100%; 
-        background: var(--accent);
-        width: ${showResults ? pct : 0}%; transition: width 0.5s ease; border-radius: 5px;
-        opacity: 0.25;
-      `;
-      optEl.appendChild(bar);
-
-      const label = document.createElement('span');
-      label.className = 'poll-option-label';
-      label.style.cssText = `position: relative; z-index: 1; display: flex; justify-content: space-between; align-items: center;`;
-      const textSpan = document.createElement('span');
-      textSpan.textContent = opt.label;
-      const countSpan = document.createElement('span');
-      countSpan.style.cssText = `font-size: 0.8rem; color: var(--text-muted); margin-left: 8px;`;
-      countSpan.textContent = showResults ? `${pct}%` : '';
-      label.appendChild(textSpan);
-      label.appendChild(countSpan);
-      optEl.appendChild(label);
-
-      if (clickable) {
-        optEl.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          try {
-            const response = await fetch(`/api/polls/${poll.id}/vote`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              credentials: 'include',
-              body: JSON.stringify({ optionId: opt.id }),
-            });
-            if (response.status === 409) {
-              return;
-            }
-            if (!response.ok) {
-              const errBody = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-              if (errBody?.error) console.error(t('poll.vote_error'), errBody.error);
-              return;
-            }
-            const data = (await response.json()) as {
-              options: Array<{ id: string; label: string; votes_count: number }>;
-              userVote: string | null;
-            };
-            const newPoll = { ...poll, options: data.options, userVote: data.userVote };
-            container.replaceWith(this.createPollElement(newPoll));
-          } catch (e) {
-            console.error('Vote failed:', e);
-          }
-        });
-        optEl.addEventListener('mouseenter', () => {
-          optEl.style.borderColor = 'var(--accent)';
-        });
-        optEl.addEventListener('mouseleave', () => {
-          optEl.style.borderColor = 'var(--border)';
-        });
-      }
-      container.appendChild(optEl);
-    });
-
-    const footer = document.createElement('div');
-    footer.style.cssText = `font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;`;
-
-    const voteText =
-      totalVotes === 1
-        ? t('poll.votes', { count: formatCount(totalVotes) })
-        : t('poll.votes_plural', { count: formatCount(totalVotes) });
-    const votedText = hasVoted ? ` · ${t('poll.voted')}` : '';
-    const changeHint = canChangeVote ? ` · ${t('poll.click_to_change')}` : '';
-    let timeText = '';
-    if (poll.endsAt && !isExpired) {
-      const remaining = this.formatRemainingTime(poll.endsAt);
-      timeText = ` · ${t('poll.remaining', { time: remaining })}`;
-    }
-
-    footer.textContent = `${voteText}${votedText}${changeHint}${timeText}`;
-    container.appendChild(footer);
-
-    return container;
-  }
-
-  private formatRemainingTime(endsAt: string): string {
-    const diff = new Date(endsAt).getTime() - Date.now();
-    if (diff <= 0) return t('poll.ended');
-    const hours = Math.floor(diff / 3600000);
-    const days = Math.floor(hours / 24);
-    const minutes = Math.floor((diff % 3600000) / 60000);
-    if (days > 0) return t('poll.remaining_days', { count: days });
-    if (hours > 0) return t('poll.remaining_hours', { count: hours });
-    if (minutes > 0) return t('poll.remaining_minutes', { count: minutes });
-    return t('poll.remaining_less_minute');
   }
 
   private startEditing(): void {
@@ -2471,9 +1372,9 @@ export class PostCard {
         if (data.post.payload_key !== undefined) this.props.post.payload_key = data.post.payload_key;
         if (data.post.swf_key !== undefined) this.props.post.swf_key = data.post.swf_key;
         this.cancelEdit();
-        this.showToast(t('post.edit_saved'));
+        showToast(t('post.edit_saved'));
       } catch (_err) {
-        this.showToast(t('post.edit_failed'), true);
+        showToast(t('post.edit_failed'), true);
       } finally {
         saving = false;
         saveBtn.disabled = false;

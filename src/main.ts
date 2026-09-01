@@ -1754,47 +1754,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             activeItem: 'explore',
             unreadCount: unreadNotificationCount,
             currentUser: currentUser || undefined,
-            onNavigate: async (item) => {
-              console.log('Navigate to:', item);
-              if (item === 'home') {
-                window.history.pushState({}, '', '/home');
-                navigateTo('timeline');
-              } else if (item === 'explore') {
-                window.history.pushState({}, '', '/explore');
-                navigateTo('explore');
-              } else if (item === 'arcade') {
-                window.history.pushState({}, '', '/arcade');
-                navigateTo('arcade');
-              } else if (item === 'notifications') {
-                window.history.pushState({}, '', '/notifications');
-                navigateTo('notifications');
-              } else if (item === 'bookmarks') {
-                window.history.pushState({}, '', '/bookmarks');
-                navigateTo('bookmarks');
-              } else if (item === 'messages') {
-                window.history.pushState({}, '', '/messages');
-                navigateTo('messages');
-              } else if (item === 'settings') {
-                window.history.pushState({}, '', '/settings');
-                navigateTo('settings');
-              } else if (item === 'profile') {
-                if (!currentUser) {
-                  window.history.pushState({}, '', '/arcade');
-                  navigateTo('arcade');
-                  return;
-                }
-                window.history.pushState({}, '', `/profile/${currentUser.username}`);
-                navigateTo('profile', undefined, currentUser.username);
-              }
-            },
-            onSignIn: () => {
-              window.history.pushState({}, '', '/login');
-              navigateTo('login');
-            },
-            onSignUp: () => {
-              window.history.pushState({}, '', '/register');
-              navigateTo('register');
-            },
+            onNavigate: leftNavNavigateHandler,
+            onSignIn: leftNavSignInHandler,
+            onSignUp: leftNavSignUpHandler,
           });
 
           leftNavInstances.add(leftNav);
@@ -1861,46 +1823,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             activeItem: 'explore',
             unreadCount: unreadNotificationCount,
             currentUser: currentUser || undefined,
-            onNavigate: async (item) => {
-              if (item === 'home') {
-                window.history.pushState({}, '', '/home');
-                navigateTo('timeline');
-              } else if (item === 'explore') {
-                window.history.pushState({}, '', '/explore');
-                navigateTo('explore');
-              } else if (item === 'arcade') {
-                window.history.pushState({}, '', '/arcade');
-                navigateTo('arcade');
-              } else if (item === 'notifications') {
-                window.history.pushState({}, '', '/notifications');
-                navigateTo('notifications');
-              } else if (item === 'bookmarks') {
-                window.history.pushState({}, '', '/bookmarks');
-                navigateTo('bookmarks');
-              } else if (item === 'messages') {
-                window.history.pushState({}, '', '/messages');
-                navigateTo('messages');
-              } else if (item === 'settings') {
-                window.history.pushState({}, '', '/settings');
-                navigateTo('settings');
-              } else if (item === 'profile') {
-                if (!currentUser) {
-                  window.history.pushState({}, '', '/arcade');
-                  navigateTo('arcade');
-                  return;
-                }
-                window.history.pushState({}, '', `/profile/${currentUser.username}`);
-                navigateTo('profile', undefined, currentUser.username);
-              }
-            },
-            onSignIn: () => {
-              window.history.pushState({}, '', '/login');
-              navigateTo('login');
-            },
-            onSignUp: () => {
-              window.history.pushState({}, '', '/register');
-              navigateTo('register');
-            },
+            onNavigate: leftNavNavigateHandler,
+            onSignIn: leftNavSignInHandler,
+            onSignUp: leftNavSignUpHandler,
           });
 
           leftNavInstances.add(leftNav);
@@ -1963,47 +1888,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             activeItem: 'arcade',
             unreadCount: unreadNotificationCount,
             currentUser: currentUser || undefined,
-            onNavigate: async (item) => {
-              console.log('Navigate to:', item);
-              if (item === 'home') {
-                window.history.pushState({}, '', '/home');
-                navigateTo('timeline');
-              } else if (item === 'explore') {
-                window.history.pushState({}, '', '/explore');
-                navigateTo('explore');
-              } else if (item === 'arcade') {
-                window.history.pushState({}, '', '/arcade');
-                navigateTo('arcade');
-              } else if (item === 'notifications') {
-                window.history.pushState({}, '', '/notifications');
-                navigateTo('notifications');
-              } else if (item === 'bookmarks') {
-                window.history.pushState({}, '', '/bookmarks');
-                navigateTo('bookmarks');
-              } else if (item === 'messages') {
-                window.history.pushState({}, '', '/messages');
-                navigateTo('messages');
-              } else if (item === 'settings') {
-                window.history.pushState({}, '', '/settings');
-                navigateTo('settings');
-              } else if (item === 'profile') {
-                if (!currentUser) {
-                  window.history.pushState({}, '', '/arcade');
-                  navigateTo('arcade');
-                  return;
-                }
-                window.history.pushState({}, '', `/profile/${currentUser.username}`);
-                navigateTo('profile', undefined, currentUser.username);
-              }
-            },
-            onSignIn: () => {
-              window.history.pushState({}, '', '/login');
-              navigateTo('login');
-            },
-            onSignUp: () => {
-              window.history.pushState({}, '', '/register');
-              navigateTo('register');
-            },
+            onNavigate: leftNavNavigateHandler,
+            onSignIn: leftNavSignInHandler,
+            onSignUp: leftNavSignUpHandler,
           });
 
           leftNavInstances.add(leftNav);
@@ -2076,47 +1963,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             activeItem: 'profile',
             unreadCount: unreadNotificationCount,
             currentUser: currentUser || undefined,
-            onNavigate: async (item) => {
-              console.log('Navigate to:', item);
-              if (item === 'home') {
-                window.history.pushState({}, '', '/home');
-                navigateTo('timeline');
-              } else if (item === 'explore') {
-                window.history.pushState({}, '', '/explore');
-                navigateTo('explore');
-              } else if (item === 'arcade') {
-                window.history.pushState({}, '', '/arcade');
-                navigateTo('arcade');
-              } else if (item === 'notifications') {
-                window.history.pushState({}, '', '/notifications');
-                navigateTo('notifications');
-              } else if (item === 'bookmarks') {
-                window.history.pushState({}, '', '/bookmarks');
-                navigateTo('bookmarks');
-              } else if (item === 'messages') {
-                window.history.pushState({}, '', '/messages');
-                navigateTo('messages');
-              } else if (item === 'settings') {
-                window.history.pushState({}, '', '/settings');
-                navigateTo('settings');
-              } else if (item === 'profile') {
-                if (!currentUser) {
-                  window.history.pushState({}, '', '/arcade');
-                  navigateTo('arcade');
-                  return;
-                }
-                window.history.pushState({}, '', `/profile/${currentUser.username}`);
-                navigateTo('profile', undefined, currentUser.username);
-              }
-            },
-            onSignIn: () => {
-              window.history.pushState({}, '', '/login');
-              navigateTo('login');
-            },
-            onSignUp: () => {
-              window.history.pushState({}, '', '/register');
-              navigateTo('register');
-            },
+            onNavigate: leftNavNavigateHandler,
+            onSignIn: leftNavSignInHandler,
+            onSignUp: leftNavSignUpHandler,
           });
 
           leftNavInstances.add(leftNav);
@@ -2189,46 +2038,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             activeItem: 'bookmarks',
             unreadCount: unreadNotificationCount,
             currentUser: currentUser || undefined,
-            onNavigate: async (item) => {
-              if (item === 'home') {
-                window.history.pushState({}, '', '/home');
-                navigateTo('timeline');
-              } else if (item === 'explore') {
-                window.history.pushState({}, '', '/explore');
-                navigateTo('explore');
-              } else if (item === 'arcade') {
-                window.history.pushState({}, '', '/arcade');
-                navigateTo('arcade');
-              } else if (item === 'notifications') {
-                window.history.pushState({}, '', '/notifications');
-                navigateTo('notifications');
-              } else if (item === 'bookmarks') {
-                window.history.pushState({}, '', '/bookmarks');
-                navigateTo('bookmarks');
-              } else if (item === 'messages') {
-                window.history.pushState({}, '', '/messages');
-                navigateTo('messages');
-              } else if (item === 'settings') {
-                window.history.pushState({}, '', '/settings');
-                navigateTo('settings');
-              } else if (item === 'profile') {
-                if (!currentUser) {
-                  window.history.pushState({}, '', '/arcade');
-                  navigateTo('arcade');
-                  return;
-                }
-                window.history.pushState({}, '', `/profile/${currentUser.username}`);
-                navigateTo('profile', undefined, currentUser.username);
-              }
-            },
-            onSignIn: () => {
-              window.history.pushState({}, '', '/login');
-              navigateTo('login');
-            },
-            onSignUp: () => {
-              window.history.pushState({}, '', '/register');
-              navigateTo('register');
-            },
+            onNavigate: leftNavNavigateHandler,
+            onSignIn: leftNavSignInHandler,
+            onSignUp: leftNavSignUpHandler,
           });
           leftNavInstances.add(leftNav);
 
@@ -2282,47 +2094,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             activeItem: 'notifications',
             unreadCount: unreadNotificationCount,
             currentUser: currentUser || undefined,
-            onNavigate: async (item) => {
-              console.log('Navigate to:', item);
-              if (item === 'home') {
-                window.history.pushState({}, '', '/home');
-                navigateTo('timeline');
-              } else if (item === 'explore') {
-                window.history.pushState({}, '', '/explore');
-                navigateTo('explore');
-              } else if (item === 'arcade') {
-                window.history.pushState({}, '', '/arcade');
-                navigateTo('arcade');
-              } else if (item === 'notifications') {
-                window.history.pushState({}, '', '/notifications');
-                navigateTo('notifications');
-              } else if (item === 'bookmarks') {
-                window.history.pushState({}, '', '/bookmarks');
-                navigateTo('bookmarks');
-              } else if (item === 'messages') {
-                window.history.pushState({}, '', '/messages');
-                navigateTo('messages');
-              } else if (item === 'settings') {
-                window.history.pushState({}, '', '/settings');
-                navigateTo('settings');
-              } else if (item === 'profile') {
-                if (!currentUser) {
-                  window.history.pushState({}, '', '/arcade');
-                  navigateTo('arcade');
-                  return;
-                }
-                window.history.pushState({}, '', `/profile/${currentUser.username}`);
-                navigateTo('profile', undefined, currentUser.username);
-              }
-            },
-            onSignIn: () => {
-              window.history.pushState({}, '', '/login');
-              navigateTo('login');
-            },
-            onSignUp: () => {
-              window.history.pushState({}, '', '/register');
-              navigateTo('register');
-            },
+            onNavigate: leftNavNavigateHandler,
+            onSignIn: leftNavSignInHandler,
+            onSignUp: leftNavSignUpHandler,
           });
 
           leftNavInstances.add(leftNav);
@@ -2411,46 +2185,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             unreadDmCount,
             unreadGroupCount,
             currentUser: currentUser || undefined,
-            onNavigate: async (item) => {
-              if (item === 'home') {
-                window.history.pushState({}, '', '/home');
-                navigateTo('timeline');
-              } else if (item === 'explore') {
-                window.history.pushState({}, '', '/explore');
-                navigateTo('explore');
-              } else if (item === 'arcade') {
-                window.history.pushState({}, '', '/arcade');
-                navigateTo('arcade');
-              } else if (item === 'messages') {
-                window.history.pushState({}, '', '/messages');
-                navigateTo('messages');
-              } else if (item === 'notifications') {
-                window.history.pushState({}, '', '/notifications');
-                navigateTo('notifications');
-              } else if (item === 'bookmarks') {
-                window.history.pushState({}, '', '/bookmarks');
-                navigateTo('bookmarks');
-              } else if (item === 'settings') {
-                window.history.pushState({}, '', '/settings');
-                navigateTo('settings');
-              } else if (item === 'profile') {
-                if (!currentUser) {
-                  window.history.pushState({}, '', '/arcade');
-                  navigateTo('arcade');
-                  return;
-                }
-                window.history.pushState({}, '', `/profile/${currentUser.username}`);
-                navigateTo('profile', undefined, currentUser.username);
-              }
-            },
-            onSignIn: () => {
-              window.history.pushState({}, '', '/login');
-              navigateTo('login');
-            },
-            onSignUp: () => {
-              window.history.pushState({}, '', '/register');
-              navigateTo('register');
-            },
+            onNavigate: leftNavNavigateHandler,
+            onSignIn: leftNavSignInHandler,
+            onSignUp: leftNavSignUpHandler,
           });
 
           leftNavInstances.add(leftNav);
@@ -2615,47 +2352,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             activeItem: 'settings',
             unreadCount: unreadNotificationCount,
             currentUser: currentUser || undefined,
-            onNavigate: async (item) => {
-              console.log('Navigate to:', item);
-              if (item === 'home') {
-                window.history.pushState({}, '', '/home');
-                navigateTo('timeline');
-              } else if (item === 'explore') {
-                window.history.pushState({}, '', '/explore');
-                navigateTo('explore');
-              } else if (item === 'arcade') {
-                window.history.pushState({}, '', '/arcade');
-                navigateTo('arcade');
-              } else if (item === 'notifications') {
-                window.history.pushState({}, '', '/notifications');
-                navigateTo('notifications');
-              } else if (item === 'bookmarks') {
-                window.history.pushState({}, '', '/bookmarks');
-                navigateTo('bookmarks');
-              } else if (item === 'messages') {
-                window.history.pushState({}, '', '/messages');
-                navigateTo('messages');
-              } else if (item === 'settings') {
-                window.history.pushState({}, '', '/settings');
-                navigateTo('settings');
-              } else if (item === 'profile') {
-                if (!currentUser) {
-                  window.history.pushState({}, '', '/arcade');
-                  navigateTo('arcade');
-                  return;
-                }
-                window.history.pushState({}, '', `/profile/${currentUser.username}`);
-                navigateTo('profile', undefined, currentUser.username);
-              }
-            },
-            onSignIn: () => {
-              window.history.pushState({}, '', '/login');
-              navigateTo('login');
-            },
-            onSignUp: () => {
-              window.history.pushState({}, '', '/register');
-              navigateTo('register');
-            },
+            onNavigate: leftNavNavigateHandler,
+            onSignIn: leftNavSignInHandler,
+            onSignUp: leftNavSignUpHandler,
           });
 
           leftNavInstances.add(leftNav);
@@ -2743,46 +2442,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             unreadDmCount,
             unreadGroupCount,
             currentUser: currentUser || undefined,
-            onNavigate: async (item) => {
-              if (item === 'home') {
-                window.history.pushState({}, '', '/home');
-                navigateTo('timeline');
-              } else if (item === 'explore') {
-                window.history.pushState({}, '', '/explore');
-                navigateTo('explore');
-              } else if (item === 'arcade') {
-                window.history.pushState({}, '', '/arcade');
-                navigateTo('arcade');
-              } else if (item === 'messages') {
-                window.history.pushState({}, '', '/messages');
-                navigateTo('messages');
-              } else if (item === 'notifications') {
-                window.history.pushState({}, '', '/notifications');
-                navigateTo('notifications');
-              } else if (item === 'bookmarks') {
-                window.history.pushState({}, '', '/bookmarks');
-                navigateTo('bookmarks');
-              } else if (item === 'settings') {
-                window.history.pushState({}, '', '/settings');
-                navigateTo('settings');
-              } else if (item === 'profile') {
-                if (!currentUser) {
-                  window.history.pushState({}, '', '/arcade');
-                  navigateTo('arcade');
-                  return;
-                }
-                window.history.pushState({}, '', `/profile/${currentUser.username}`);
-                navigateTo('profile', undefined, currentUser.username);
-              }
-            },
-            onSignIn: () => {
-              window.history.pushState({}, '', '/login');
-              navigateTo('login');
-            },
-            onSignUp: () => {
-              window.history.pushState({}, '', '/register');
-              navigateTo('register');
-            },
+            onNavigate: leftNavNavigateHandler,
+            onSignIn: leftNavSignInHandler,
+            onSignUp: leftNavSignUpHandler,
           });
 
           leftNavInstances.add(leftNav);
@@ -2865,47 +2527,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             unreadCount: unreadNotificationCount,
             unreadDmCount,
             currentUser: currentUser || undefined,
-            onNavigate: async (item) => {
-              console.log('Navigate to:', item);
-              if (item === 'home') {
-                window.history.pushState({}, '', '/home');
-                navigateTo('timeline');
-              } else if (item === 'explore') {
-                window.history.pushState({}, '', '/explore');
-                navigateTo('explore');
-              } else if (item === 'arcade') {
-                window.history.pushState({}, '', '/arcade');
-                navigateTo('arcade');
-              } else if (item === 'notifications') {
-                window.history.pushState({}, '', '/notifications');
-                navigateTo('notifications');
-              } else if (item === 'bookmarks') {
-                window.history.pushState({}, '', '/bookmarks');
-                navigateTo('bookmarks');
-              } else if (item === 'messages') {
-                window.history.pushState({}, '', '/messages');
-                navigateTo('messages');
-              } else if (item === 'settings') {
-                window.history.pushState({}, '', '/settings');
-                navigateTo('settings');
-              } else if (item === 'profile') {
-                if (!currentUser) {
-                  window.history.pushState({}, '', '/arcade');
-                  navigateTo('arcade');
-                  return;
-                }
-                window.history.pushState({}, '', `/profile/${currentUser.username}`);
-                navigateTo('profile', undefined, currentUser.username);
-              }
-            },
-            onSignIn: () => {
-              window.history.pushState({}, '', '/login');
-              navigateTo('login');
-            },
-            onSignUp: () => {
-              window.history.pushState({}, '', '/register');
-              navigateTo('register');
-            },
+            onNavigate: leftNavNavigateHandler,
+            onSignIn: leftNavSignInHandler,
+            onSignUp: leftNavSignUpHandler,
           });
 
           leftNavInstances.add(leftNav);
@@ -2994,6 +2618,50 @@ document.addEventListener('DOMContentLoaded', async () => {
           };
         }
       }
+    };
+
+    // Shared LeftNav callbacks to avoid duplication across all createLeftNav calls
+    const leftNavNavigateHandler = async (item: string): Promise<void> => {
+      if (item === 'home') {
+        window.history.pushState({}, '', '/home');
+        navigateTo('timeline');
+      } else if (item === 'explore') {
+        window.history.pushState({}, '', '/explore');
+        navigateTo('explore');
+      } else if (item === 'arcade') {
+        window.history.pushState({}, '', '/arcade');
+        navigateTo('arcade');
+      } else if (item === 'notifications') {
+        window.history.pushState({}, '', '/notifications');
+        navigateTo('notifications');
+      } else if (item === 'bookmarks') {
+        window.history.pushState({}, '', '/bookmarks');
+        navigateTo('bookmarks');
+      } else if (item === 'messages') {
+        window.history.pushState({}, '', '/messages');
+        navigateTo('messages');
+      } else if (item === 'settings') {
+        window.history.pushState({}, '', '/settings');
+        navigateTo('settings');
+      } else if (item === 'profile') {
+        if (!currentUser) {
+          window.history.pushState({}, '', '/arcade');
+          navigateTo('arcade');
+          return;
+        }
+        window.history.pushState({}, '', `/profile/${currentUser.username}`);
+        navigateTo('profile', undefined, currentUser.username);
+      }
+    };
+
+    const leftNavSignInHandler = (): void => {
+      window.history.pushState({}, '', '/login');
+      navigateTo('login');
+    };
+
+    const leftNavSignUpHandler = (): void => {
+      window.history.pushState({}, '', '/register');
+      navigateTo('register');
     };
 
     async function safeNavigate(
