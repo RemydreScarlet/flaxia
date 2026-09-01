@@ -1,0 +1,183 @@
+import { Hono } from 'hono';
+import type { Bindings, Variables } from '../types';
+
+const NSFW_SCAN_SCHEMA = `post_id TEXT PRIMARY KEY, task_id TEXT, status TEXT NOT NULL DEFAULT 'submitted' CHECK(status IN ('submitted', 'done', 'failed')), created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), scanned_at TEXT`;
+
+const PENDING_EMBEDS_SCHEMA = `post_id TEXT PRIMARY KEY, text TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), last_error TEXT`;
+
+async function ensureNsfwScansTable(db: D1Database): Promise<void> {
+  try {
+    await db.prepare(`CREATE TABLE IF NOT EXISTS post_nsfw_scans (${NSFW_SCAN_SCHEMA})`).run();
+    await db.prepare('CREATE INDEX IF NOT EXISTS idx_nsfw_scans_status ON post_nsfw_scans(status, created_at)').run();
+  } catch (e) {
+    console.error('Failed to ensure post_nsfw_scans table:', e);
+  }
+}
+
+async function ensurePendingEmbedsTable(db: D1Database): Promise<void> {
+  try {
+    await db.prepare(`CREATE TABLE IF NOT EXISTS pending_embeddings (${PENDING_EMBEDS_SCHEMA})`).run();
+    await db
+      .prepare('CREATE INDEX IF NOT EXISTS idx_pending_embeddings_created ON pending_embeddings(created_at)')
+      .run();
+  } catch (e) {
+    console.error('Failed to ensure pending_embeddings table:', e);
+  }
+}
+
+async function ensureReactionsTable(db: D1Database): Promise<void> {
+  try {
+    await db
+      .prepare(
+        `CREATE TABLE IF NOT EXISTS reactions (
+           post_id    TEXT NOT NULL,
+           user_id    TEXT NOT NULL,
+           emoji      TEXT NOT NULL,
+           created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+           PRIMARY KEY (post_id, user_id, emoji)
+         )`,
+      )
+      .run();
+    await db.prepare('CREATE INDEX IF NOT EXISTS idx_reactions_post ON reactions(post_id)').run();
+  } catch (e) {
+    console.error('Failed to ensure reactions table:', e);
+  }
+}
+
+const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
+
+// POST /api/test/reset - reset database for testing (only allowed in test environment)
+app.post('/api/test/reset', async (c) => {
+  const isTestEnvironment = c.env.BASE_URL === 'http://localhost:8788' || c.req.url.includes('localhost:8788');
+
+  if (!isTestEnvironment) {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+
+  const clears: D1Database[] = [];
+  if (c.env.DB_TEST) clears.push(c.env.DB_TEST);
+  if (c.env.DB) clears.push(c.env.DB);
+
+  for (const db of clears) {
+    await ensureNsfwScansTable(db);
+    await ensurePendingEmbedsTable(db);
+    await ensureReactionsTable(db);
+
+    const resetOrder = [
+      'server_read_states',
+      'server_channel_keys',
+      'server_messages',
+      'server_channels',
+      'server_members',
+      'server_conversations',
+      'group_channel_keys',
+      'group_read_states',
+      'group_messages',
+      'group_members',
+      'group_conversations',
+      'dm_messages',
+      'dm_conversations',
+      'messenger_keys',
+      'messenger_ratchet_sessions',
+      'messenger_opks',
+      'messenger_identity_v2',
+      'chat_message_reactions',
+      'chat_read_states',
+      'chat_messages',
+      'chat_channels',
+      'chat_server_members',
+      'chat_servers',
+      'call_participants',
+      'calls',
+      'poll_votes',
+      'poll_options',
+      'polls',
+      'bookmarks',
+      'likes',
+      'shares',
+      'reactions',
+      'blocks',
+      'ap_followers',
+      'ap_following',
+      'multiplayer_invites',
+      'multiplayer_scores',
+      'user_game_plays',
+      'arcade_events',
+      'counter_notifications',
+      'notifications',
+      'received_activities',
+      'reports',
+      'post_nsfw_scans',
+      'pending_embeddings',
+      'post_embeddings',
+      'post_translations',
+      'freshs',
+      'transactions',
+      'subscriptions',
+      'follows',
+      'posts',
+      'actor_keys',
+      'user_profiles',
+      'push_subscriptions',
+      'device_tokens',
+      'sessions',
+      'ad_interactions',
+      'admin_alerts',
+      'bandit_state',
+      'ads',
+      'users',
+    ];
+    const existing = new Set(
+      (
+        (await db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all()) as {
+          results: { name: string }[];
+        }
+      ).results.map((r) => r.name),
+    );
+    const statements = resetOrder.filter((t) => existing.has(t)).map((t) => db.prepare(`DELETE FROM ${t}`));
+    if (statements.length > 0) {
+      await db.batch(statements);
+    }
+  }
+  return c.json({ ok: true });
+});
+
+// GET /api/test/game-plays - inspect user_game_plays rows for integration tests.
+// Gated like /api/test/reset: only reachable from the test dev server.
+app.get('/api/test/game-plays', async (c) => {
+  const isTestEnvironment = c.env.BASE_URL === 'http://localhost:8788' || c.req.url.includes('localhost:8788');
+  if (!isTestEnvironment) {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+
+  const userId = c.req.query('userId');
+  if (!userId) return c.json({ error: 'Missing userId' }, 400);
+
+  const db = c.env.DB;
+  const rows = await db
+    .prepare(
+      `SELECT post_id, dwell_ms, is_fullscreen, game_type, source
+       FROM user_game_plays WHERE user_id = ?
+       ORDER BY created_at DESC`,
+    )
+    .bind(userId)
+    .all<{ post_id: string; dwell_ms: number; is_fullscreen: number; game_type: string; source: string }>();
+  return c.json({ plays: rows.results || [] });
+});
+
+// GET /api/test/nsfw-scans - inspect post_nsfw_scans rows for integration tests.
+// Gated like /api/test/reset: only reachable from the test dev server.
+app.get('/api/test/nsfw-scans', async (c) => {
+  const isTestEnvironment = c.env.BASE_URL === 'http://localhost:8788' || c.req.url.includes('localhost:8788');
+  if (!isTestEnvironment) {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+
+  const db = c.env.DB;
+  const rows = await db
+    .prepare(`SELECT post_id, task_id, status, created_at, scanned_at FROM post_nsfw_scans ORDER BY created_at DESC`)
+    .all<{ post_id: string; task_id: string; status: string; created_at: string; scanned_at: string }>();
+  return c.json({ scans: rows.results || [] });
+});
+
+export default app;
