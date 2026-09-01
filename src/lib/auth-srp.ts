@@ -132,3 +132,36 @@ async function upgradeSrpAndEnsure(password: string): Promise<void> {
   storeSrpSalt(salt);
   await ensureE2EEIdentityV2(password, salt);
 }
+
+// Verify the current user's password via SRP without creating a session or
+// modifying any state. Returns true if the password is correct, false otherwise.
+// Used by the E2EE unlock flow so a wrong password is rejected early with a
+// clear error message, before attempting KEK derivation / identity unwrap.
+export async function verifyCurrentPassword(password: string): Promise<boolean> {
+  try {
+    const reauth = await fetch('/api/auth/reauth/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    });
+    if (!reauth.ok) return false;
+    const r = (await reauth.json()) as { challenge_id: string; salt: string; B: string };
+    const { A, a } = await clientStep1(password, unb64(r.salt));
+    const finish = await clientStep2(password, unb64(r.salt), a, unb64(r.B));
+    const res = await fetch('/api/auth/reauth/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        challenge_id: r.challenge_id,
+        A: b64(A),
+        M1: b64(finish.M1),
+      }),
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as { valid?: boolean };
+    return !!data.valid;
+  } catch {
+    return false;
+  }
+}

@@ -2397,6 +2397,27 @@ app.post('/api/auth/reauth/start', requireAuth, async (c) => {
   }
 });
 
+// POST /api/auth/reauth/verify - complete the SRP proof to verify the current
+// password without creating a session. Used by the E2EE unlock flow so a wrong
+// password is rejected early (before attempting KEK derivation / identity unwrap).
+app.post('/api/auth/reauth/verify', requireAuth, async (c) => {
+  try {
+    const user = c.get('user');
+    if (!user?.id) return c.json({ error: 'Unauthorized' }, 401);
+    const { challenge_id, A, M1 } = (await c.req.json()) as {
+      challenge_id?: string;
+      A?: string;
+      M1?: string;
+    };
+    if (!challenge_id || !A || !M1) return c.json({ error: 'Missing SRP parameters' }, 400);
+    const ok = await verifySrpPassword(c.env, user.id, challenge_id, A, M1);
+    return c.json({ valid: ok });
+  } catch (error: unknown) {
+    console.error('SRP reauth/verify error:', error);
+    return c.json({ error: 'Verification failed' }, 500);
+  }
+});
+
 // POST /api/auth/upgrade-srp - store an SRP verifier for the logged-in user.
 app.post('/api/auth/upgrade-srp', requireAuth, async (c) => {
   try {

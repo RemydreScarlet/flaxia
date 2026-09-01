@@ -1,4 +1,4 @@
-import { getStoredSrpSalt } from '../../lib/auth-srp.js';
+import { getStoredSrpSalt, verifyCurrentPassword } from '../../lib/auth-srp.js';
 import { t } from '../../lib/i18n.js';
 import { unwrapStringWithKek, wrapStringWithKek } from '../../lib/messenger-dm-cache.js';
 import { decryptDmMessageV2, encryptDmMessageV2, resetDmRatchet } from '../../lib/messenger-dm-session.js';
@@ -6,7 +6,6 @@ import {
   ensureE2EEIdentityV2,
   isIdentityV2Unlocked,
   unlockIdentityV2FromSession,
-  unlockOrCreateIdentityV2,
 } from '../../lib/messenger-identity-v2.js';
 import {
   checkRatchetResetRequest,
@@ -69,9 +68,16 @@ export class DmTransport implements MessageTransport {
       // login-time E2EE setup, rather than creating a divergent key.
       const pw = globalThis.prompt?.('Enter your account password to enable end-to-end encrypted messages');
       if (!pw) return false;
+      // Verify the password via SRP before attempting E2EE unlock. A wrong
+      // password would silently fail KEK derivation and show a confusing error;
+      // checking first gives a clear "wrong password" message.
+      const valid = await verifyCurrentPassword(pw);
+      if (!valid) {
+        showToast('パスワードが正しくありません', true);
+        return false;
+      }
       const salt = getStoredSrpSalt();
       if (salt && (await ensureE2EEIdentityV2(pw, salt))) return true;
-      if (await unlockOrCreateIdentityV2(pw)) return true;
       showToast('Could not enable E2EE identity', true);
       return false;
     } catch {

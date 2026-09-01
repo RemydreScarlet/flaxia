@@ -382,9 +382,23 @@ export async function rewrapE2EEIdentityV2(password: string, salt: Uint8Array): 
 
 // Unlock an existing identity with the password, or create a fresh one if none
 // exists yet. Returns true once the in-memory identity is usable.
+// Safety: if the server already has an identity, NEVER overwrite it — a failed
+// unlock (network timeout, wrong password, etc.) must not destroy the real key.
 export async function unlockOrCreateIdentityV2(password: string): Promise<boolean> {
   if (cached) return true;
   if (await unlockIdentityV2WithPassword(password)) return true;
+  // Check whether an identity already exists on the server before creating a
+  // new one. Without this guard a transient unlock failure (e.g. timeout)
+  // would overwrite the existing identity, making all past messages unreadable.
+  try {
+    const res = await fetch('/api/messenger/identity-v2', { credentials: 'include' });
+    if (res.ok) {
+      const data = (await res.json()) as { exists?: boolean };
+      if (data.exists) return false; // existing identity — do NOT overwrite
+    }
+  } catch {
+    /* network error — safe to skip creation */
+  }
   return generateAndPublishIdentityV2(password);
 }
 
