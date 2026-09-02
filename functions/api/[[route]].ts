@@ -9531,10 +9531,20 @@ async function enrichPostsWithPolls(posts: PostRow[], db: D1Database, currentUse
 
   const pollIds = pollsResult.results.map((p: PollRow) => p.id);
   const optPlaceholders = pollIds.map(() => '?').join(',');
-  const optsResult = await db
-    .prepare(`SELECT * FROM poll_options WHERE poll_id IN (${optPlaceholders}) ORDER BY rowid`)
-    .bind(...pollIds)
-    .all<PollOptionRow>();
+
+  // Parallelize poll options and user votes queries
+  const [optsResult, votesResult] = await Promise.all([
+    db
+      .prepare(`SELECT * FROM poll_options WHERE poll_id IN (${optPlaceholders}) ORDER BY rowid`)
+      .bind(...pollIds)
+      .all<PollOptionRow>(),
+    currentUserId
+      ? db
+          .prepare(`SELECT poll_id, option_id FROM poll_votes WHERE poll_id IN (${optPlaceholders}) AND user_id = ?`)
+          .bind(...pollIds, currentUserId)
+          .all<{ poll_id: string; option_id: string }>()
+      : Promise.resolve({ success: true, results: [] as Array<{ poll_id: string; option_id: string }> }),
+  ]);
 
   const optsByPoll = new Map<string, PollOptionRow[]>();
   if (optsResult.success) {
@@ -9546,15 +9556,9 @@ async function enrichPostsWithPolls(posts: PostRow[], db: D1Database, currentUse
   }
 
   const userVotes = new Map<string, string>();
-  if (currentUserId) {
-    const votesResult = await db
-      .prepare(`SELECT poll_id, option_id FROM poll_votes WHERE poll_id IN (${optPlaceholders}) AND user_id = ?`)
-      .bind(...pollIds, currentUserId)
-      .all<{ poll_id: string; option_id: string }>();
-    if (votesResult.success) {
-      for (const v of votesResult.results) {
-        userVotes.set(v.poll_id, v.option_id);
-      }
+  if (votesResult.success) {
+    for (const v of votesResult.results) {
+      userVotes.set(v.poll_id, v.option_id);
     }
   }
 
