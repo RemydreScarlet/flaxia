@@ -165,7 +165,7 @@ app.use('/api/*', async (c, next) => {
     return;
   }
   const token = getSessionToken(c.req.raw);
-  const sessionData = token ? await getMeWithSession(c.env, token) : null;
+  const sessionData = token ? await getMeWithSession(c.env, token, c.env.CACHE) : null;
   c.set('user', sessionData?.user || null);
   await next();
 });
@@ -1481,21 +1481,21 @@ app.get('/api/link-preview', async (c) => {
 // GET /api/me - check auth state
 app.get('/api/me', requireAuth, async (c) => {
   try {
-    const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getMeWithSession(c.env, token) : null;
-    if (!sessionData) {
+    const user = c.get('user');
+    if (!user) {
       return c.json({ error: 'Not authenticated' }, 401);
     }
 
     // Extend session (sliding window) - keep user logged in if active
+    const token = getSessionToken(c.req.raw);
     if (token) {
       await extendSession(c.env, token);
     }
 
     return c.json({
       user: {
-        ...sessionData.user,
-        ng_words: JSON.parse(sessionData.user.ng_words ?? '[]') as string[],
+        ...user,
+        ng_words: JSON.parse(user.ng_words ?? '[]') as string[],
       },
     });
   } catch (error: unknown) {
@@ -1531,7 +1531,7 @@ app.get('/api/games', async (c) => {
         const parsed = JSON.parse(cachedData);
 
         const token = getSessionToken(c.req.raw);
-        const sessionData = token ? await getMeWithSession(c.env, token) : null;
+        const sessionData = token ? await getMeWithSession(c.env, token, c.env.CACHE) : null;
         const currentUserId = sessionData?.user?.id;
 
         if (currentUserId && parsed.games.length > 0) {
@@ -1567,7 +1567,7 @@ app.get('/api/games', async (c) => {
     }
 
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getMeWithSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token, c.env.CACHE) : null;
     const currentUserId = sessionData?.user?.id;
 
     if (shuffle) {
@@ -2463,7 +2463,7 @@ app.get('/api/users/suggestions', async (c) => {
   try {
     // Get current user from session
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getMeWithSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token, c.env.CACHE) : null;
 
     // If not authenticated, return empty list
     if (!sessionData || !c.env.DB) {
@@ -2515,9 +2515,8 @@ app.post('/api/follows/:id', requireAuth, async (c) => {
       return c.json({ error: 'User ID required' }, 400);
     }
 
-    const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getMeWithSession(c.env, token) : null;
-    if (!sessionData) {
+    const user = c.get('user');
+    if (!user) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
@@ -2525,7 +2524,7 @@ app.post('/api/follows/:id', requireAuth, async (c) => {
       return c.json({ error: 'Database not available' }, 500);
     }
 
-    const followerId = sessionData.user.id;
+    const followerId = user.id;
 
     // Can't follow yourself
     if (followerId === followeeId) {
@@ -2564,13 +2563,12 @@ app.post('/api/remote-follow', requireAuth, async (c) => {
       return c.json({ error: 'Invalid target format. Expected user@domain' }, 400);
     }
 
-    const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getMeWithSession(c.env, token) : null;
-    if (!sessionData) {
+    const user = c.get('user');
+    if (!user) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
-    const localUser = sessionData.user;
+    const localUser = user;
 
     // Resolve remote user via WebFinger
     const webfingerUrl = `https://${domain}/.well-known/webfinger?resource=acct:${remoteUsername}@${domain}`;
@@ -2673,13 +2671,12 @@ app.delete('/api/remote-follow', requireAuth, async (c) => {
       return c.json({ error: 'Invalid target format. Expected user@domain' }, 400);
     }
 
-    const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getMeWithSession(c.env, token) : null;
-    if (!sessionData) {
+    const user = c.get('user');
+    if (!user) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
-    const localUser = sessionData.user;
+    const localUser = user;
 
     // Resolve remote user via WebFinger
     const webfingerUrl = `https://${domain}/.well-known/webfinger?resource=acct:${remoteUsername}@${domain}`;
@@ -3667,7 +3664,7 @@ app.get('/api/users/:username', async (c) => {
     let is_following = false;
     let is_blocked = false;
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getMeWithSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token, c.env.CACHE) : null;
     if (sessionData && sessionData.user.id !== user.id) {
       const followResult = await c.env.DB.prepare('SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ?')
         .bind(sessionData.user.id, user.id)
@@ -3719,7 +3716,7 @@ app.get('/api/users/:username/pinned', async (c) => {
     }
 
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getMeWithSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token, c.env.CACHE) : null;
     const currentUserId = sessionData?.user.id ?? null;
 
     const row = await c.env.DB.prepare(
@@ -3745,9 +3742,8 @@ app.get('/api/users/:username/pinned', async (c) => {
 // POST /api/profile/pin - pin a post to the current user's profile (protected)
 app.post('/api/profile/pin', requireAuth, async (c) => {
   try {
-    const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getMeWithSession(c.env, token) : null;
-    if (!sessionData) {
+    const user = c.get('user');
+    if (!user) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
     if (!c.env.DB) {
@@ -3766,12 +3762,12 @@ app.post('/api/profile/pin', requireAuth, async (c) => {
         .bind(postId)
         .first<{ id: string; user_id: string }>();
 
-      if (!post || post.user_id !== sessionData.user.id) {
+      if (!post || post.user_id !== user.id) {
         return c.json({ error: 'Post not found or not owned by you' }, 403);
       }
     }
 
-    await c.env.DB.prepare('UPDATE users SET pinned_post_id = ? WHERE id = ?').bind(postId, sessionData.user.id).run();
+    await c.env.DB.prepare('UPDATE users SET pinned_post_id = ? WHERE id = ?').bind(postId, user.id).run();
 
     return c.json({ ok: true, pinned_post_id: postId });
   } catch (error: unknown) {
@@ -3783,16 +3779,15 @@ app.post('/api/profile/pin', requireAuth, async (c) => {
 // DELETE /api/profile/pin - unpin the current user's profile post (protected)
 app.delete('/api/profile/pin', requireAuth, async (c) => {
   try {
-    const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getMeWithSession(c.env, token) : null;
-    if (!sessionData) {
+    const user = c.get('user');
+    if (!user) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
     if (!c.env.DB) {
       return c.json({ error: 'Database not available' }, 500);
     }
 
-    await c.env.DB.prepare('UPDATE users SET pinned_post_id = NULL WHERE id = ?').bind(sessionData.user.id).run();
+    await c.env.DB.prepare('UPDATE users SET pinned_post_id = NULL WHERE id = ?').bind(user.id).run();
 
     return c.json({ ok: true, pinned_post_id: null });
   } catch (error: unknown) {
@@ -3832,7 +3827,7 @@ app.get('/api/users/:username/followers', async (c) => {
     // Get current user for follow status (optional)
     let currentUserId: string | null = null;
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getMeWithSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token, c.env.CACHE) : null;
     if (sessionData) {
       currentUserId = sessionData.user.id;
     }
@@ -3950,7 +3945,7 @@ app.get('/api/users/:username/following', async (c) => {
     // Get current user for follow status (optional)
     let currentUserId: string | null = null;
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getMeWithSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token, c.env.CACHE) : null;
     if (sessionData) {
       currentUserId = sessionData.user.id;
     }
@@ -4040,9 +4035,8 @@ app.get('/api/users/:username/following', async (c) => {
 // PATCH /api/users/me - update current user profile (protected)
 app.patch('/api/users/me', requireAuth, async (c) => {
   try {
-    const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getMeWithSession(c.env, token) : null;
-    if (!sessionData) {
+    const user = c.get('user');
+    if (!user) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
@@ -4050,7 +4044,7 @@ app.patch('/api/users/me', requireAuth, async (c) => {
       return c.json({ error: 'Database not available' }, 500);
     }
 
-    const userId = sessionData.user.id;
+    const userId = user.id;
     let display_name: string | undefined;
     let bio: string | undefined;
     let language: string | undefined;
@@ -4284,9 +4278,8 @@ app.patch('/api/users/me', requireAuth, async (c) => {
 // PATCH /api/users/me/email - update email (protected)
 app.patch('/api/users/me/email', requireAuth, async (c) => {
   try {
-    const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getMeWithSession(c.env, token) : null;
-    if (!sessionData) {
+    const user = c.get('user');
+    if (!user) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
@@ -4307,7 +4300,7 @@ app.patch('/api/users/me/email', requireAuth, async (c) => {
       return c.json({ error: 'Invalid email format' }, 400);
     }
 
-    const userId = sessionData.user.id;
+    const userId = user.id;
 
     // Get user with password hash to verify current password
     const userWithPassword = (await c.env.DB.prepare(`
@@ -4351,9 +4344,8 @@ app.patch('/api/users/me/email', requireAuth, async (c) => {
 // PATCH /api/users/me/password - update password (protected)
 app.patch('/api/users/me/password', requireAuth, async (c) => {
   try {
-    const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getMeWithSession(c.env, token) : null;
-    if (!sessionData) {
+    const user = c.get('user');
+    if (!user) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
@@ -4379,7 +4371,7 @@ app.patch('/api/users/me/password', requireAuth, async (c) => {
       return c.json({ error: 'Password must be 8-128 characters' }, 400);
     }
 
-    const userId = sessionData.user.id;
+    const userId = user.id;
 
     // Fetch both the legacy hash and SRP verifier so we can verify the current
     // password for any account type.
@@ -4444,9 +4436,8 @@ app.patch('/api/users/me/password', requireAuth, async (c) => {
 // DELETE /api/users/me - delete current user account (protected)
 app.delete('/api/users/me', requireAuth, async (c) => {
   try {
-    const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getMeWithSession(c.env, token) : null;
-    if (!sessionData) {
+    const user = c.get('user');
+    if (!user) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
@@ -4454,12 +4445,13 @@ app.delete('/api/users/me', requireAuth, async (c) => {
       return c.json({ error: 'Database not available' }, 500);
     }
 
-    const userId = sessionData.user.id;
+    const userId = user.id;
 
     // Delete the user along with their posts, related data, and R2 files
     await deleteAccount(c.env, userId);
 
     // Delete the session
+    const token = getSessionToken(c.req.raw);
     if (token) {
       await deleteSession(c.env, token);
     }
@@ -4475,9 +4467,8 @@ app.delete('/api/users/me', requireAuth, async (c) => {
 // POST /api/users/me/avatar - upload avatar (protected)
 app.post('/api/users/me/avatar', requireAuth, async (c) => {
   try {
-    const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getMeWithSession(c.env, token) : null;
-    if (!sessionData) {
+    const user = c.get('user');
+    if (!user) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
@@ -4504,7 +4495,7 @@ app.post('/api/users/me/avatar', requireAuth, async (c) => {
       return c.json({ error: 'Storage not available' }, 500);
     }
 
-    const userId = sessionData.user.id;
+    const userId = user.id;
 
     // Get the file data from request body
     const fileData = await c.req.arrayBuffer();
@@ -4572,9 +4563,8 @@ app.post('/api/users/:username/follow', requireAuth, async (c) => {
       return c.json({ error: 'Username required' }, 400);
     }
 
-    const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getMeWithSession(c.env, token) : null;
-    if (!sessionData) {
+    const user = c.get('user');
+    if (!user) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
@@ -4582,7 +4572,7 @@ app.post('/api/users/:username/follow', requireAuth, async (c) => {
       return c.json({ error: 'Database not available' }, 500);
     }
 
-    const followerId = sessionData.user.id;
+    const followerId = user.id;
 
     // Get target user ID
     const targetUser = await c.env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(username).first();
@@ -4629,9 +4619,8 @@ app.delete('/api/users/:username/follow', requireAuth, async (c) => {
       return c.json({ error: 'Username required' }, 400);
     }
 
-    const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getMeWithSession(c.env, token) : null;
-    if (!sessionData) {
+    const user = c.get('user');
+    if (!user) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
@@ -4639,7 +4628,7 @@ app.delete('/api/users/:username/follow', requireAuth, async (c) => {
       return c.json({ error: 'Database not available' }, 500);
     }
 
-    const followerId = sessionData.user.id;
+    const followerId = user.id;
 
     // Get target user ID
     const targetUser = await c.env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(username).first();
@@ -4805,7 +4794,7 @@ app.get('/api/posts', async (c) => {
     // Get current user ID for fresh status (optional for all tabs, required for Following tab)
     let currentUserId: string | null = null;
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getMeWithSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token, c.env.CACHE) : null;
     if (sessionData) {
       currentUserId = sessionData.user.id;
     }
@@ -5069,7 +5058,7 @@ app.get('/api/posts/trending', async (c) => {
     // Get current user for fresh status
     let currentUserId: string | null = null;
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getMeWithSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token, c.env.CACHE) : null;
     if (sessionData) {
       currentUserId = sessionData.user.id;
     }
@@ -7452,7 +7441,7 @@ app.get('/api/polls/:postId', async (c) => {
 
     let userVote: string | null = null;
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getMeWithSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token, c.env.CACHE) : null;
     if (sessionData) {
       const vote = (await c.env.DB.prepare('SELECT option_id FROM poll_votes WHERE poll_id = ? AND user_id = ?')
         .bind(poll.id, sessionData.user.id)
@@ -8345,7 +8334,7 @@ app.get('/api/posts/:id/replies', async (c) => {
 
     // Get current user ID from session (optional)
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getMeWithSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token, c.env.CACHE) : null;
     const currentUserId = sessionData?.user?.id || null;
 
     if (!c.env.DB) {
@@ -8442,7 +8431,7 @@ app.get('/api/posts/:id/thread', async (c) => {
     const postId = c.req.param('id');
 
     const token = getSessionToken(c.req.raw);
-    const sessionData = token ? await getMeWithSession(c.env, token) : null;
+    const sessionData = token ? await getMeWithSession(c.env, token, c.env.CACHE) : null;
     const currentUserId = sessionData?.user?.id || null;
 
     if (!c.env.DB) {

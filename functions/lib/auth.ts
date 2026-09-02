@@ -125,8 +125,21 @@ export async function getSession(env: Env, token: string): Promise<{ user: User;
 }
 
 // Get user with session using single JOIN query for /api/me optimization
-export async function getMeWithSession(env: Env, token: string): Promise<{ user: User } | null> {
+export async function getMeWithSession(env: Env, token: string, cache?: KVNamespace): Promise<{ user: User } | null> {
   if (!token) return null;
+
+  // Try KV cache first (30s TTL)
+  const cacheKey = `session:${token}`;
+  if (cache) {
+    try {
+      const cached = await cache.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached) as { user: User };
+      }
+    } catch {
+      // Ignore cache errors, fall through to D1
+    }
+  }
 
   // Get user and session with single JOIN query
   const result = (await env.DB.prepare(`
@@ -141,7 +154,18 @@ export async function getMeWithSession(env: Env, token: string): Promise<{ user:
     .bind(token)
     .first()) as User | undefined;
 
-  return result ? { user: result } : null;
+  if (!result) return null;
+
+  // Cache the result in KV (30s TTL)
+  if (cache) {
+    try {
+      await cache.put(cacheKey, JSON.stringify({ user: result }), { expirationTtl: 30 });
+    } catch {
+      // Ignore cache write errors
+    }
+  }
+
+  return { user: result };
 }
 
 // Extend session (sliding window)
