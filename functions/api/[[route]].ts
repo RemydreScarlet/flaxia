@@ -49,6 +49,7 @@ import {
 import { sendPushToAll } from '../lib/notify';
 import { getVapidPublicKey } from '../lib/push';
 import { computeAuthorQuality, computeQualityScore, freshnessBoost, getTypeWeights } from '../lib/scoring';
+import { batchGetFreshAndBookmarkStatus } from './helpers';
 
 type Bindings = {
   DB: D1Database;
@@ -1536,29 +1537,11 @@ app.get('/api/games', async (c) => {
 
         if (currentUserId && parsed.games.length > 0) {
           const gameIds = parsed.games.map((g: Record<string, unknown>) => g.id as string);
-          const [freshResults, bookmarkResults] = await Promise.all([
-            c.env.DB.prepare(`
-              SELECT post_id FROM freshs WHERE user_id = ? AND post_id IN (${gameIds.map(() => '?').join(',')})
-            `)
-              .bind(currentUserId, ...gameIds)
-              .all(),
-            c.env.DB.prepare(`
-              SELECT post_id FROM bookmarks WHERE user_id = ? AND post_id IN (${gameIds.map(() => '?').join(',')})
-            `)
-              .bind(currentUserId, ...gameIds)
-              .all(),
-          ]);
-
-          const freshedPostIds = new Set(
-            freshResults.results?.map((r: Record<string, unknown>) => r.post_id as string) || [],
-          );
-          const bookmarkedPostIds = new Set(
-            bookmarkResults.results?.map((r: Record<string, unknown>) => r.post_id as string) || [],
-          );
+          const { freshed, bookmarked } = await batchGetFreshAndBookmarkStatus(c.env.DB, currentUserId, gameIds);
 
           parsed.games.forEach((game: Record<string, unknown>) => {
-            game.isFreshed = freshedPostIds.has(game.id as string);
-            game.isBookmarked = bookmarkedPostIds.has(game.id as string);
+            game.isFreshed = freshed.has(game.id as string);
+            game.isBookmarked = bookmarked.has(game.id as string);
           });
         }
 
@@ -1684,24 +1667,9 @@ app.get('/api/games', async (c) => {
         let sliceBookmarkedPostIds: Set<string> = new Set();
         if (currentUserId && sliceData && sliceData.length > 0) {
           const slicePostIds = sliceData.map((r) => r.postId);
-          const [freshResults, bookmarkResults] = await Promise.all([
-            c.env.DB.prepare(`
-              SELECT post_id FROM freshs WHERE user_id = ? AND post_id IN (${slicePostIds.map(() => '?').join(',')})
-            `)
-              .bind(currentUserId, ...slicePostIds)
-              .all(),
-            c.env.DB.prepare(`
-              SELECT post_id FROM bookmarks WHERE user_id = ? AND post_id IN (${slicePostIds.map(() => '?').join(',')})
-            `)
-              .bind(currentUserId, ...slicePostIds)
-              .all(),
-          ]);
-          sliceFreshedPostIds = new Set(
-            freshResults.results?.map((r: Record<string, unknown>) => r.post_id as string) || [],
-          );
-          sliceBookmarkedPostIds = new Set(
-            bookmarkResults.results?.map((r: Record<string, unknown>) => r.post_id as string) || [],
-          );
+          const result = await batchGetFreshAndBookmarkStatus(c.env.DB, currentUserId, slicePostIds);
+          sliceFreshedPostIds = result.freshed;
+          sliceBookmarkedPostIds = result.bookmarked;
         }
 
         shuffledGames = pageIds
@@ -1933,20 +1901,9 @@ app.get('/api/games', async (c) => {
       let bookmarkedPostIds: Set<string> = new Set();
       if (page.length > 0) {
         const pageIds = page.map((s) => s.row.postId);
-        const [freshResult, bookmarkResult] = await Promise.all([
-          c.env.DB.prepare(
-            `SELECT post_id FROM freshs WHERE user_id = ? AND post_id IN (${pageIds.map(() => '?').join(',')})`,
-          )
-            .bind(currentUserId, ...pageIds)
-            .all<{ post_id: string }>(),
-          c.env.DB.prepare(
-            `SELECT post_id FROM bookmarks WHERE user_id = ? AND post_id IN (${pageIds.map(() => '?').join(',')})`,
-          )
-            .bind(currentUserId, ...pageIds)
-            .all<{ post_id: string }>(),
-        ]);
-        freshedPostIds = new Set((freshResult.results || []).map((r) => r.post_id));
-        bookmarkedPostIds = new Set((bookmarkResult.results || []).map((r) => r.post_id));
+        const result = await batchGetFreshAndBookmarkStatus(c.env.DB, currentUserId, pageIds);
+        freshedPostIds = result.freshed;
+        bookmarkedPostIds = result.bookmarked;
       }
 
       const games = page.map(({ row }) => {
@@ -2038,23 +1995,9 @@ app.get('/api/games', async (c) => {
     let bookmarkedPostIds: Set<string> = new Set();
     if (currentUserId && results.length > 0) {
       const postIds = results.map((row) => row.postId);
-      const [freshResults, bookmarkResults] = await Promise.all([
-        c.env.DB.prepare(`
-          SELECT post_id FROM freshs WHERE user_id = ? AND post_id IN (${postIds.map(() => '?').join(',')})
-        `)
-          .bind(currentUserId, ...postIds)
-          .all(),
-        c.env.DB.prepare(`
-          SELECT post_id FROM bookmarks WHERE user_id = ? AND post_id IN (${postIds.map(() => '?').join(',')})
-        `)
-          .bind(currentUserId, ...postIds)
-          .all(),
-      ]);
-
-      freshedPostIds = new Set(freshResults.results?.map((r: Record<string, unknown>) => r.post_id as string) || []);
-      bookmarkedPostIds = new Set(
-        bookmarkResults.results?.map((r: Record<string, unknown>) => r.post_id as string) || [],
-      );
+      const result = await batchGetFreshAndBookmarkStatus(c.env.DB, currentUserId, postIds);
+      freshedPostIds = result.freshed;
+      bookmarkedPostIds = result.bookmarked;
     }
 
     const games = (results || []).map((row) => {
@@ -4821,27 +4764,10 @@ app.get('/api/posts', async (c) => {
         }
         if (currentUserId && posts.length > 0) {
           const postIds = posts.map((p) => String(p.id));
-          const [freshResult, bookmarkResult] = await Promise.all([
-            c.env.DB.prepare(
-              `SELECT post_id FROM freshs WHERE user_id = ? AND post_id IN (${postIds.map(() => '?').join(',')})`,
-            )
-              .bind(currentUserId, ...postIds)
-              .all(),
-            c.env.DB.prepare(
-              `SELECT post_id FROM bookmarks WHERE user_id = ? AND post_id IN (${postIds.map(() => '?').join(',')})`,
-            )
-              .bind(currentUserId, ...postIds)
-              .all(),
-          ]);
-          const freshedPostIds = new Set(
-            (freshResult.results || []).map((f: Record<string, unknown>) => f.post_id as string),
-          );
-          const bookmarkedPostIds = new Set(
-            (bookmarkResult.results || []).map((b: Record<string, unknown>) => b.post_id as string),
-          );
+          const { freshed, bookmarked } = await batchGetFreshAndBookmarkStatus(c.env.DB, currentUserId, postIds);
           posts.forEach((post: Record<string, unknown>) => {
-            post.is_freshed = freshedPostIds.has(post.id as string);
-            post.is_bookmarked = bookmarkedPostIds.has(post.id as string);
+            post.is_freshed = freshed.has(post.id as string);
+            post.is_bookmarked = bookmarked.has(post.id as string);
           });
         }
         await enrichPostsWithPolls(posts as PostRow[], c.env.DB, currentUserId);
@@ -4952,31 +4878,11 @@ app.get('/api/posts', async (c) => {
       (async () => {
         if (!currentUserId || posts.length === 0) return;
         const postIds = posts.map((p: Record<string, unknown>) => String(p.id));
-        const placeholders = postIds.map(() => '?').join(',');
-        const [freshResult, bookmarkResult] = await Promise.all([
-          c.env.DB.prepare(`SELECT post_id FROM freshs WHERE user_id = ? AND post_id IN (${placeholders})`)
-            .bind(currentUserId, ...postIds)
-            .all(),
-          c.env.DB.prepare(`SELECT post_id FROM bookmarks WHERE user_id = ? AND post_id IN (${placeholders})`)
-            .bind(currentUserId, ...postIds)
-            .all(),
-        ]);
-        if (freshResult.success) {
-          const freshedPostIds = new Set(
-            (freshResult.results || []).map((f: Record<string, unknown>) => f.post_id as string),
-          );
-          posts.forEach((post: Record<string, unknown>) => {
-            post.is_freshed = freshedPostIds.has(post.id as string);
-          });
-        }
-        if (bookmarkResult.success) {
-          const bookmarkedPostIds = new Set(
-            (bookmarkResult.results || []).map((b: Record<string, unknown>) => b.post_id as string),
-          );
-          posts.forEach((post: Record<string, unknown>) => {
-            post.is_bookmarked = bookmarkedPostIds.has(post.id as string);
-          });
-        }
+        const { freshed, bookmarked } = await batchGetFreshAndBookmarkStatus(c.env.DB, currentUserId, postIds);
+        posts.forEach((post: Record<string, unknown>) => {
+          post.is_freshed = freshed.has(post.id as string);
+          post.is_bookmarked = bookmarked.has(post.id as string);
+        });
       })(),
       // Poll enrichment
       enrichPostsWithPolls(posts as PostRow[], c.env.DB, currentUserId),
@@ -5072,28 +4978,10 @@ app.get('/api/posts/trending', async (c) => {
         const posts = await filterBlockedAuthors(c.env.DB, currentUserId, cached.posts);
         if (currentUserId && posts.length > 0) {
           const postIds = posts.map((p) => String(p.id));
-          const freshResult = await c.env.DB.prepare(
-            `SELECT post_id FROM freshs WHERE user_id = ? AND post_id IN (${postIds.map(() => '?').join(',')})`,
-          )
-            .bind(currentUserId, ...postIds)
-            .all();
-          const freshedPostIds = new Set(
-            (freshResult.results || []).map((f: Record<string, unknown>) => f.post_id as string),
-          );
+          const { freshed, bookmarked } = await batchGetFreshAndBookmarkStatus(c.env.DB, currentUserId, postIds);
           posts.forEach((post) => {
-            post.is_freshed = freshedPostIds.has(post.id as string);
-          });
-
-          const bookmarkResult = await c.env.DB.prepare(
-            `SELECT post_id FROM bookmarks WHERE user_id = ? AND post_id IN (${postIds.map(() => '?').join(',')})`,
-          )
-            .bind(currentUserId, ...postIds)
-            .all();
-          const bookmarkedPostIds = new Set(
-            (bookmarkResult.results || []).map((b: Record<string, unknown>) => b.post_id as string),
-          );
-          posts.forEach((post) => {
-            post.is_bookmarked = bookmarkedPostIds.has(post.id as string);
+            post.is_freshed = freshed.has(post.id as string);
+            post.is_bookmarked = bookmarked.has(post.id as string);
           });
         }
         await enrichPostsWithPolls(posts as PostRow[], c.env.DB, currentUserId);
@@ -5220,27 +5108,10 @@ app.get('/api/posts/trending', async (c) => {
     // Add fresh and bookmark status for current user if logged in
     if (currentUserId && visiblePosts.length > 0) {
       const postIds = visiblePosts.map((p: Record<string, unknown>) => String(p.id));
-      const [freshResult, bookmarkResult] = await Promise.all([
-        c.env.DB.prepare(
-          `SELECT post_id FROM freshs WHERE user_id = ? AND post_id IN (${postIds.map(() => '?').join(',')})`,
-        )
-          .bind(currentUserId, ...postIds)
-          .all(),
-        c.env.DB.prepare(
-          `SELECT post_id FROM bookmarks WHERE user_id = ? AND post_id IN (${postIds.map(() => '?').join(',')})`,
-        )
-          .bind(currentUserId, ...postIds)
-          .all(),
-      ]);
-      const freshedPostIds = new Set(
-        (freshResult.results || []).map((f: Record<string, unknown>) => f.post_id as string),
-      );
-      const bookmarkedPostIds = new Set(
-        (bookmarkResult.results || []).map((b: Record<string, unknown>) => b.post_id as string),
-      );
+      const { freshed, bookmarked } = await batchGetFreshAndBookmarkStatus(c.env.DB, currentUserId, postIds);
       visiblePosts.forEach((post: Record<string, unknown>) => {
-        post.is_freshed = freshedPostIds.has(post.id as string);
-        post.is_bookmarked = bookmarkedPostIds.has(post.id as string);
+        post.is_freshed = freshed.has(post.id as string);
+        post.is_bookmarked = bookmarked.has(post.id as string);
       });
     }
 
@@ -6014,23 +5885,10 @@ async function enrichRecommendedPosts(
   if (posts.length === 0) return [];
   if (currentUserId) {
     const postIds = posts.map((p) => String(p.id));
-    const [freshResult, bookmarkResult] = await Promise.all([
-      db
-        .prepare(`SELECT post_id FROM freshs WHERE user_id = ? AND post_id IN (${postIds.map(() => '?').join(',')})`)
-        .bind(currentUserId, ...postIds)
-        .all(),
-      db
-        .prepare(`SELECT post_id FROM bookmarks WHERE user_id = ? AND post_id IN (${postIds.map(() => '?').join(',')})`)
-        .bind(currentUserId, ...postIds)
-        .all(),
-    ]);
-    const freshedIds = new Set((freshResult.results || []).map((f: Record<string, unknown>) => f.post_id as string));
-    const bookmarkedIds = new Set(
-      (bookmarkResult.results || []).map((b: Record<string, unknown>) => b.post_id as string),
-    );
+    const { freshed, bookmarked } = await batchGetFreshAndBookmarkStatus(db, currentUserId, postIds);
     posts.forEach((p) => {
-      p.is_freshed = freshedIds.has(p.id as string);
-      p.is_bookmarked = bookmarkedIds.has(p.id as string);
+      p.is_freshed = freshed.has(p.id as string);
+      p.is_bookmarked = bookmarked.has(p.id as string);
     });
   }
   await enrichPostsWithPolls(posts as PostRow[], c.env.DB, currentUserId);
@@ -6110,20 +5968,7 @@ app.get('/api/posts/:id/similar', async (c) => {
 
     if (currentUserId && posts.length > 0) {
       const pids = posts.map((p: Record<string, unknown>) => String(p.id));
-      const [freshR, bookmarkR] = await Promise.all([
-        c.env.DB.prepare(
-          `SELECT post_id FROM freshs WHERE user_id = ? AND post_id IN (${pids.map(() => '?').join(',')})`,
-        )
-          .bind(currentUserId, ...pids)
-          .all(),
-        c.env.DB.prepare(
-          `SELECT post_id FROM bookmarks WHERE user_id = ? AND post_id IN (${pids.map(() => '?').join(',')})`,
-        )
-          .bind(currentUserId, ...pids)
-          .all(),
-      ]);
-      const freshed = new Set((freshR.results || []).map((r: Record<string, unknown>) => r.post_id as string));
-      const bookmarked = new Set((bookmarkR.results || []).map((r: Record<string, unknown>) => r.post_id as string));
+      const { freshed, bookmarked } = await batchGetFreshAndBookmarkStatus(c.env.DB, currentUserId, pids);
       posts.forEach((p: Record<string, unknown>) => {
         p.is_freshed = freshed.has(p.id as string);
         p.is_bookmarked = bookmarked.has(p.id as string);
@@ -8487,42 +8332,20 @@ app.get('/api/posts/:id/thread', async (c) => {
         ...(replies as Array<Record<string, unknown>>),
       ];
       const postIds = allPosts.map((p: Record<string, unknown>) => p.id as string);
-      const placeholders = postIds.map(() => '?').join(',');
 
-      const freshResult = await c.env.DB.prepare(
-        `SELECT post_id FROM freshs WHERE user_id = ? AND post_id IN (${placeholders})`,
-      )
-        .bind(currentUserId, ...postIds)
-        .all();
-
-      if (freshResult.success) {
-        const freshedPostIds = new Set(
-          (freshResult.results || []).map((f: Record<string, unknown>) => f.post_id as string),
-        );
-        (rootPost as Record<string, unknown>).is_freshed = freshedPostIds.has(
-          (rootPost as Record<string, unknown>).id as string,
-        );
-        (replies as Array<Record<string, unknown>>).forEach((post: Record<string, unknown>) => {
-          post.is_freshed = freshedPostIds.has(post.id as string);
-        });
-      }
-
-      const bookmarkResult = await c.env.DB.prepare(
-        `SELECT post_id FROM bookmarks WHERE user_id = ? AND post_id IN (${placeholders})`,
-      )
-        .bind(currentUserId, ...postIds)
-        .all();
-      if (bookmarkResult.success) {
-        const bookmarkedPostIds = new Set(
-          (bookmarkResult.results || []).map((b: Record<string, unknown>) => b.post_id as string),
-        );
-        (rootPost as Record<string, unknown>).is_bookmarked = bookmarkedPostIds.has(
-          (rootPost as Record<string, unknown>).id as string,
-        );
-        (replies as Array<Record<string, unknown>>).forEach((post: Record<string, unknown>) => {
-          post.is_bookmarked = bookmarkedPostIds.has(post.id as string);
-        });
-      }
+      const { freshed, bookmarked } = await batchGetFreshAndBookmarkStatus(c.env.DB, currentUserId, postIds);
+      (rootPost as Record<string, unknown>).is_freshed = freshed.has(
+        (rootPost as Record<string, unknown>).id as string,
+      );
+      (replies as Array<Record<string, unknown>>).forEach((post: Record<string, unknown>) => {
+        post.is_freshed = freshed.has(post.id as string);
+      });
+      (rootPost as Record<string, unknown>).is_bookmarked = bookmarked.has(
+        (rootPost as Record<string, unknown>).id as string,
+      );
+      (replies as Array<Record<string, unknown>>).forEach((post: Record<string, unknown>) => {
+        post.is_bookmarked = bookmarked.has(post.id as string);
+      });
     }
 
     await enrichPostsWithPolls([rootPost as PostRow], c.env.DB, currentUserId);
