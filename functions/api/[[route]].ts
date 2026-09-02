@@ -8018,6 +8018,7 @@ app.post('/api/posts/fresh/batch', requireAuth, async (c) => {
             }
 
             const inserts: Array<[string, string, string, string, string]> = [];
+            const updates: Array<{ stmt: ReturnType<typeof c.env.DB.prepare>; params: unknown[] }> = [];
 
             for (const p of nonSelfPosts) {
               const key = `${p.user_id}:${p.id}`;
@@ -8032,23 +8033,33 @@ app.post('/api/posts/fresh/batch', requireAuth, async (c) => {
                 if (!actorData.includes(userId)) {
                   actorData.push(userId);
                 }
-                await c.env.DB.prepare(
-                  "UPDATE notifications SET actor_id = ?, actor_data = ?, created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), read = 0 WHERE id = ?",
-                )
-                  .bind(actorData[0], JSON.stringify(actorData), existing.id as string)
-                  .run();
+                updates.push({
+                  stmt: c.env.DB.prepare(
+                    "UPDATE notifications SET actor_id = ?, actor_data = ?, created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), read = 0 WHERE id = ?",
+                  ),
+                  params: [actorData[0], JSON.stringify(actorData), existing.id as string],
+                });
               } else {
                 inserts.push([nanoid(), String(p.user_id), 'fresh', String(p.id), userId]);
               }
             }
 
+            // Batch all notification updates and inserts
+            const batchStmts: Array<ReturnType<typeof c.env.DB.prepare>> = [];
+            for (const update of updates) {
+              batchStmts.push(update.stmt.bind(...update.params));
+            }
             if (inserts.length > 0) {
-              const stmts = inserts.map((row) =>
-                c.env.DB.prepare(
-                  'INSERT INTO notifications (id, user_id, type, post_id, actor_id) VALUES (?, ?, ?, ?, ?)',
-                ).bind(...row),
-              );
-              await c.env.DB.batch(stmts);
+              for (const row of inserts) {
+                batchStmts.push(
+                  c.env.DB.prepare(
+                    'INSERT INTO notifications (id, user_id, type, post_id, actor_id) VALUES (?, ?, ?, ?, ?)',
+                  ).bind(...row),
+                );
+              }
+            }
+            if (batchStmts.length > 0) {
+              await c.env.DB.batch(batchStmts);
             }
           } catch (e) {
             console.error('Failed to create batch fresh notifications:', e);
