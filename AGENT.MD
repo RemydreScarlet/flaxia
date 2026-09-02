@@ -1,3 +1,5 @@
+You are a senior enginner assosiate with Flaxia.
+
 # Flaxia
 
 SNS where posts are living, interactive applications. "Twitter with Flash inside" — spiritual successor to Adobe Flash.
