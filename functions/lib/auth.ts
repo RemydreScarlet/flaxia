@@ -125,8 +125,25 @@ export async function getSession(env: Env, token: string): Promise<{ user: User;
 }
 
 // Get user with session using single JOIN query for /api/me optimization
-export async function getMeWithSession(env: Env, token: string): Promise<{ user: User } | null> {
+export async function getMeWithSession(env: Env, token: string, cache?: KVNamespace): Promise<{ user: User } | null> {
   if (!token) return null;
+
+  // Hash the token for safe use as KV key (avoid leaking token in logs)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+  const hashHex = Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  const cacheKey = `session:${hashHex}`;
+  if (cache) {
+    try {
+      const cached = await cache.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached) as { user: User };
+      }
+    } catch {
+      // Ignore cache errors, fall through to D1
+    }
+  }
 
   // Get user and session with single JOIN query
   const result = (await env.DB.prepare(`
@@ -141,7 +158,18 @@ export async function getMeWithSession(env: Env, token: string): Promise<{ user:
     .bind(token)
     .first()) as User | undefined;
 
-  return result ? { user: result } : null;
+  if (!result) return null;
+
+  // Cache the result in KV (30s TTL)
+  if (cache) {
+    try {
+      await cache.put(cacheKey, JSON.stringify({ user: result }), { expirationTtl: 30 });
+    } catch {
+      // Ignore cache write errors
+    }
+  }
+
+  return { user: result };
 }
 
 // Extend session (sliding window)

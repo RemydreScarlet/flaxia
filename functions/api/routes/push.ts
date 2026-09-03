@@ -7,12 +7,12 @@ import type { Bindings, Variables } from '../types';
 const push = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
 // GET /api/push/vapid-key - Expose VAPID public key for clients
-push.get('/vapid-key', async (c) => {
+push.get('/push/vapid-key', async (c) => {
   return c.json({ publicKey: getVapidPublicKey(c.env.VAPID_PUBLIC_KEY, c.env.VAPID_PRIVATE_KEY) });
 });
 
 // POST /api/push/register - Register a push subscription (Web Push or FCM)
-push.post('/register', requireAuth, async (c) => {
+push.post('/push/register', requireAuth, async (c) => {
   try {
     const user = c.get('user') as { id: string; username: string } | undefined;
     if (!user) return c.json({ error: 'Unauthorized' }, 401);
@@ -73,7 +73,7 @@ push.post('/register', requireAuth, async (c) => {
 });
 
 // POST /api/push/unregister - Remove a Web Push subscription (protected)
-push.post('/unregister', requireAuth, async (c) => {
+push.post('/push/unregister', requireAuth, async (c) => {
   try {
     const { endpoint } = (await c.req.json()) as { endpoint: string };
     if (!endpoint) return c.json({ error: 'Missing endpoint' }, 400);
