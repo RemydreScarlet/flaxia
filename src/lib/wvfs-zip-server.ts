@@ -1,7 +1,8 @@
 import { CAPTURE_BRIDGE_IIFE } from './capture-bridge.generated.ts';
 import { getMimeType, validateFileType } from './file-extensions.ts';
+import { ZIP_MAX_PATH_DEPTH, ZIP_MAX_PATH_LENGTH, ZIP_MAX_TOTAL_SIZE, ZIP_TTL } from './zip-constants.ts';
 
-const WVFS_TTL = 5 * 60 * 1000;
+const WVFS_TTL = ZIP_TTL;
 const WVFS_R2_PREFIX = 'wvfs/';
 
 // Compute the R2 base prefix for a post (or a specific game version of it).
@@ -136,12 +137,12 @@ function validateZipCentralDirectory(cdData: Uint8Array, cdEntries: number): voi
     const fileName = new TextDecoder().decode(fileNameBytes);
 
     if (!fileName.endsWith('/')) {
-      if (fileName.length > 255) {
+      if (fileName.length > ZIP_MAX_PATH_LENGTH) {
         throw new Error(`Path too long: ${fileName}`);
       }
 
       const depth = (fileName.match(/\//g) || []).length;
-      if (depth > 10) {
+      if (depth > ZIP_MAX_PATH_DEPTH) {
         throw new Error(`Directory too deep: ${fileName}`);
       }
 
@@ -180,7 +181,7 @@ function validateZipCentralDirectory(cdData: Uint8Array, cdEntries: number): voi
       }
 
       totalSize += uncompressedSize;
-      if (totalSize > 100 * 1024 * 1024) {
+      if (totalSize > ZIP_MAX_TOTAL_SIZE) {
         throw new Error('Extracted size too large (max 100MB)');
       }
     }
@@ -264,14 +265,14 @@ function normalizePath(path: string): string {
       if (segment.includes('\0') || /[<>:"|?*]/.test(segment)) {
         throw new Error(`Invalid path segment: ${segment}`);
       }
-      if (segment.length > 255) {
+      if (segment.length > ZIP_MAX_PATH_LENGTH) {
         throw new Error(`Path segment too long: ${segment}`);
       }
       normalized.push(segment);
     }
   }
 
-  if (normalized.length > 10) {
+  if (normalized.length > ZIP_MAX_PATH_DEPTH) {
     throw new Error(`Path too deep: ${normalized.join('/')}`);
   }
 

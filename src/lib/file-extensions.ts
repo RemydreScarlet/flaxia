@@ -14,6 +14,7 @@ export const ALLOWED_EXTENSIONS: Record<string, string> = {
   '.jpeg': 'image/jpeg',
   '.gif': 'image/gif',
   '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
 
   '.ico': 'image/x-icon',
 
@@ -46,6 +47,7 @@ export const ALLOWED_EXTENSIONS: Record<string, string> = {
   '.glsl': 'text/plain',
   '.wgsl': 'text/plain',
   '.rsp': 'text/plain',
+  '.cf': 'text/plain',
   '.zip': 'application/zip',
 };
 
