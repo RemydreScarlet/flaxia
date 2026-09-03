@@ -4238,6 +4238,13 @@ posts.post('/posts/:id/versions/commit', requireAuth, async (c) => {
         execCtx.waitUntil(
           (async () => {
             try {
+              // Clear old extraction manifests so the new version's files
+              // overwrite the stale ones instead of being silently skipped.
+              await Promise.all([
+                bucket.delete(`wvfs/${postId}/.wvfs-manifest`),
+                versionId ? bucket.delete(`wvfs/${postId}/${versionId}/.wvfs-manifest`) : Promise.resolve(),
+              ]);
+
               // Extract to the default (non-versioned) path so the latest version
               // serves from the plain /api/wvfs-zip/<postId> URL, and to the
               // versioned path so ?v=<id> also resolves to it.

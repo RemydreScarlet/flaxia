@@ -44,7 +44,7 @@ app.use('/*', cors());
 app.get('/api/wvfs-zip/:postId/*', async (c) => {
   try {
     const postId = c.req.param('postId');
-    const versionId = c.req.query('v') ?? undefined;
+    let versionId = c.req.query('v') ?? undefined;
     const fullPath = c.req.path;
     const basePath = `/api/wvfs-zip/${postId}`;
     const filePath = fullPath.replace(basePath, '').replace(/^\//, '') || 'index.html';
@@ -63,6 +63,32 @@ app.get('/api/wvfs-zip/:postId/*', async (c) => {
 
     // 3. Find the ZIP key in R2
     let zipKey: string | null = null;
+
+    // When no explicit version is requested, look up the post's current
+    // payload_key so we always serve the latest release.  If the payload_key
+    // points to a versioned ZIP, extract the versionId so subsequent R2 /
+    // in-memory lookups hit the correct version-specific path.
+    if (!versionId && c.env.DB) {
+      try {
+        const postResult = (await c.env.DB.prepare('SELECT payload_key FROM posts WHERE id = ?')
+          .bind(postId)
+          .first()) as { payload_key: string } | null;
+        if (postResult?.payload_key) {
+          const escapedPostId = postId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const versionMatch = postResult.payload_key.match(new RegExp(`^versions/${escapedPostId}/([^/]+)\\.zip$`));
+          if (versionMatch) {
+            // Redirect to the version-specific lookup path
+            versionId = versionMatch[1];
+          } else {
+            // Non-versioned payload — use directly
+            const obj = await c.env.BUCKET.head(postResult.payload_key);
+            if (obj) zipKey = postResult.payload_key;
+          }
+        }
+      } catch {
+        // proceed without post lookup on DB failure
+      }
+    }
 
     if (c.env.DB && versionId) {
       try {
