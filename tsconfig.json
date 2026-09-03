@@ -24,6 +24,6 @@
     "allowImportingTsExtensions": true,
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["src/**/*", "functions/**/*", "status-worker/src/**/*"],
+  "include": ["src/**/*", "functions/**/*"],
   "exclude": ["node_modules", "dist", "sandbox"]
 }
