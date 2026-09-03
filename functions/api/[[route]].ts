@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { getMeWithSession, getSession, getSessionToken, User } from '../lib/auth';
+import { getSession, getSessionToken, User } from '../lib/auth';
+import { authMiddleware, csrfProtection } from './helpers';
 import activitypubRouter from './routes/activitypub';
 import adminRouter from './routes/admin';
 import adsRouter from './routes/ads';
@@ -55,27 +56,7 @@ type Variables = {
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
-// Auth middleware — sets user context (null if not authenticated); must precede all routes
-app.use('/api/*', async (c, next) => {
-  if (
-    (c.req.method === 'GET' && c.req.path.startsWith('/api/images/')) ||
-    (c.req.method === 'GET' && c.req.path.startsWith('/api/audio/')) ||
-    (c.req.method === 'GET' && c.req.path.startsWith('/api/video/')) ||
-    (c.req.method === 'GET' && c.req.path.startsWith('/api/zip/')) ||
-    (c.req.method === 'GET' && c.req.path.startsWith('/api/swf/')) ||
-    (c.req.method === 'GET' && c.req.path === '/api/link-preview') ||
-    (c.req.method === 'GET' && c.req.path === '/api/games') ||
-    (c.req.method === 'GET' && c.req.path.startsWith('/api/ads/') && c.req.path.endsWith('/payload')) ||
-    (c.req.method === 'GET' && c.req.path.startsWith('/api/wvfs-zip/'))
-  ) {
-    await next();
-    return;
-  }
-  const token = getSessionToken(c.req.raw);
-  const sessionData = token ? await getMeWithSession(c.env, token, c.env.CACHE) : null;
-  c.set('user', sessionData?.user || null);
-  await next();
-});
+app.use('/api/*', authMiddleware);
 
 app.use(
   '/*',
@@ -101,41 +82,16 @@ app.use(
   }),
 );
 
-const allowedOrigins = new Set([
-  'http://localhost:8787',
-  'http://localhost:5173',
-  'https://flaxia.app',
-  'https://sandbox.flaxia.app',
-]);
-
-function getBaseOrigin(c: any): string {
-  try {
-    return new URL(c.env.BASE_URL || 'https://flaxia.app').origin;
-  } catch {
-    return 'https://flaxia.app';
-  }
-}
-
-const csrfProtection = async (c: any, next: any) => {
-  const method = c.req.method;
-  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
-    await next();
-    return;
-  }
-  const origin = c.req.header('Origin');
-  if (origin) {
-    const baseOrigin = getBaseOrigin(c);
-    if (!allowedOrigins.has(origin) && origin !== baseOrigin) {
-      return c.json({ error: 'CSRF validation failed' }, 403);
-    }
-  }
-  await next();
-};
-
 app.use('/*', csrfProtection);
 
 // Auth routes (extracted to routes/auth.ts)
 app.route('/api/auth', authRouter);
+
+// ActivityPub routes (extracted to routes/activitypub.ts)
+app.route('/', activitypubRouter);
+
+// Admin routes (extracted to routes/admin.ts)
+app.route('/api/admin', adminRouter);
 
 // Media routes (extracted to routes/media.ts)
 app.route('/api', mediaRouter);
@@ -167,17 +123,35 @@ app.route('/api', groupsRouter);
 // Messenger E2EE signal routes (extracted to routes/msig.ts)
 app.route('/api', msigRouter);
 
+// Messenger routes (extracted to routes/messenger.ts)
+app.route('/api', messengerRouter);
+
 // Auth/me routes (extracted to routes/me.ts)
 app.route('/api', meRouter);
 
 // Ad routes (extracted to routes/ads.ts)
 app.route('/api', adsRouter);
 
+// Calls routes (extracted to routes/calls.ts)
+app.route('/api', callsRouter);
+
+// Multiplayer routes (extracted to routes/multiplayer.ts)
+app.route('/api/multiplayer', multiplayerRouter);
+
+// Push routes (extracted to routes/push.ts)
+app.route('/api', pushRouter);
+
+// Server routes (extracted to routes/servers.ts)
+app.route('/api', serversRouter);
+
 // Game routes (extracted to routes/games.ts)
 app.route('/api', gamesRouter);
 
 // Post routes (extracted to routes/posts.ts)
 app.route('/api', postsRouter);
+
+// Test routes (extracted to routes/tests.ts)
+app.route('/', testsRouter);
 
 export async function onRequest(context: Record<string, unknown>) {
   const request = context.request as Request;

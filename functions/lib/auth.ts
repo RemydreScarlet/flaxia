@@ -128,8 +128,12 @@ export async function getSession(env: Env, token: string): Promise<{ user: User;
 export async function getMeWithSession(env: Env, token: string, cache?: KVNamespace): Promise<{ user: User } | null> {
   if (!token) return null;
 
-  // Try KV cache first (30s TTL)
-  const cacheKey = `session:${token}`;
+  // Hash the token for safe use as KV key (avoid leaking token in logs)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+  const hashHex = Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  const cacheKey = `session:${hashHex}`;
   if (cache) {
     try {
       const cached = await cache.get(cacheKey);

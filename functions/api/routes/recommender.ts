@@ -1,5 +1,4 @@
-import type { D1Database, KVNamespace } from '@cloudflare/workers-types';
-import type { Context, Next } from 'hono';
+import type { D1Database } from '@cloudflare/workers-types';
 import {
   type BanditPrior,
   applyReward as banditApplyReward,
@@ -15,7 +14,6 @@ import {
   projConfigKey,
   serializeState,
 } from '../../lib/linucb';
-import type { Bindings, Variables } from '../types';
 
 function cosineSimilarity(a: number[], b: number[]): number {
   let dot = 0,

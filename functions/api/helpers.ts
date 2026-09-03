@@ -1,7 +1,7 @@
 import { FlaxiaClient } from '@flaxia/sdk';
 import type { Context, Next } from 'hono';
 import { isAdmin } from '../../src/lib/admin';
-import { getSessionToken } from '../lib/auth';
+import { getMeWithSession, getSessionToken } from '../lib/auth';
 import type { Bindings, Variables } from './types';
 
 // Auth middleware — sets user context (null if not authenticated)
@@ -20,9 +20,8 @@ export const authMiddleware = async (c: Context<{ Bindings: Bindings; Variables:
     await next();
     return;
   }
-  const { getMeWithSession } = await import('../lib/auth');
   const token = getSessionToken(c.req.raw);
-  const sessionData = token ? await getMeWithSession(c.env, token) : null;
+  const sessionData = token ? await getMeWithSession(c.env, token, c.env.CACHE) : null;
   c.set('user', sessionData?.user || null);
   await next();
 };
