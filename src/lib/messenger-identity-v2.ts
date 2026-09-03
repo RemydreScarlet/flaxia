@@ -274,12 +274,23 @@ export async function ensureE2EEIdentityV2(password: string, salt: Uint8Array): 
 
     const res = await fetch('/api/messenger/identity-v2', { credentials: 'include' });
     if (!res.ok) return false;
-    const data = (await res.json()) as { exists?: boolean };
+    const data = (await res.json()) as { exists?: boolean; encSalt?: string };
     if (data.exists) {
       const ok = await applyUnlocked(kek);
       if (ok) {
         await persistKek(kek);
         return true;
+      }
+      // SRP-salt KEK didn't work — try the server-stored encSalt (may differ
+      // if the identity was created via generateAndPublishIdentityV2).
+      if (data.encSalt) {
+        const altKek = await deriveKek(password, base64ToBuf(data.encSalt));
+        const ok2 = await applyUnlocked(altKek);
+        if (ok2) {
+          kekCache = altKek;
+          await persistKek(altKek);
+          return true;
+        }
       }
       // Wrong password / inconsistent salt: do not overwrite a real identity.
       return false;
