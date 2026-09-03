@@ -53,21 +53,11 @@ app.get('/api/wvfs-zip/:postId/*', async (c) => {
       return c.json({ error: 'Storage not available' }, 500);
     }
 
-    // 1. Try pre-extracted R2 files (fast path — persists across workers, CDN-cacheable)
-    let response = await serveFileFromR2(c.env.BUCKET, postId, filePath, versionId);
-    if (response) return withCsp(response);
-
-    // 2. Try in-memory cache (second fast path)
-    response = await serveFileFromWvfs(postId, filePath, versionId);
-    if (response) return withCsp(response);
-
-    // 3. Find the ZIP key in R2
+    // Resolve the latest version before hitting the R2 / in-memory caches so
+    // the correct version-specific path is used.  Without this, stale files
+    // from an older version under wvfs/<postId>/ would be served.
     let zipKey: string | null = null;
 
-    // When no explicit version is requested, look up the post's current
-    // payload_key so we always serve the latest release.  If the payload_key
-    // points to a versioned ZIP, extract the versionId so subsequent R2 /
-    // in-memory lookups hit the correct version-specific path.
     if (!versionId && c.env.DB) {
       try {
         const postResult = (await c.env.DB.prepare('SELECT payload_key FROM posts WHERE id = ?')
@@ -90,6 +80,15 @@ app.get('/api/wvfs-zip/:postId/*', async (c) => {
       }
     }
 
+    // 1. Try pre-extracted R2 files (fast path — persists across workers, CDN-cacheable)
+    let response = await serveFileFromR2(c.env.BUCKET, postId, filePath, versionId);
+    if (response) return withCsp(response);
+
+    // 2. Try in-memory cache (second fast path)
+    response = await serveFileFromWvfs(postId, filePath, versionId);
+    if (response) return withCsp(response);
+
+    // 3. Find the ZIP key in R2
     if (c.env.DB && versionId) {
       try {
         const versionResult = (await c.env.DB.prepare(
