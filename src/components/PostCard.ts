@@ -476,13 +476,32 @@ export class PostCard {
     this.updateActions();
   }
 
-  private handleModeChange(newMode: PostCardMode): void {
+  private async handleModeChange(newMode: PostCardMode): Promise<void> {
     this.mode = newMode;
     // The sandbox iframe only appears once the post starts executing, so begin
     // (re)binding the bridge when we switch into EXECUTING mode.
     if (newMode === PostCardMode.EXECUTING && !this.sandboxBridge) {
       this.sandboxBridgeRetries = 0;
       this.setupSandboxBridge();
+    }
+    // When entering EXECUTING mode without an explicit version, resolve the
+    // latest versionId so the sandbox always receives ?v=<latest>.
+    if (newMode === PostCardMode.EXECUTING && this.currentVersionId === null) {
+      try {
+        const res = await fetch(`/api/posts/${this.props.post.id}/versions`);
+        if (res.ok) {
+          const data = (await res.json()) as {
+            versions: Array<{ id: string; versionNumber: number }>;
+          };
+          const versions = data.versions;
+          if (versions.length > 0) {
+            versions.sort((a, b) => b.versionNumber - a.versionNumber);
+            this.currentVersionId = versions[0].id;
+          }
+        }
+      } catch {
+        // proceed without version resolution
+      }
     }
     if (this.postStageElement) {
       updatePostStage(this.postStageElement, {
