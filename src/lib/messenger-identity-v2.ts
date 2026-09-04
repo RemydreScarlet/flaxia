@@ -292,8 +292,10 @@ export async function ensureE2EEIdentityV2(password: string, salt: Uint8Array): 
           return true;
         }
       }
-      // Wrong password / inconsistent salt: do not overwrite a real identity.
-      return false;
+      // The existing identity cannot be decrypted (wrong password / lost key).
+      // Overwrite it with a fresh one so the user can send encrypted messages.
+      // Using the caller-supplied salt (SRP salt) keeps the KEK consistent
+      // with the login password, preventing the same lockout on password change.
     }
 
     // Fresh identity.

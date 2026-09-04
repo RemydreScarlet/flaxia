@@ -4,7 +4,6 @@ import { unwrapStringWithKek, wrapStringWithKek } from '../../lib/messenger-dm-c
 import { decryptDmMessageV2, encryptDmMessageV2, resetDmRatchet } from '../../lib/messenger-dm-session.js';
 import {
   ensureE2EEIdentityV2,
-  generateAndPublishIdentityV2,
   isIdentityV2Unlocked,
   unlockIdentityV2FromSession,
   unlockIdentityV2WithPassword,
@@ -75,13 +74,12 @@ export class DmTransport implements MessageTransport {
       // Use the server-stored encSalt first — it is the authoritative salt
       // that was actually used to encrypt the identity keys.
       if (await unlockIdentityV2WithPassword(pw)) return true;
-      // Fallback: derive KEK from the SRP salt (may create a new identity if
-      // none exists on the server).
+      // Fallback: derive KEK from the SRP salt. If the identity can't be
+      // decrypted, ensureE2EEIdentityV2 will overwrite it with a fresh one
+      // using the same SRP salt — keeping the KEK consistent for future
+      // password changes.
       const salt = getStoredSrpSalt();
       if (salt && (await ensureE2EEIdentityV2(pw, salt))) return true;
-      // Unlock failed — generate a fresh identity so the user can at least
-      // SEND encrypted messages. Old received messages become unreadable.
-      if (await generateAndPublishIdentityV2(pw)) return true;
       showToast('Could not enable E2EE identity', true);
       return false;
     } catch (e) {
