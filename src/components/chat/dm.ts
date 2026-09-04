@@ -5,6 +5,7 @@ import { decryptDmMessageV2, encryptDmMessageV2, resetDmRatchet } from '../../li
 import {
   ensureE2EEIdentityV2,
   isIdentityV2Unlocked,
+  rewrapE2EEIdentityV2,
   unlockIdentityV2FromSession,
   unlockIdentityV2WithPassword,
 } from '../../lib/messenger-identity-v2.js';
@@ -90,6 +91,29 @@ export class DmTransport implements MessageTransport {
       const r2 = salt ? await ensureE2EEIdentityV2(pw, salt) : false;
       console.debug('[e2ee] ensureE2EEIdentityV2 result:', r2);
       if (r2) return true;
+      // Both current-password attempts failed. The identity was likely
+      // encrypted under a previous password whose re-wrap didn't complete.
+      // Prompt for the old password to decrypt, then re-wrap with the
+      // current password so future unlocks work transparently.
+      console.debug('[e2ee] current password failed, prompting for old password');
+      const oldPw = globalThis.prompt?.(
+        'パスワード変更後に暗号化キーの更新が完了していません。旧パスワードを入力してください。',
+      );
+      if (!oldPw || oldPw === pw) {
+        showToast('Could not enable E2EE identity', true);
+        return false;
+      }
+      const oldValid = await verifyCurrentPassword(oldPw);
+      if (!oldValid) {
+        showToast('旧パスワードが正しくありません', true);
+        return false;
+      }
+      if (await unlockIdentityV2WithPassword(oldPw)) {
+        console.debug('[e2ee] unlocked with old password, re-wrapping');
+        const srpSalt = getStoredSrpSalt();
+        if (srpSalt) await rewrapE2EEIdentityV2(pw, srpSalt);
+        return true;
+      }
       showToast('Could not enable E2EE identity', true);
       return false;
     } catch (e) {
