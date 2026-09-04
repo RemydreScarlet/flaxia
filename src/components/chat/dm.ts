@@ -4,8 +4,8 @@ import { unwrapStringWithKek, wrapStringWithKek } from '../../lib/messenger-dm-c
 import { decryptDmMessageV2, encryptDmMessageV2, resetDmRatchet } from '../../lib/messenger-dm-session.js';
 import {
   ensureE2EEIdentityV2,
+  generateAndPublishIdentityV2,
   isIdentityV2Unlocked,
-  rewrapE2EEIdentityV2,
   unlockIdentityV2FromSession,
   unlockIdentityV2WithPassword,
 } from '../../lib/messenger-identity-v2.js';
@@ -72,62 +72,21 @@ export class DmTransport implements MessageTransport {
         showToast('パスワードが正しくありません', true);
         return false;
       }
-      // Diagnostic: compare server encSalt with SRP salt to detect mismatches.
-      try {
-        const res = await fetch('/api/messenger/identity-v2', { credentials: 'include' });
-        if (res.ok) {
-          const d = (await res.json()) as { exists?: boolean; encSalt?: string };
-          const srpSalt = getStoredSrpSalt();
-          const srpB64 = srpSalt ? btoa(String.fromCharCode(...srpSalt)) : null;
-          console.debug(
-            '[e2ee] exists:',
-            d.exists,
-            'encSalt:',
-            d.encSalt?.slice(0, 8),
-            'srpSalt:',
-            srpB64?.slice(0, 8),
-            'match:',
-            d.encSalt === srpB64,
-          );
-        }
-      } catch {
-        /* diagnostic only */
-      }
       // Use the server-stored encSalt first — it is the authoritative salt
       // that was actually used to encrypt the identity keys.
-      console.debug('[e2ee] trying unlockIdentityV2WithPassword');
-      const r1 = await unlockIdentityV2WithPassword(pw);
-      console.debug('[e2ee] unlockIdentityV2WithPassword result:', r1);
-      if (r1) return true;
+      if (await unlockIdentityV2WithPassword(pw)) return true;
       // Fallback: derive KEK from the SRP salt (may create a new identity if
       // none exists on the server).
       const salt = getStoredSrpSalt();
-      console.debug('[e2ee] srp salt present:', !!salt);
-      const r2 = salt ? await ensureE2EEIdentityV2(pw, salt) : false;
-      console.debug('[e2ee] ensureE2EEIdentityV2 result:', r2);
-      if (r2) return true;
-      // Both current-password attempts failed. The identity was likely
-      // encrypted under a previous password whose re-wrap didn't complete.
-      // Prompt for the old password to decrypt, then re-wrap with the
-      // current password so future unlocks work transparently.
-      console.debug('[e2ee] current password failed, prompting for old password');
-      const oldPw = globalThis.prompt?.(
-        'パスワード変更後に暗号化キーの更新が完了していません。旧パスワードを入力してください。',
+      if (salt && (await ensureE2EEIdentityV2(pw, salt))) return true;
+      // All unlock attempts failed. The identity was encrypted with a
+      // password that is no longer available. Offer to generate a fresh
+      // identity — old messages become unreadable but new ones work.
+      const reset = globalThis.confirm?.(
+        '現在のパスワードでは既存の暗号化キーを復号できません。新しい暗号化キーを生成しますか？\n（既存の暗号化メッセージは復号できなくなります）',
       );
-      if (!oldPw || oldPw === pw) {
-        showToast('Could not enable E2EE identity', true);
-        return false;
-      }
-      const oldValid = await verifyCurrentPassword(oldPw);
-      if (!oldValid) {
-        showToast('旧パスワードが正しくありません', true);
-        return false;
-      }
-      if (await unlockIdentityV2WithPassword(oldPw)) {
-        console.debug('[e2ee] unlocked with old password, re-wrapping');
-        const srpSalt = getStoredSrpSalt();
-        if (srpSalt) await rewrapE2EEIdentityV2(pw, srpSalt);
-        return true;
+      if (reset) {
+        if (await generateAndPublishIdentityV2(pw)) return true;
       }
       showToast('Could not enable E2EE identity', true);
       return false;
