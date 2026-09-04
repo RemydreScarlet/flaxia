@@ -27,7 +27,8 @@ describe('messenger identity v2 IV isolation', () => {
       return new Response(null, { status: 200 });
     });
 
-    const ok = await generateAndPublishIdentityV2('test-password');
+    const salt = globalThis.crypto.getRandomValues(new Uint8Array(16));
+    const ok = await generateAndPublishIdentityV2('test-password', salt);
     assert.equal(ok, true);
     assert.ok(captured, 'identity PUT body should have been captured');
 

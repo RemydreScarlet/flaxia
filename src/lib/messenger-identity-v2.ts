@@ -141,15 +141,13 @@ async function loadKekFromSession(): Promise<CryptoKey | null> {
 }
 
 // Generate a fresh identity, publish it, and unlock it in memory.
-export async function generateAndPublishIdentityV2(password: string): Promise<boolean> {
+export async function generateAndPublishIdentityV2(password: string, salt: Uint8Array): Promise<boolean> {
   if (cached) return true;
   try {
     const id: IdentityKeyPair = generateIdentityKeyPair();
     const spk: SignedPreKey = generateSignedPreKey(id.signPriv);
     const opks = generateOneTimePreKeys(OPK_COUNT);
 
-    const salt = new Uint8Array(16);
-    globalThis.crypto.getRandomValues(salt);
     const kek = await deriveKek(password, salt);
     kekCache = kek;
 
@@ -397,7 +395,7 @@ export async function rewrapE2EEIdentityV2(password: string, salt: Uint8Array): 
 // exists yet. Returns true once the in-memory identity is usable.
 // Safety: if the server already has an identity, NEVER overwrite it — a failed
 // unlock (network timeout, wrong password, etc.) must not destroy the real key.
-export async function unlockOrCreateIdentityV2(password: string): Promise<boolean> {
+export async function unlockOrCreateIdentityV2(password: string, salt: Uint8Array): Promise<boolean> {
   if (cached) return true;
   if (await unlockIdentityV2WithPassword(password)) return true;
   // Check whether an identity already exists on the server before creating a
@@ -412,7 +410,7 @@ export async function unlockOrCreateIdentityV2(password: string): Promise<boolea
   } catch {
     /* network error — safe to skip creation */
   }
-  return generateAndPublishIdentityV2(password);
+  return generateAndPublishIdentityV2(password, salt);
 }
 
 export function isIdentityV2Unlocked(): boolean {
