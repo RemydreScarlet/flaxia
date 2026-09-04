@@ -65,18 +65,33 @@ export class DmTransport implements MessageTransport {
     try {
       if (isIdentityV2Unlocked()) return true;
       if (await unlockIdentityV2FromSession()) return true;
-      // Last-resort re-prompt (e.g. storage cleared). Derive the KEK from the
-      // account password + the stored SRP salt so it stays consistent with the
-      // login-time E2EE setup, rather than creating a divergent key.
       const pw = globalThis.prompt?.('Enter your account password to enable end-to-end encrypted messages');
       if (!pw) return false;
-      // Verify the password via SRP before attempting E2EE unlock. A wrong
-      // password would silently fail KEK derivation and show a confusing error;
-      // checking first gives a clear "wrong password" message.
       const valid = await verifyCurrentPassword(pw);
       if (!valid) {
         showToast('パスワードが正しくありません', true);
         return false;
+      }
+      // Diagnostic: compare server encSalt with SRP salt to detect mismatches.
+      try {
+        const res = await fetch('/api/messenger/identity-v2', { credentials: 'include' });
+        if (res.ok) {
+          const d = (await res.json()) as { exists?: boolean; encSalt?: string };
+          const srpSalt = getStoredSrpSalt();
+          const srpB64 = srpSalt ? btoa(String.fromCharCode(...srpSalt)) : null;
+          console.debug(
+            '[e2ee] exists:',
+            d.exists,
+            'encSalt:',
+            d.encSalt?.slice(0, 8),
+            'srpSalt:',
+            srpB64?.slice(0, 8),
+            'match:',
+            d.encSalt === srpB64,
+          );
+        }
+      } catch {
+        /* diagnostic only */
       }
       // Use the server-stored encSalt first — it is the authoritative salt
       // that was actually used to encrypt the identity keys.
