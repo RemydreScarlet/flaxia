@@ -211,7 +211,10 @@ export async function unlockIdentityV2FromSession(): Promise<boolean> {
 async function applyUnlocked(kek: CryptoKey): Promise<boolean> {
   try {
     const res = await fetch('/api/messenger/identity-v2', { credentials: 'include' });
-    if (!res.ok) return false;
+    if (!res.ok) {
+      console.debug('[e2ee] applyUnlocked fetch failed:', res.status);
+      return false;
+    }
     const data = (await res.json()) as {
       exists?: boolean;
       identitySignPub?: string;
@@ -225,6 +228,14 @@ async function applyUnlocked(kek: CryptoKey): Promise<boolean> {
       spkPrivIv?: string;
       spkSig?: string;
     };
+    console.debug(
+      '[e2ee] applyUnlocked exists:',
+      data.exists,
+      'signPrivEnc:',
+      !!data.identitySignPrivEnc,
+      'signPrivIv:',
+      !!data.identitySignPrivIv,
+    );
     if (!data.exists || !data.identitySignPrivEnc || !data.identitySignPrivIv) return false;
     cached = {
       identitySignPub: data.identitySignPub || '',
@@ -237,7 +248,8 @@ async function applyUnlocked(kek: CryptoKey): Promise<boolean> {
     };
     void ensureOpkPool();
     return true;
-  } catch {
+  } catch (e) {
+    console.error('[e2ee] applyUnlocked error:', e);
     return false;
   }
 }
@@ -248,15 +260,22 @@ export async function unlockIdentityV2WithPassword(password: string): Promise<bo
   if (cached) return true;
   try {
     const res = await fetch('/api/messenger/identity-v2', { credentials: 'include' });
-    if (!res.ok) return false;
+    if (!res.ok) {
+      console.debug('[e2ee] identity-v2 GET failed:', res.status);
+      return false;
+    }
     const data = (await res.json()) as { exists?: boolean; encSalt?: string };
+    console.debug('[e2ee] identity-v2 exists:', data.exists, 'encSalt present:', !!data.encSalt);
     if (!data.exists || !data.encSalt) return false;
     const kek = await deriveKek(password, base64ToBuf(data.encSalt));
-    if (!(await applyUnlocked(kek))) return false;
+    const ok = await applyUnlocked(kek);
+    console.debug('[e2ee] unlockIdentityV2WithPassword applyUnlocked:', ok);
+    if (!ok) return false;
     kekCache = kek;
     await persistKek(kek);
     return true;
-  } catch {
+  } catch (e) {
+    console.error('[e2ee] unlockIdentityV2WithPassword error:', e);
     return false;
   }
 }

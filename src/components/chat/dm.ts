@@ -79,14 +79,21 @@ export class DmTransport implements MessageTransport {
       }
       // Use the server-stored encSalt first — it is the authoritative salt
       // that was actually used to encrypt the identity keys.
-      if (await unlockIdentityV2WithPassword(pw)) return true;
+      console.debug('[e2ee] trying unlockIdentityV2WithPassword');
+      const r1 = await unlockIdentityV2WithPassword(pw);
+      console.debug('[e2ee] unlockIdentityV2WithPassword result:', r1);
+      if (r1) return true;
       // Fallback: derive KEK from the SRP salt (may create a new identity if
       // none exists on the server).
       const salt = getStoredSrpSalt();
-      if (salt && (await ensureE2EEIdentityV2(pw, salt))) return true;
+      console.debug('[e2ee] srp salt present:', !!salt);
+      const r2 = salt ? await ensureE2EEIdentityV2(pw, salt) : false;
+      console.debug('[e2ee] ensureE2EEIdentityV2 result:', r2);
+      if (r2) return true;
       showToast('Could not enable E2EE identity', true);
       return false;
-    } catch {
+    } catch (e) {
+      console.error('[e2ee] unlockV2 exception:', e);
       return false;
     }
   }
