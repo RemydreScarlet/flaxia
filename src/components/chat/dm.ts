@@ -79,15 +79,9 @@ export class DmTransport implements MessageTransport {
       // none exists on the server).
       const salt = getStoredSrpSalt();
       if (salt && (await ensureE2EEIdentityV2(pw, salt))) return true;
-      // All unlock attempts failed. The identity was encrypted with a
-      // password that is no longer available. Offer to generate a fresh
-      // identity — old messages become unreadable but new ones work.
-      const reset = globalThis.confirm?.(
-        '現在のパスワードでは既存の暗号化キーを復号できません。新しい暗号化キーを生成しますか？\n（既存の暗号化メッセージは復号できなくなります）',
-      );
-      if (reset) {
-        if (await generateAndPublishIdentityV2(pw)) return true;
-      }
+      // Unlock failed — generate a fresh identity so the user can at least
+      // SEND encrypted messages. Old received messages become unreadable.
+      if (await generateAndPublishIdentityV2(pw)) return true;
       showToast('Could not enable E2EE identity', true);
       return false;
     } catch (e) {
