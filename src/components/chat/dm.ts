@@ -6,6 +6,7 @@ import {
   ensureE2EEIdentityV2,
   isIdentityV2Unlocked,
   unlockIdentityV2FromSession,
+  unlockIdentityV2WithPassword,
 } from '../../lib/messenger-identity-v2.js';
 import {
   checkRatchetResetRequest,
@@ -76,6 +77,11 @@ export class DmTransport implements MessageTransport {
         showToast('パスワードが正しくありません', true);
         return false;
       }
+      // Use the server-stored encSalt first — it is the authoritative salt
+      // that was actually used to encrypt the identity keys.
+      if (await unlockIdentityV2WithPassword(pw)) return true;
+      // Fallback: derive KEK from the SRP salt (may create a new identity if
+      // none exists on the server).
       const salt = getStoredSrpSalt();
       if (salt && (await ensureE2EEIdentityV2(pw, salt))) return true;
       showToast('Could not enable E2EE identity', true);
