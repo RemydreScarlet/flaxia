@@ -261,19 +261,14 @@ export function createVideoPlayer(props: VideoPlayerProps): HTMLElement {
         <button class="video-player-retry-btn">${t('video_player.retry')}</button>
       </div>
     `;
-    errorEl.querySelector('.video-player-retry-btn')?.addEventListener('click', () => {
+    errorEl.querySelector('.video-player-retry-btn')?.addEventListener('click', async () => {
       errorEl.style.display = 'none';
       video.style.display = 'block';
       controls.style.display = '';
       overlay.style.display = '';
       loadingEl.style.display = '';
-      if (typeof signedVideoUrl === 'string') {
-        video.src = signedVideoUrl;
-      } else {
-        signedVideoUrl.then((url) => {
-          video.src = url;
-        });
-      }
+      const freshUrl = await getSignedMediaUrl('video', props.gifKey);
+      video.src = freshUrl;
       video.load();
     });
   };
@@ -482,13 +477,13 @@ export function createVideoPlayer(props: VideoPlayerProps): HTMLElement {
   // --- Init ---
   if (typeof signedVideoUrl === 'string') {
     video.src = signedVideoUrl;
+    video.load();
   } else {
     signedVideoUrl.then((url) => {
       video.src = url;
       video.load();
     });
   }
-  video.load();
 
   updatePlayButton();
   showControls();

@@ -8,19 +8,12 @@ import {
   getBaseOrigin,
   handleRangeRequest,
   isAllowedImageMime,
+  MEDIA_SECURITY_HEADERS,
   requireAuth,
 } from '../helpers';
 import type { Bindings, Variables } from '../types';
 
 const media = new Hono<{ Bindings: Bindings; Variables: Variables }>();
-
-// Security headers applied to all media responses
-const MEDIA_SECURITY_HEADERS: Record<string, string> = {
-  'X-Content-Type-Options': 'nosniff',
-  'X-Frame-Options': 'DENY',
-  'Referrer-Policy': 'no-referrer',
-  'Cross-Origin-Resource-Policy': 'cross-origin',
-};
 
 /**
  * Verify a signed token from the query string.
@@ -345,6 +338,17 @@ media.get('/zip/:postId', async (c) => {
       return c.json({ error: 'Missing post ID' }, 400);
     }
 
+    // Rate limit: 60 requests per minute per IP
+    const clientIp = getClientIp(c.req.raw);
+    if (!(await checkRateLimit(c.env.CACHE, `zip:${clientIp}`, { maxRequests: 60, windowSeconds: 60 }))) {
+      return c.json({ error: 'Rate limit exceeded' }, 429);
+    }
+
+    // Verify signed token
+    if (!(await verifyToken(c, postId))) {
+      return c.json({ error: 'Invalid or expired token' }, 403);
+    }
+
     if (!c.env.BUCKET) {
       return c.json({ error: 'Storage not available' }, 500);
     }
@@ -463,6 +467,17 @@ media.get('/swf/:postId', async (c) => {
 
     if (!postId) {
       return c.json({ error: 'Missing post ID' }, 400);
+    }
+
+    // Rate limit: 60 requests per minute per IP
+    const clientIp = getClientIp(c.req.raw);
+    if (!(await checkRateLimit(c.env.CACHE, `swf:${clientIp}`, { maxRequests: 60, windowSeconds: 60 }))) {
+      return c.json({ error: 'Rate limit exceeded' }, 429);
+    }
+
+    // Verify signed token
+    if (!(await verifyToken(c, postId))) {
+      return c.json({ error: 'Invalid or expired token' }, 403);
     }
 
     if (!c.env.BUCKET) {

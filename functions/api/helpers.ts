@@ -4,6 +4,15 @@ import { isAdmin } from '../../src/lib/admin';
 import { getMeWithSession, getSessionToken } from '../lib/auth';
 import type { Bindings, Variables } from './types';
 
+// Shared security headers for all media responses
+export const MEDIA_SECURITY_HEADERS: Record<string, string> = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'no-referrer',
+  'Content-Disposition': 'inline',
+  'Cross-Origin-Resource-Policy': 'cross-origin',
+};
+
 // Auth middleware — sets user context (null if not authenticated)
 export const authMiddleware = async (c: Context<{ Bindings: Bindings; Variables: Variables }>, next: Next) => {
   if (
@@ -101,13 +110,6 @@ export async function handleRangeRequest(c: any, key: string, object: any, conte
   const fileSize = object.size || 0;
   const rangeHeader = c.req.header('Range');
 
-  const securityHeaders: Record<string, string> = {
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'DENY',
-    'Referrer-Policy': 'no-referrer',
-    'Content-Disposition': 'inline',
-  };
-
   if (!rangeHeader) {
     return new Response(object.body, {
       headers: {
@@ -116,7 +118,7 @@ export async function handleRangeRequest(c: any, key: string, object: any, conte
         'Access-Control-Allow-Origin': 'https://flaxia.app',
         'Accept-Ranges': 'bytes',
         'Content-Length': fileSize.toString(),
-        ...securityHeaders,
+        ...MEDIA_SECURITY_HEADERS,
       },
     });
   }
@@ -149,7 +151,7 @@ export async function handleRangeRequest(c: any, key: string, object: any, conte
       'Cache-Control': 'private, max-age=3600',
       'Access-Control-Allow-Origin': 'https://flaxia.app',
       'Accept-Ranges': 'bytes',
-      ...securityHeaders,
+      ...MEDIA_SECURITY_HEADERS,
     },
   });
 }

@@ -227,13 +227,13 @@ export function createAudioPlayer(props: GifPreviewProps): HTMLElement {
     initTimer = null;
     if (typeof signedAudioUrl === 'string') {
       audio.src = signedAudioUrl;
+      audio.load();
     } else {
       signedAudioUrl.then((url) => {
         audio.src = url;
         audio.load();
       });
     }
-    audio.load();
     // If the user already started playback before the src was attached, make
     // sure the visualizer is created too.
     if (!audio.paused && !visualizer) {
@@ -265,19 +265,14 @@ export function createAudioPlayer(props: GifPreviewProps): HTMLElement {
         <button class="audio-player-retry-btn">${t('video_player.retry')}</button>
       </div>
     `;
-    errorEl.querySelector('.audio-player-retry-btn')?.addEventListener('click', () => {
+    errorEl.querySelector('.audio-player-retry-btn')?.addEventListener('click', async () => {
       errorEl.style.display = 'none';
       visualizerCanvas.style.display = 'block';
       controls.style.display = '';
       overlay.style.display = '';
       loadingEl.style.display = '';
-      if (typeof signedAudioUrl === 'string') {
-        audio.src = signedAudioUrl;
-      } else {
-        signedAudioUrl.then((url) => {
-          audio.src = url;
-        });
-      }
+      const freshUrl = await getSignedMediaUrl('audio', props.gifKey || '');
+      audio.src = freshUrl;
       audio.load();
     });
   };

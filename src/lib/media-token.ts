@@ -13,6 +13,7 @@ interface TokenCacheEntry {
 }
 
 const tokenCache = new Map<string, TokenCacheEntry>();
+const pendingFetches = new Map<string, Promise<string>>();
 
 // Refresh tokens 60 seconds before expiry
 const REFRESH_BUFFER_MS = 60 * 1000;
@@ -60,20 +61,27 @@ export async function getSignedMediaUrl(type: MediaType, key: string): Promise<s
     return buildUrl(type, key, cached.token);
   }
 
-  // Fetch new token
-  const token = await fetchToken(type, key);
-  if (!token) {
-    // Graceful degradation: return unsigned URL
-    return buildUrl(type, key, null);
-  }
+  // Deduplicate in-flight requests
+  const pending = pendingFetches.get(cacheKey);
+  if (pending) return pending;
 
-  // Cache the token
-  tokenCache.set(cacheKey, {
-    token,
-    expiresAt: Date.now() + TOKEN_TTL_MS[type],
-  });
+  const fetchPromise = fetchToken(type, key)
+    .then((token) => {
+      pendingFetches.delete(cacheKey);
+      if (!token) return buildUrl(type, key, null);
+      tokenCache.set(cacheKey, {
+        token,
+        expiresAt: Date.now() + TOKEN_TTL_MS[type],
+      });
+      return buildUrl(type, key, token);
+    })
+    .catch(() => {
+      pendingFetches.delete(cacheKey);
+      return buildUrl(type, key, null);
+    });
 
-  return buildUrl(type, key, token);
+  pendingFetches.set(cacheKey, fetchPromise);
+  return fetchPromise;
 }
 
 /**
@@ -144,10 +152,12 @@ export function invalidateMediaTokens(key?: string): void {
     for (const cacheKey of tokenCache.keys()) {
       if (cacheKey.endsWith(`:${key}`)) {
         tokenCache.delete(cacheKey);
+        pendingFetches.delete(cacheKey);
       }
     }
   } else {
     tokenCache.clear();
+    pendingFetches.clear();
   }
 }
 
