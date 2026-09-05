@@ -101,14 +101,22 @@ export async function handleRangeRequest(c: any, key: string, object: any, conte
   const fileSize = object.size || 0;
   const rangeHeader = c.req.header('Range');
 
+  const securityHeaders: Record<string, string> = {
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'no-referrer',
+    'Content-Disposition': 'inline',
+  };
+
   if (!rangeHeader) {
     return new Response(object.body, {
       headers: {
         'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=31536000',
+        'Cache-Control': 'private, max-age=3600',
         'Access-Control-Allow-Origin': 'https://flaxia.app',
         'Accept-Ranges': 'bytes',
         'Content-Length': fileSize.toString(),
+        ...securityHeaders,
       },
     });
   }
@@ -138,9 +146,10 @@ export async function handleRangeRequest(c: any, key: string, object: any, conte
       'Content-Type': contentType,
       'Content-Range': `bytes ${range.start}-${range.end}/${fileSize}`,
       'Content-Length': chunkSize.toString(),
-      'Cache-Control': 'public, max-age=31536000',
+      'Cache-Control': 'private, max-age=3600',
       'Access-Control-Allow-Origin': 'https://flaxia.app',
       'Accept-Ranges': 'bytes',
+      ...securityHeaders,
     },
   });
 }

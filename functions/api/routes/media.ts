@@ -1,5 +1,7 @@
 import { Hono } from 'hono';
 import { validateImageDimensions } from '../../lib/image-dimensions';
+import { verifyMediaToken } from '../../lib/media-signing';
+import { checkRateLimit, getClientIp } from '../../lib/rate-limit';
 import {
   allowedOrigins,
   detectMimeType,
@@ -11,6 +13,28 @@ import {
 import type { Bindings, Variables } from '../types';
 
 const media = new Hono<{ Bindings: Bindings; Variables: Variables }>();
+
+// Security headers applied to all media responses
+const MEDIA_SECURITY_HEADERS: Record<string, string> = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'no-referrer',
+  'Cross-Origin-Resource-Policy': 'cross-origin',
+};
+
+/**
+ * Verify a signed token from the query string.
+ * Returns true if valid, false otherwise.
+ * Skips verification if MEDIA_SIGNING_SECRET is not configured (dev mode).
+ */
+async function verifyToken(c: any, key: string): Promise<boolean> {
+  // Skip verification in development if secret is not configured
+  if (!c.env.MEDIA_SIGNING_SECRET) return true;
+
+  const token = c.req.query('token');
+  if (!token) return false;
+  return verifyMediaToken(c.env, key, token);
+}
 
 // PUT /api/upload/:key — direct file upload endpoint (requires auth + ownership of pending post)
 media.put('/upload/*', requireAuth, async (c) => {
@@ -137,6 +161,17 @@ media.get('/images/*', async (c) => {
       return c.json({ error: 'Missing image key' }, 400);
     }
 
+    // Rate limit: 100 requests per minute per IP
+    const clientIp = getClientIp(c.req.raw);
+    if (!(await checkRateLimit(c.env.CACHE, `img:${clientIp}`, { maxRequests: 100, windowSeconds: 60 }))) {
+      return c.json({ error: 'Rate limit exceeded' }, 429);
+    }
+
+    // Verify signed token
+    if (!(await verifyToken(c, key))) {
+      return c.json({ error: 'Invalid or expired token' }, 403);
+    }
+
     if (!c.env.BUCKET) {
       return c.json({ error: 'Storage not available' }, 500);
     }
@@ -156,8 +191,9 @@ media.get('/images/*', async (c) => {
         return new Response(defaultAvatarSvg, {
           headers: {
             'Content-Type': 'image/svg+xml',
-            'Cache-Control': 'public, max-age=31536000',
+            'Cache-Control': 'public, max-age=86400',
             'Access-Control-Allow-Origin': 'https://flaxia.app',
+            ...MEDIA_SECURITY_HEADERS,
           },
         });
       }
@@ -172,8 +208,10 @@ media.get('/images/*', async (c) => {
     return new Response(object.body, {
       headers: {
         'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=31536000', // Cache for 1 year
+        'Cache-Control': 'private, max-age=3600',
         'Access-Control-Allow-Origin': 'https://flaxia.app',
+        'Content-Disposition': 'inline',
+        ...MEDIA_SECURITY_HEADERS,
       },
     });
   } catch (error: unknown) {
@@ -189,6 +227,17 @@ media.get('/audio/*', async (c) => {
 
     if (!key) {
       return c.json({ error: 'Missing audio key' }, 400);
+    }
+
+    // Rate limit: 60 requests per minute per IP
+    const clientIp = getClientIp(c.req.raw);
+    if (!(await checkRateLimit(c.env.CACHE, `aud:${clientIp}`, { maxRequests: 60, windowSeconds: 60 }))) {
+      return c.json({ error: 'Rate limit exceeded' }, 429);
+    }
+
+    // Verify signed token
+    if (!(await verifyToken(c, key))) {
+      return c.json({ error: 'Invalid or expired token' }, 403);
     }
 
     if (!c.env.BUCKET) {
@@ -239,6 +288,17 @@ media.get('/video/*', async (c) => {
 
     if (!key) {
       return c.json({ error: 'Missing video key' }, 400);
+    }
+
+    // Rate limit: 30 requests per minute per IP
+    const clientIp = getClientIp(c.req.raw);
+    if (!(await checkRateLimit(c.env.CACHE, `vid:${clientIp}`, { maxRequests: 30, windowSeconds: 60 }))) {
+      return c.json({ error: 'Rate limit exceeded' }, 429);
+    }
+
+    // Verify signed token
+    if (!(await verifyToken(c, key))) {
+      return c.json({ error: 'Invalid or expired token' }, 403);
     }
 
     if (!c.env.BUCKET) {
@@ -311,7 +371,7 @@ media.get('/zip/:postId', async (c) => {
         'Cache-Control': 'public, max-age=31536000, s-maxage=31536000, immutable',
         'Access-Control-Allow-Origin': zipAllowed ? zipOrigin : 'https://flaxia.app',
         'Access-Control-Allow-Credentials': 'true',
-        'Cross-Origin-Resource-Policy': 'cross-origin',
+        ...MEDIA_SECURITY_HEADERS,
       },
     });
   } catch (error: unknown) {
@@ -385,8 +445,9 @@ media.get('/thumbnail/:id', async (c) => {
     return new Response(object.body, {
       headers: {
         'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=31536000', // Cache for 1 year
+        'Cache-Control': 'public, max-age=86400',
         'Access-Control-Allow-Origin': 'https://flaxia.app',
+        ...MEDIA_SECURITY_HEADERS,
       },
     });
   } catch (error: unknown) {
@@ -431,7 +492,7 @@ media.get('/swf/:postId', async (c) => {
         'Cache-Control': 'public, max-age=31536000, s-maxage=31536000, immutable',
         'Access-Control-Allow-Origin': swfAllowed ? swfOrigin : 'https://flaxia.app',
         'Access-Control-Allow-Credentials': 'true',
-        'Cross-Origin-Resource-Policy': 'cross-origin',
+        ...MEDIA_SECURITY_HEADERS,
       },
     });
   } catch (error: unknown) {
