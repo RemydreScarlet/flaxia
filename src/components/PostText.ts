@@ -1,4 +1,3 @@
-import DOMPurify from 'dompurify';
 import type MarkdownIt from 'markdown-it';
 import { PostTextProps } from '../types/post.js';
 
@@ -8,6 +7,7 @@ let md: MarkdownIt | null = null;
 // Cache for dynamic imports
 let katexPromise: Promise<typeof import('katex')> | null = null;
 let markdownitPromise: Promise<typeof import('markdown-it')> | null = null;
+let dompurifyPromise: Promise<typeof import('dompurify')> | null = null;
 let katexLoadingPromise: Promise<void> | null = null;
 
 // Cache for custom emoji stamps
@@ -63,6 +63,14 @@ async function getKatex() {
     katexPromise = import('katex');
   }
   return katexPromise;
+}
+
+async function getDOMPurify() {
+  if (!dompurifyPromise) {
+    dompurifyPromise = import('dompurify');
+  }
+  const mod = await dompurifyPromise;
+  return mod.default;
 }
 
 interface MathPlaceholder {
@@ -133,6 +141,7 @@ async function processText(text: string, enablePostRefs?: boolean): Promise<stri
   html = restoreMathPlaceholders(html, mathPlaceholders);
 
   // Step 4: Sanitize HTML (now with proper math placeholders)
+  const DOMPurify = await getDOMPurify();
   html = DOMPurify.sanitize(html, {
     ALLOWED_TAGS: [
       'p',

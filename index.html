@@ -44,37 +44,38 @@
     })();
   </script>
   
-  <!-- Critical CSS inline -->
+  <!-- Critical CSS inline (variables, reset, layout, nav, post basics) -->
   <style>
     :root {
       color-scheme: light;
-      --bg-primary:    #ffffff;
-      --bg-secondary:  #f0fdf4;
-      --bg-input:      #f1f5f9;
-      --bg-tertiary:   #f0f0f0;
-      --bg-hover:      rgba(0, 0, 0, 0.04);
-      --border:        #e2e8f0;
-      --text-primary:  #0f172a;
-      --text-muted:    #64748b;
-      --accent:        #22c55e;
-      --accent-dark:   #16a34a;
-      --danger:        #ef4444;
-      --link:          #3b82f6;
+      --bg-primary: #ffffff;
+      --bg-secondary: #f0fdf4;
+      --bg-input: #f1f5f9;
+      --bg-tertiary: #f0f0f0;
+      --bg-hover: rgba(0, 0, 0, 0.04);
+      --border: #e2e8f0;
+      --text-primary: #0f172a;
+      --text-muted: #64748b;
+      --accent: #22c55e;
+      --accent-dark: #16a34a;
+      --danger: #ef4444;
+      --link: #3b82f6;
     }
     :root[data-theme='dark'] {
       color-scheme: dark;
-      --bg-primary:    #0f172a;
-      --bg-secondary:  #1e293b;
-      --bg-input:      #1e293b;
-      --bg-tertiary:   #1f2937;
-      --bg-hover:      rgba(255, 255, 255, 0.06);
-      --border:        #334155;
-      --text-primary:  #f1f5f9;
-      --text-muted:    #94a3b8;
-      --accent:        #22c55e;
-      --accent-dark:   #16a34a;
-      --danger:        #ef4444;
-      --link:          #60a5fa;
+      --bg-primary: #0f172a;
+      --bg-secondary: #1e293b;
+      --bg-input: #1e293b;
+      --bg-tertiary: #1f2937;
+      --bg-hover: rgba(255, 255, 255, 0.06);
+      --border: #334155;
+      --text-primary: #f1f5f9;
+      --text-muted: #94a3b8;
+      --accent: #22c55e;
+      --accent-dark: #16a34a;
+      --danger: #ef4444;
+      --link: #60a5fa;
+      --bottom-nav-h: 0px;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -141,7 +142,6 @@
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
-
     .main-container {
       display: flex;
       width: 100%;
@@ -170,7 +170,8 @@
       background: transparent; border: none; border-radius: 9999px;
       color: var(--text-primary); cursor: pointer;
       font-family: 'Noto Sans', monospace; font-size: 1rem; font-weight: 400;
-      transition: all .2s; text-align: left; width: 100%;
+      transition: background-color 0.2s ease, color 0.2s ease;
+      text-align: left; width: 100%;
     }
     .nav-item:hover { background: var(--bg-secondary); }
     .nav-item--active { color: var(--accent); font-weight: 600; }
@@ -225,7 +226,6 @@
     }
   </style>
   
-  <link rel="stylesheet" href="/src/styles/main.css">
   <script>
     (function() {
       const urlParams = new URLSearchParams(window.location.search);
