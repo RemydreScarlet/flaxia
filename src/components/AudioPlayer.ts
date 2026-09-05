@@ -29,8 +29,8 @@ export function createAudioPlayer(props: GifPreviewProps): HTMLElement {
   audio.style.opacity = '0';
   audio.style.pointerEvents = 'none';
 
-  const audioUrl = props.src || `/api/audio/${props.gifKey}`;
-  const signedAudioUrl = props.src ? props.src : getSignedMediaUrl('audio', props.gifKey).catch(() => audioUrl);
+  const audioUrl = props.src || `/api/audio/${props.gifKey || ''}`;
+  const signedAudioUrl = props.src ? props.src : getSignedMediaUrl('audio', props.gifKey || '').catch(() => audioUrl);
 
   const visualizerCanvas = document.createElement('canvas');
   visualizerCanvas.className = 'audio-visualizer-canvas';

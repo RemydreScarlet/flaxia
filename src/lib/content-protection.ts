@@ -82,33 +82,14 @@ function handleDragStart(e: Event): void {
   }
 }
 
-function handlePrint(): void {
-  // Block printing via Ctrl+P / Cmd+P is handled by CSS @media print
-  // This is a fallback for programmatic print calls
-}
-
 /**
  * Override Canvas methods to taint the canvas when attempting to extract media.
  * This prevents toDataURL() and toBlob() from working on protected images.
  */
 function enableCanvasTainting(): void {
-  const originalGetContext = HTMLCanvasElement.prototype.getContext;
   const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
   const originalToBlob = HTMLCanvasElement.prototype.toBlob;
   const taintedCanvases = new WeakSet<HTMLCanvasElement>();
-
-  HTMLCanvasElement.prototype.getContext = function (...args: Parameters<typeof originalGetContext>) {
-    const ctx = originalGetContext.apply(this, args);
-    // Mark canvas as potentially tainted if it draws from a protected source
-    if (ctx) {
-      const origDrawImage = ctx.drawImage.bind(ctx);
-      ctx.drawImage = function (...drawArgs: Parameters<typeof origDrawImage>) {
-        taintedCanvases.add(this.canvas as HTMLCanvasElement);
-        return origDrawImage(...drawArgs);
-      } as typeof ctx.drawImage;
-    }
-    return ctx;
-  };
 
   HTMLCanvasElement.prototype.toDataURL = function (...args) {
     if (taintedCanvases.has(this)) {
@@ -126,6 +107,11 @@ function enableCanvasTainting(): void {
       return;
     }
     return originalToBlob.call(this, callback as BlobCallback, ...args);
+  };
+
+  // Expose a way to mark canvases as tainted (used by image components)
+  (window as unknown as Record<string, unknown>).__markCanvasTainted = (canvas: HTMLCanvasElement) => {
+    taintedCanvases.add(canvas);
   };
 }
 

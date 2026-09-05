@@ -38,7 +38,7 @@ async function hmacVerify(secret: string, data: string, signature: string): Prom
     'verify',
   ]);
   const sigBytes = hexToUint8Array(signature);
-  return crypto.subtle.verify('HMAC', key, sigBytes, enc.encode(data));
+  return crypto.subtle.verify('HMAC', key, sigBytes.buffer as ArrayBuffer, enc.encode(data));
 }
 
 function bufToHex(buf: ArrayBuffer): string {
