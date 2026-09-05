@@ -57,6 +57,7 @@ export class PostCard {
   private editNewAttachmentKey: string | null = null;
   private editRemoveAttachment: boolean = false;
   private currentVersionId: string | null = null;
+  private impressionObserver?: IntersectionObserver;
 
   constructor(props: PostCardProps) {
     this.originalText = props.post.text;
@@ -441,14 +442,14 @@ export class PostCard {
 
   private setupImpressionTracking(): void {
     // Track impressions when post becomes visible in viewport
-    const observer = new IntersectionObserver(
+    this.impressionObserver = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
             // Post is visible, track impression
             this.trackImpression();
             // Only track once per post view
-            observer.unobserve(entry.target);
+            this.impressionObserver?.unobserve(entry.target);
           }
         });
       },
@@ -457,7 +458,7 @@ export class PostCard {
       },
     );
 
-    observer.observe(this.element);
+    this.impressionObserver.observe(this.element);
   }
 
   private trackImpression(): void {
@@ -1070,6 +1071,12 @@ export class PostCard {
   }
 
   public destroy(): void {
+    // Disconnect impression observer
+    if (this.impressionObserver) {
+      this.impressionObserver.disconnect();
+      this.impressionObserver = undefined;
+    }
+
     // Remove pin change listener
     if (this.onPinChanged) {
       window.removeEventListener('profilePinChanged', this.onPinChanged);

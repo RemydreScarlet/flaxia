@@ -1596,6 +1596,7 @@ h1 {
   cursor: pointer;
   user-select: none;
   outline: none;
+  contain: layout style paint;
 }
 
 .video-player--loaded {
@@ -1937,6 +1938,7 @@ h1 {
   user-select: none;
   outline: none;
   color: #fff;
+  contain: layout style paint;
 }
 
 .audio-player-element {
@@ -3149,6 +3151,7 @@ emoji-picker {
   max-width: 400px;
   width: 90%;
   text-align: center;
+  contain: layout style;
 }
 
 .fullscreen-message {
@@ -4631,6 +4634,7 @@ html {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  contain: layout style;
 }
 
 .chat-modal-header {
@@ -5403,6 +5407,8 @@ html {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  content-visibility: auto;
+  contain-intrinsic-size: 0 500px;
 }
 
 .conv-input-area {
@@ -5866,6 +5872,8 @@ html {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  content-visibility: auto;
+  contain-intrinsic-size: 0 500px;
 }
 
 .group-input-area {
@@ -6656,6 +6664,7 @@ html {
   text-align: left;
   font-family: inherit;
   color: var(--text-primary);
+  contain: layout style;
 }
 
 .channel-item:hover {
@@ -6962,6 +6971,8 @@ html {
   overflow-y: auto;
   padding: 12px 0 16px;
   display: block;
+  content-visibility: auto;
+  contain-intrinsic-size: 0 500px;
 }
 
 .chat-loading,
@@ -7007,6 +7018,7 @@ html {
   gap: 12px;
   padding: 4px 20px;
   margin-top: 4px;
+  contain: layout style;
 }
 
 .msg-row:hover {
