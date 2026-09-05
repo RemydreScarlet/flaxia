@@ -1,4 +1,5 @@
 import { t } from '../lib/i18n.js';
+import { getSignedMediaUrl } from '../lib/media-token.js';
 import { GifPreviewProps } from '../types/post.js';
 import { AudioVisualizer } from './AudioVisualizer.js';
 
@@ -20,6 +21,8 @@ export function createAudioPlayer(props: GifPreviewProps): HTMLElement {
   audio.className = 'audio-player-element';
   audio.preload = 'metadata';
   audio.setAttribute('playsinline', 'true');
+  audio.oncontextmenu = (e) => e.preventDefault();
+  audio.setAttribute('controlsList', 'nodownload');
   audio.style.position = 'absolute';
   audio.style.width = '0';
   audio.style.height = '0';
@@ -27,6 +30,7 @@ export function createAudioPlayer(props: GifPreviewProps): HTMLElement {
   audio.style.pointerEvents = 'none';
 
   const audioUrl = props.src || `/api/audio/${props.gifKey}`;
+  const signedAudioUrl = props.src ? props.src : getSignedMediaUrl('audio', props.gifKey).catch(() => audioUrl);
 
   const visualizerCanvas = document.createElement('canvas');
   visualizerCanvas.className = 'audio-visualizer-canvas';
@@ -221,7 +225,14 @@ export function createAudioPlayer(props: GifPreviewProps): HTMLElement {
   // --- Initialize source (deferred for Chrome) ---
   initTimer = setTimeout(() => {
     initTimer = null;
-    audio.src = audioUrl;
+    if (typeof signedAudioUrl === 'string') {
+      audio.src = signedAudioUrl;
+    } else {
+      signedAudioUrl.then((url) => {
+        audio.src = url;
+        audio.load();
+      });
+    }
     audio.load();
     // If the user already started playback before the src was attached, make
     // sure the visualizer is created too.
@@ -260,7 +271,13 @@ export function createAudioPlayer(props: GifPreviewProps): HTMLElement {
       controls.style.display = '';
       overlay.style.display = '';
       loadingEl.style.display = '';
-      audio.src = audioUrl;
+      if (typeof signedAudioUrl === 'string') {
+        audio.src = signedAudioUrl;
+      } else {
+        signedAudioUrl.then((url) => {
+          audio.src = url;
+        });
+      }
       audio.load();
     });
   };

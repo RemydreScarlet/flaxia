@@ -13,6 +13,7 @@ import type { ServerView } from './components/ServerView.js';
 import type { ThreadPage } from './components/ThreadPage.js';
 import type { Timeline } from './components/Timeline.js';
 import { getMe } from './lib/auth-cache.js';
+import { initContentProtection } from './lib/content-protection.js';
 import { initI18n } from './lib/i18n.js';
 import { initPerformanceMonitoring } from './lib/performance.js';
 import { initTheme } from './lib/theme.js';
@@ -24,6 +25,9 @@ interface PageComponent {
 
 // Initialize performance monitoring
 initPerformanceMonitoring();
+
+// Initialize content protection (right-click, drag, keyboard shortcuts)
+initContentProtection();
 
 // Initialize theme (keeps system theme in sync during SPA navigation)
 initTheme();
