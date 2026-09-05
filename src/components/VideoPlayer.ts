@@ -1,4 +1,5 @@
 import { t } from '../lib/i18n.js';
+import { getSignedMediaUrl } from '../lib/media-token.js';
 
 export interface VideoPlayerProps {
   gifKey: string;
@@ -51,8 +52,14 @@ export function createVideoPlayer(props: VideoPlayerProps): HTMLElement {
   video.className = 'video-player-element';
   video.preload = 'metadata';
   video.playsInline = true;
+  video.oncontextmenu = (e) => e.preventDefault();
+
+  // Disable native download controls
+  video.setAttribute('controlsList', 'nodownload');
+  video.disablePictureInPicture = true;
 
   const videoUrl = props.src || `/api/video/${props.gifKey}`;
+  const signedVideoUrl = props.src ? props.src : getSignedMediaUrl('video', props.gifKey).catch(() => videoUrl);
 
   const errorEl = document.createElement('div');
   errorEl.className = 'video-player-error';
@@ -254,13 +261,14 @@ export function createVideoPlayer(props: VideoPlayerProps): HTMLElement {
         <button class="video-player-retry-btn">${t('video_player.retry')}</button>
       </div>
     `;
-    errorEl.querySelector('.video-player-retry-btn')?.addEventListener('click', () => {
+    errorEl.querySelector('.video-player-retry-btn')?.addEventListener('click', async () => {
       errorEl.style.display = 'none';
       video.style.display = 'block';
       controls.style.display = '';
       overlay.style.display = '';
       loadingEl.style.display = '';
-      video.src = videoUrl;
+      const freshUrl = await getSignedMediaUrl('video', props.gifKey);
+      video.src = freshUrl;
       video.load();
     });
   };
@@ -467,8 +475,15 @@ export function createVideoPlayer(props: VideoPlayerProps): HTMLElement {
   });
 
   // --- Init ---
-  video.src = videoUrl;
-  video.load();
+  if (typeof signedVideoUrl === 'string') {
+    video.src = signedVideoUrl;
+    video.load();
+  } else {
+    signedVideoUrl.then((url) => {
+      video.src = url;
+      video.load();
+    });
+  }
 
   updatePlayButton();
   showControls();

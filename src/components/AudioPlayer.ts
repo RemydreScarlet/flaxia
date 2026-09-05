@@ -1,4 +1,5 @@
 import { t } from '../lib/i18n.js';
+import { getSignedMediaUrl } from '../lib/media-token.js';
 import { GifPreviewProps } from '../types/post.js';
 import { AudioVisualizer } from './AudioVisualizer.js';
 
@@ -20,13 +21,16 @@ export function createAudioPlayer(props: GifPreviewProps): HTMLElement {
   audio.className = 'audio-player-element';
   audio.preload = 'metadata';
   audio.setAttribute('playsinline', 'true');
+  audio.oncontextmenu = (e) => e.preventDefault();
+  audio.setAttribute('controlsList', 'nodownload');
   audio.style.position = 'absolute';
   audio.style.width = '0';
   audio.style.height = '0';
   audio.style.opacity = '0';
   audio.style.pointerEvents = 'none';
 
-  const audioUrl = props.src || `/api/audio/${props.gifKey}`;
+  const audioUrl = props.src || `/api/audio/${props.gifKey || ''}`;
+  const signedAudioUrl = props.src ? props.src : getSignedMediaUrl('audio', props.gifKey || '').catch(() => audioUrl);
 
   const visualizerCanvas = document.createElement('canvas');
   visualizerCanvas.className = 'audio-visualizer-canvas';
@@ -221,8 +225,15 @@ export function createAudioPlayer(props: GifPreviewProps): HTMLElement {
   // --- Initialize source (deferred for Chrome) ---
   initTimer = setTimeout(() => {
     initTimer = null;
-    audio.src = audioUrl;
-    audio.load();
+    if (typeof signedAudioUrl === 'string') {
+      audio.src = signedAudioUrl;
+      audio.load();
+    } else {
+      signedAudioUrl.then((url) => {
+        audio.src = url;
+        audio.load();
+      });
+    }
     // If the user already started playback before the src was attached, make
     // sure the visualizer is created too.
     if (!audio.paused && !visualizer) {
@@ -254,13 +265,14 @@ export function createAudioPlayer(props: GifPreviewProps): HTMLElement {
         <button class="audio-player-retry-btn">${t('video_player.retry')}</button>
       </div>
     `;
-    errorEl.querySelector('.audio-player-retry-btn')?.addEventListener('click', () => {
+    errorEl.querySelector('.audio-player-retry-btn')?.addEventListener('click', async () => {
       errorEl.style.display = 'none';
       visualizerCanvas.style.display = 'block';
       controls.style.display = '';
       overlay.style.display = '';
       loadingEl.style.display = '';
-      audio.src = audioUrl;
+      const freshUrl = await getSignedMediaUrl('audio', props.gifKey || '');
+      audio.src = freshUrl;
       audio.load();
     });
   };

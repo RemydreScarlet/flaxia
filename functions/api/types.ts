@@ -22,6 +22,7 @@ export type Bindings = {
   MATCHMAKER?: DurableObjectNamespace;
   FCM_SERVER_KEY?: string;
   VECTORIZE?: Vectorize;
+  MEDIA_SIGNING_SECRET?: string;
 };
 
 export type Variables = {

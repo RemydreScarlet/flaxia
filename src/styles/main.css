@@ -7936,3 +7936,48 @@ html {
     max-width: 100%;
   }
 }
+
+/* ============================================================
+   Content Protection — Media elements
+   ============================================================ */
+
+/* Disable text selection and touch callout on media */
+.image-preview img,
+.video-player video,
+.audio-player .audio-visualizer-canvas {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Disable native video download controls */
+video::-webkit-media-controls-download-button {
+  display: none !important;
+}
+
+video::-webkit-media-controls-enclosure {
+  overflow: hidden;
+}
+
+/* Hide native audio controls (we use custom controls) */
+audio.audio-player-element {
+  display: none;
+}
+
+/* Print protection — hide media when printing */
+@media print {
+  .post-card,
+  .image-preview,
+  .video-player,
+  .audio-player,
+  .post-stage {
+    break-inside: avoid;
+  }
+
+  .image-preview img,
+  .video-player video {
+    display: none !important;
+  }
+}
