@@ -856,6 +856,9 @@ export class ExplorePage {
         const img = document.createElement('img');
         img.src = `/api/thumbnail/${game.postId}`;
         img.alt = '';
+        img.loading = 'lazy';
+        img.width = 180;
+        img.height = 101;
         img.style.cssText = 'width: 100%; height: 100%; object-fit: cover;';
         thumb.appendChild(img);
       } else {

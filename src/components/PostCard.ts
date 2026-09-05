@@ -292,9 +292,7 @@ export class PostCard {
         left: 0;
         right: 0;
         bottom: 0;
-        background: rgba(0,0,0,0.25);
-        backdrop-filter: blur(6px);
-        -webkit-backdrop-filter: blur(6px);
+        background: rgba(0,0,0,0.45);
         display: flex;
         flex-direction: column;
         align-items: center;

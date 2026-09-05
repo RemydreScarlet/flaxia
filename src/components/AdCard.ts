@@ -95,10 +95,9 @@ function createExecutionButton(props: {
     font-weight: 600;
     text-align: center;
     text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-    background: rgba(0,0,0,0.5);
+    background: rgba(0,0,0,0.65);
     padding: 8px 16px;
     border-radius: 20px;
-    backdrop-filter: blur(4px);
   `;
 
   content.appendChild(icon);

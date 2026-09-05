@@ -534,7 +534,10 @@ p {
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
   border: 1px solid transparent;
 }
 
@@ -862,7 +865,9 @@ h1 {
   font-family: "Noto Sans", monospace, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 1rem;
   font-weight: 400;
-  transition: all 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
   text-align: left;
   width: 100%;
 }
@@ -1254,10 +1259,10 @@ h1 {
   border: 2px solid var(--text-muted);
   border-top: 2px solid var(--accent);
   border-radius: 50%;
-  animation: spin 1s linear infinite;
+  animation: spin-centered 1s linear infinite;
 }
 
-@keyframes spin {
+@keyframes spin-centered {
   0% {
     transform: translateY(-50%) rotate(0deg);
   }
@@ -1398,7 +1403,10 @@ h1 {
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
   white-space: nowrap;
 }
 
@@ -2715,7 +2723,9 @@ emoji-picker {
   font-size: 0.875rem;
   padding: 0.25rem;
   border-radius: 0.25rem;
-  transition: all 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
 }
 
 .file-remove:hover {
@@ -2890,7 +2900,9 @@ emoji-picker {
   font-size: 0.875rem;
   padding: 0.25rem 0.4rem;
   border-radius: 0.25rem;
-  transition: all 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
   flex-shrink: 0;
 }
 
@@ -2929,7 +2941,7 @@ emoji-picker {
   font-family: "Noto Sans", monospace, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 0.875rem;
   font-weight: 500;
-  transition: all 0.2s ease;
+  transition: color 0.2s ease;
   position: relative;
   white-space: nowrap;
 }
@@ -3026,7 +3038,7 @@ emoji-picker {
   font-family: "Noto Sans", monospace, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 0.875rem;
   font-weight: 600;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease;
 }
 
 .hashtag-search-btn:hover {
@@ -3098,7 +3110,10 @@ emoji-picker {
   font-family: "Noto Sans", monospace, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 0.875rem;
   font-weight: 600;
-  transition: all 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
 }
 
 .load-more-btn:hover:not(:disabled) {
@@ -3119,12 +3134,11 @@ emoji-picker {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(15, 23, 42, 0.9);
+  background: rgba(15, 23, 42, 0.92);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 9999;
-  backdrop-filter: blur(4px);
 }
 
 .fullscreen-modal {
@@ -3160,7 +3174,9 @@ emoji-picker {
   font-family: "Noto Sans", monospace, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 0.875rem;
   font-weight: 600;
-  transition: all 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
 }
 
 .fullscreen-allow {
@@ -3784,7 +3800,9 @@ html {
   font-family: "Noto Sans", system-ui, -apple-system, sans-serif;
   font-size: 0.75rem;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
 }
 
 .reply-composer-cancel:hover {
@@ -3833,15 +3851,6 @@ html {
   color: var(--text-muted);
   font-family: "Noto Sans", system-ui, -apple-system, sans-serif;
   font-size: 0.875rem;
-}
-
-@keyframes spin {
-  0% {
-    transform: rotate(0deg);
-  }
-  100% {
-    transform: rotate(360deg);
-  }
 }
 
 .load-more-sentinel {
@@ -3961,7 +3970,9 @@ html {
   border-radius: 6px;
   font-size: 0.8rem;
   font-family: "Noto Sans", monospace, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  transition: all 0.2s;
+  transition:
+    border-color 0.2s,
+    background-color 0.2s;
 }
 
 .poll-add-option:hover {
@@ -4597,14 +4608,10 @@ html {
 @keyframes spotlight-pulse {
   0%,
   100% {
-    box-shadow:
-      0 0 0 9999px rgba(0, 0, 0, 0.65),
-      0 0 20px rgba(34, 197, 94, 0.3);
+    opacity: 1;
   }
   50% {
-    box-shadow:
-      0 0 0 9999px rgba(0, 0, 0, 0.65),
-      0 0 40px rgba(34, 197, 94, 0.5);
+    opacity: 0.6;
   }
 }
 

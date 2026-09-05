@@ -131,7 +131,6 @@ async function processText(text: string, enablePostRefs?: boolean): Promise<stri
 
   // Step 3: Restore math placeholders BEFORE sanitization
   html = restoreMathPlaceholders(html, mathPlaceholders);
-  console.log('HTML before sanitization:', html);
 
   // Step 4: Sanitize HTML (now with proper math placeholders)
   html = DOMPurify.sanitize(html, {
@@ -175,7 +174,6 @@ async function processText(text: string, enablePostRefs?: boolean): Promise<stri
     ],
     ALLOW_DATA_ATTR: true,
   });
-  console.log('HTML after sanitization:', html);
 
   // Step 4.5: Restore post reference placeholders as clickable links (or plain text)
   for (const ref of refPlaceholders) {
