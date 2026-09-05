@@ -360,8 +360,6 @@ export class PostCard {
     // Add click handler for post navigation (but not for buttons/inputs or during text selection)
     if (!this.props.disableNavigation) {
       this.element.addEventListener('click', (e) => {
-        console.log('PostCard clicked, target:', e.target);
-
         // Don't navigate if clicking on buttons, inputs, links, or poll options
         const target = e.target as HTMLElement;
         const closestButton = target.closest('button');
@@ -375,17 +373,6 @@ export class PostCard {
         const selection = window.getSelection();
         const isSelectingText = selection && selection.toString().length > 0;
 
-        console.log('Checking if should prevent navigation:', {
-          closestButton,
-          closestInput,
-          closestTextarea,
-          closestLink,
-          closestPollOption,
-          closestMediaPlayer,
-          isSelectingText,
-          selectedText: selection?.toString(),
-        });
-
         if (
           closestButton ||
           closestInput ||
@@ -395,11 +382,9 @@ export class PostCard {
           closestMediaPlayer ||
           isSelectingText
         ) {
-          console.log('Navigation prevented - clicked on interactive element or text is being selected');
           return;
         }
 
-        console.log('Navigating to thread for post:', this.props.post.id);
         // Navigate to thread page
         this.handlePostClick();
       });
@@ -842,11 +827,9 @@ export class PostCard {
     }
 
     // Navigate to thread page using SPA navigation
-    console.log('Pushing state to URL:', threadUrl);
     window.history.pushState({ postId: this.props.post.id }, '', threadUrl);
 
     // Use SPA navigation event
-    console.log('Dispatching SPA navigation event');
     window.dispatchEvent(
       new CustomEvent('spaNavigate', {
         detail: { view: 'thread', postId: this.props.post.id },
@@ -854,12 +837,10 @@ export class PostCard {
     );
 
     // Also emit custom event for navigation (backup)
-    console.log('Emitting navigateToThread event');
     const customEvent = new CustomEvent('navigateToThread', {
       detail: { postId: this.props.post.id },
     });
     this.element.dispatchEvent(customEvent);
-    console.log('Event dispatched');
   }
 
   private updateActions(): void {

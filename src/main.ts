@@ -1,14 +1,14 @@
 import './styles/main.css';
 import type { ArcadePageHandle } from './components/ArcadePage.js';
 import type { BookmarksPage } from './components/BookmarksPage.js';
-import { BottomNav, createBottomNav } from './components/BottomNav.js';
+import type { BottomNav } from './components/BottomNav.js';
 import type { ChatChannelList } from './components/ChatChannelList.js';
 import type { ConversationView } from './components/ConversationView.js';
 import type { ExplorePage } from './components/ExplorePage.js';
 import type { GroupChatView } from './components/GroupChatView.js';
-import { createLeftNav, LeftNav, updateLeftNavUser } from './components/LeftNav.js';
+import type { LeftNav } from './components/LeftNav.js';
 import type { NotificationsPage } from './components/NotificationsPage.js';
-import { createRightPanel } from './components/RightPanel.js';
+import type { RightPanel } from './components/RightPanel.js';
 import type { ServerView } from './components/ServerView.js';
 import type { ThreadPage } from './components/ThreadPage.js';
 import type { Timeline } from './components/Timeline.js';
@@ -21,8 +21,6 @@ interface PageComponent {
   getElement(): HTMLElement;
   destroy(): void;
 }
-
-console.log('Flaxia initialized');
 
 // Initialize performance monitoring
 initPerformanceMonitoring();
@@ -37,8 +35,6 @@ initI18n();
 document.addEventListener('DOMContentLoaded', async () => {
   const app = document.getElementById('app');
   if (app) {
-    console.log('App mounted');
-
     history.scrollRestoration = 'manual';
 
     await initI18n();
@@ -158,9 +154,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     };
     /** Create the single global bottom-nav instance once and mount it. */
-    const ensureBottomNav = (): void => {
+    const ensureBottomNav = async (): Promise<void> => {
       if (bottomNav) return;
-      bottomNav = createBottomNav({
+      bottomNav = await lazyCreateBottomNav({
         activeItem: 'home',
         currentUser: currentUser || undefined,
         onNavigate: handleBottomNavNavigate,
@@ -590,11 +586,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
           // Update all existing LeftNav instances with new user data
           leftNavInstances.forEach((leftNav) => {
-            updateLeftNavUser(leftNav, currentUser);
+            lazyUpdateLeftNavUser(leftNav, currentUser);
           });
 
           // Create/update the mobile bottom nav with the signed-in user
-          ensureBottomNav();
+          await ensureBottomNav();
           bottomNav?.updateUser(currentUser);
 
           // 初回の未読通知数を取得（以降は WebSocket でリアルタイム更新）
@@ -615,11 +611,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // Update all existing LeftNav instances to remove user area
       leftNavInstances.forEach((leftNav) => {
-        updateLeftNavUser(leftNav, null);
+        lazyUpdateLeftNavUser(leftNav, null);
       });
 
       // Create/update the mobile bottom nav for the guest state
-      ensureBottomNav();
+      await ensureBottomNav();
       bottomNav?.updateUser(null);
 
       // If user was logged in and now is not, they were logged out
@@ -1751,7 +1747,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           mainContainer.className = 'main-container';
 
           // Create Left Nav
-          const leftNav = createLeftNav({
+          const leftNav = await lazyCreateLeftNav({
             activeItem: 'explore',
             unreadCount: unreadNotificationCount,
             currentUser: currentUser || undefined,
@@ -1785,7 +1781,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
 
           // Create Right Panel
-          const rightPanel = createRightPanel({
+          const rightPanel = await lazyCreateRightPanel({
             onSearch: (query) => {
               console.log('Search:', query);
               // Handle search here
@@ -1820,7 +1816,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           const mainContainer = document.createElement('div');
           mainContainer.className = 'main-container';
 
-          const leftNav = createLeftNav({
+          const leftNav = await lazyCreateLeftNav({
             activeItem: 'explore',
             unreadCount: unreadNotificationCount,
             currentUser: currentUser || undefined,
@@ -1852,7 +1848,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
           }
 
-          const rightPanel = createRightPanel({
+          const rightPanel = await lazyCreateRightPanel({
             onSearch: (query) => {
               console.log('Search:', query);
             },
@@ -1885,7 +1881,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           mainContainer.className = 'main-container';
 
           // Create Left Nav
-          const leftNav = createLeftNav({
+          const leftNav = await lazyCreateLeftNav({
             activeItem: 'arcade',
             unreadCount: unreadNotificationCount,
             currentUser: currentUser || undefined,
@@ -1923,7 +1919,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
 
           // Create Right Panel
-          const rightPanel = createRightPanel({
+          const rightPanel = await lazyCreateRightPanel({
             onSearch: (query) => {
               console.log('Search:', query);
               // Handle search here
@@ -1960,7 +1956,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           mainContainer.className = 'main-container';
 
           // Create Left Nav
-          const leftNav = createLeftNav({
+          const leftNav = await lazyCreateLeftNav({
             activeItem: 'profile',
             unreadCount: unreadNotificationCount,
             currentUser: currentUser || undefined,
@@ -1994,7 +1990,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
 
           // Create Right Panel
-          const rightPanel = createRightPanel({
+          const rightPanel = await lazyCreateRightPanel({
             onSearch: (query) => {
               console.log('Search:', query);
               // Handle search here
@@ -2035,7 +2031,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           const mainContainer = document.createElement('div');
           mainContainer.className = 'main-container';
 
-          const leftNav = createLeftNav({
+          const leftNav = await lazyCreateLeftNav({
             activeItem: 'bookmarks',
             unreadCount: unreadNotificationCount,
             currentUser: currentUser || undefined,
@@ -2062,7 +2058,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.scrollTo(0, 0);
           }
 
-          const rightPanel = createRightPanel({
+          const rightPanel = await lazyCreateRightPanel({
             onSearch: (query) => {},
             onFollowUser: (userId) => {},
           });
@@ -2091,7 +2087,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           mainContainer.className = 'main-container';
 
           // Create Left Nav with unread count
-          const leftNav = createLeftNav({
+          const leftNav = await lazyCreateLeftNav({
             activeItem: 'notifications',
             unreadCount: unreadNotificationCount,
             currentUser: currentUser || undefined,
@@ -2135,7 +2131,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           });
 
           // Create Right Panel
-          const rightPanel = createRightPanel({
+          const rightPanel = await lazyCreateRightPanel({
             onSearch: (query) => {
               console.log('Search:', query);
             },
@@ -2180,7 +2176,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           const mainContainer = document.createElement('div');
           mainContainer.className = 'main-container main-container--chat';
 
-          const leftNav = createLeftNav({
+          const leftNav = await lazyCreateLeftNav({
             activeItem: 'messages',
             unreadCount: unreadNotificationCount,
             unreadDmCount,
@@ -2349,7 +2345,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           mainContainer.className = 'main-container';
 
           // Create Left Nav
-          const leftNav = createLeftNav({
+          const leftNav = await lazyCreateLeftNav({
             activeItem: 'settings',
             unreadCount: unreadNotificationCount,
             currentUser: currentUser || undefined,
@@ -2405,7 +2401,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           loadUserData();
 
           // Create Right Panel
-          const rightPanel = createRightPanel({
+          const rightPanel = await lazyCreateRightPanel({
             onSearch: (query) => {
               console.log('Search:', query);
             },
@@ -2437,7 +2433,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           currentView = 'timeline';
           currentPostId = null;
 
-          const leftNav = createLeftNav({
+          const leftNav = await lazyCreateLeftNav({
             activeItem: 'home',
             unreadCount: unreadNotificationCount,
             unreadDmCount,
@@ -2456,7 +2452,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             currentUser,
           });
 
-          const rightPanel = createRightPanel({
+          const rightPanel = await lazyCreateRightPanel({
             onSearch: () => {},
             onFollowUser: () => {},
           });
@@ -2508,7 +2504,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
 
           // Create Right Panel
-          const threadRightPanel = createRightPanel({
+          const threadRightPanel = await lazyCreateRightPanel({
             onSearch: (query) => {
               console.log('Search:', query);
             },
@@ -2523,7 +2519,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           currentPostId = null;
 
           // Create Left Nav
-          const leftNav = createLeftNav({
+          const leftNav = await lazyCreateLeftNav({
             activeItem: 'home',
             unreadCount: unreadNotificationCount,
             unreadDmCount,
@@ -2587,7 +2583,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           setupMobileLeftNav(leftNav.getElement());
 
           // Create Right Panel
-          const rightPanel = createRightPanel({
+          const rightPanel = await lazyCreateRightPanel({
             onSearch: (query) => {
               console.log('Search:', query);
               // Handle search here
@@ -2663,6 +2659,50 @@ document.addEventListener('DOMContentLoaded', async () => {
     const leftNavSignUpHandler = (): void => {
       window.history.pushState({}, '', '/register');
       navigateTo('register');
+    };
+
+    // Lazy-loaded component factories (deferred from initial bundle)
+    let _createBottomNav: typeof import('./components/BottomNav.js')['createBottomNav'] | null = null;
+    let _createLeftNav: typeof import('./components/LeftNav.js')['createLeftNav'] | null = null;
+    let _updateLeftNavUser: typeof import('./components/LeftNav.js')['updateLeftNavUser'] | null = null;
+    let _createRightPanel: typeof import('./components/RightPanel.js')['createRightPanel'] | null = null;
+
+    const lazyCreateBottomNav: (
+      ...args: Parameters<typeof import('./components/BottomNav.js')['createBottomNav']>
+    ) => Promise<ReturnType<typeof import('./components/BottomNav.js')['createBottomNav']>> = async (...args) => {
+      if (!_createBottomNav) {
+        const mod = await import('./components/BottomNav.js');
+        _createBottomNav = mod.createBottomNav;
+      }
+      return _createBottomNav(...args);
+    };
+
+    const lazyCreateLeftNav: (
+      ...args: Parameters<typeof import('./components/LeftNav.js')['createLeftNav']>
+    ) => Promise<ReturnType<typeof import('./components/LeftNav.js')['createLeftNav']>> = async (...args) => {
+      if (!_createLeftNav) {
+        const mod = await import('./components/LeftNav.js');
+        _createLeftNav = mod.createLeftNav;
+        _updateLeftNavUser = mod.updateLeftNavUser;
+      }
+      return _createLeftNav(...args);
+    };
+
+    const lazyUpdateLeftNavUser: typeof import('./components/LeftNav.js')['updateLeftNavUser'] = (...args) => {
+      if (!_updateLeftNavUser) {
+        throw new Error('updateLeftNavUser not yet loaded');
+      }
+      return _updateLeftNavUser(...args);
+    };
+
+    const lazyCreateRightPanel: (
+      ...args: Parameters<typeof import('./components/RightPanel.js')['createRightPanel']>
+    ) => Promise<ReturnType<typeof import('./components/RightPanel.js')['createRightPanel']>> = async (...args) => {
+      if (!_createRightPanel) {
+        const mod = await import('./components/RightPanel.js');
+        _createRightPanel = mod.createRightPanel;
+      }
+      return _createRightPanel(...args);
     };
 
     async function safeNavigate(

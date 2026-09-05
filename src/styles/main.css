@@ -7914,3 +7914,25 @@ html {
     box-shadow: -8px 0 24px rgba(0, 0, 0, 0.3);
   }
 }
+
+/* ============================================================
+   Tablet tweaks (768px – 1024px)
+   ============================================================ */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .main-container {
+    max-width: 100%;
+  }
+
+  .main-content {
+    max-width: 100%;
+    border-right: none;
+  }
+
+  .profile-page {
+    max-width: 100%;
+  }
+
+  .search-page {
+    max-width: 100%;
+  }
+}
