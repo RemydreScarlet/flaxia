@@ -9,6 +9,7 @@ import { buildCreateActivity, buildDeleteActivity, buildNoteObject } from '../..
 import { getMeWithSession, getSessionToken } from '../../lib/auth';
 import { validateImageDimensions } from '../../lib/image-dimensions';
 import { sendPushToAll } from '../../lib/notify';
+import { rateLimitMiddleware } from '../../lib/rate-limit';
 import { computeAuthorQuality, computeQualityScore, freshnessBoost, getTypeWeights } from '../../lib/scoring';
 import { batchGetFreshAndBookmarkStatus, kvCacheGet, kvCacheSet, makeCacheKey, requireAuth } from '../helpers';
 import type { ActorData, Bindings, PollOptionRow, PollRow, PostRow, Variables } from '../types';
@@ -1313,7 +1314,7 @@ posts.post('/posts/:id/prepare-attachment', requireAuth, async (c) => {
 });
 
 // Step 1 — POST /api/posts/prepare (protected)
-posts.post('/posts/prepare', requireAuth, async (c) => {
+posts.post('/posts/prepare', requireAuth, rateLimitMiddleware({ maxRequests: 10, windowSeconds: 60 }), async (c) => {
   try {
     const { filename } = await c.req.json();
 
@@ -1474,7 +1475,7 @@ async function extractGameDescription(
 }
 
 // Step 3 — POST /api/posts/commit (protected)
-posts.post('/posts/commit', requireAuth, async (c) => {
+posts.post('/posts/commit', requireAuth, rateLimitMiddleware({ maxRequests: 10, windowSeconds: 60 }), async (c) => {
   try {
     const contentType = c.req.header('content-type');
     let postId: string | undefined;
@@ -2666,447 +2667,473 @@ posts.get('/posts/:id/thread', async (c) => {
 });
 
 // Step 1 — POST /api/posts/:id/replies/prepare (protected)
-posts.post('/posts/:id/replies/prepare', requireAuth, async (c) => {
-  try {
-    const postId = c.req.param('id');
-    const { filename, contentType } = await c.req.json();
+posts.post(
+  '/posts/:id/replies/prepare',
+  requireAuth,
+  rateLimitMiddleware({ maxRequests: 20, windowSeconds: 60 }),
+  async (c) => {
+    try {
+      const postId = c.req.param('id');
+      const { filename, contentType } = await c.req.json();
 
-    if (!filename || !contentType) {
-      return c.json({ error: 'Missing filename or contentType' }, 400);
-    }
+      if (!filename || !contentType) {
+        return c.json({ error: 'Missing filename or contentType' }, 400);
+      }
 
-    const allowedTypes = [
-      'image/gif',
-      'image/png',
-      'image/jpeg',
-      'image/jpg',
-      'audio/mpeg',
-      'audio/wav',
-      'audio/ogg',
-      'audio/mp4',
-      'audio/webm',
-    ];
-    if (!allowedTypes.includes(contentType)) {
-      return c.json(
-        { error: 'Only image files (GIF, PNG, JPG) and audio files (MP3, WAV, OGG, M4A, WebM) are supported' },
-        400,
-      );
-    }
+      const allowedTypes = [
+        'image/gif',
+        'image/png',
+        'image/jpeg',
+        'image/jpg',
+        'audio/mpeg',
+        'audio/wav',
+        'audio/ogg',
+        'audio/mp4',
+        'audio/webm',
+      ];
+      if (!allowedTypes.includes(contentType)) {
+        return c.json(
+          { error: 'Only image files (GIF, PNG, JPG) and audio files (MP3, WAV, OGG, M4A, WebM) are supported' },
+          400,
+        );
+      }
 
-    if (!c.env.DB) {
-      return c.json({ error: 'Database not available' }, 500);
-    }
+      if (!c.env.DB) {
+        return c.json({ error: 'Database not available' }, 500);
+      }
 
-    // Validate parent post exists and is published
-    const parentPost = await c.env.DB.prepare(
-      "SELECT id, user_id, username, text, hashtags, mentions, gif_key, payload_key, swf_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, 'published') as status, created_at FROM posts WHERE id = ? AND status = 'published'",
-    )
-      .bind(postId)
-      .first();
+      // Validate parent post exists and is published
+      const parentPost = await c.env.DB.prepare(
+        "SELECT id, user_id, username, text, hashtags, mentions, gif_key, payload_key, swf_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, 'published') as status, created_at FROM posts WHERE id = ? AND status = 'published'",
+      )
+        .bind(postId)
+        .first();
 
-    if (!parentPost) {
-      return c.json({ error: 'Parent post not found' }, 404);
-    }
+      if (!parentPost) {
+        return c.json({ error: 'Parent post not found' }, 404);
+      }
 
-    const replyId = crypto.randomUUID();
-    let fileExtension: string;
-    let storageKey: string;
+      const replyId = crypto.randomUUID();
+      let fileExtension: string;
+      let storageKey: string;
 
-    if (contentType.startsWith('image/')) {
-      fileExtension =
-        contentType === 'image/png'
-          ? '.png'
-          : contentType === 'image/jpeg' || contentType === 'image/jpg'
-            ? '.jpg'
-            : '.gif';
-      storageKey = `gif/${replyId}${fileExtension}`;
-    } else if (contentType.startsWith('audio/')) {
-      fileExtension =
-        contentType === 'audio/mpeg'
-          ? '.mp3'
-          : contentType === 'audio/wav'
-            ? '.wav'
-            : contentType === 'audio/ogg'
-              ? '.ogg'
-              : contentType === 'audio/mp4'
-                ? '.m4a'
-                : '.webm';
-      storageKey = `audio/${replyId}${fileExtension}`;
-    } else {
-      return c.json({ error: 'Unsupported file type' }, 400);
-    }
+      if (contentType.startsWith('image/')) {
+        fileExtension =
+          contentType === 'image/png'
+            ? '.png'
+            : contentType === 'image/jpeg' || contentType === 'image/jpg'
+              ? '.jpg'
+              : '.gif';
+        storageKey = `gif/${replyId}${fileExtension}`;
+      } else if (contentType.startsWith('audio/')) {
+        fileExtension =
+          contentType === 'audio/mpeg'
+            ? '.mp3'
+            : contentType === 'audio/wav'
+              ? '.wav'
+              : contentType === 'audio/ogg'
+                ? '.ogg'
+                : contentType === 'audio/mp4'
+                  ? '.m4a'
+                  : '.webm';
+        storageKey = `audio/${replyId}${fileExtension}`;
+      } else {
+        return c.json({ error: 'Unsupported file type' }, 400);
+      }
 
-    const gifKey = storageKey;
+      const gifKey = storageKey;
 
-    // Compute depth and root_id
-    const depth = Math.min(Number(parentPost.depth || 0) + 1, 5);
-    const rootId = parentPost.root_id || parentPost.id;
+      // Compute depth and root_id
+      const depth = Math.min(Number(parentPost.depth || 0) + 1, 5);
+      const rootId = parentPost.root_id || parentPost.id;
 
-    // Store pending reply in D1
-    const result = await c.env.DB.prepare(`
+      // Store pending reply in D1
+      const result = await c.env.DB.prepare(`
       INSERT INTO posts (id, user_id, username, text, hashtags, mentions, gif_key, payload_key, swf_key, fresh_count, engagement_hotness, status, parent_id, root_id, depth, reply_count)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1.0, 'pending', ?, ?, ?, 0)
     `)
-      .bind(
+        .bind(
+          replyId,
+          c.get('user')?.id || '',
+          c.get('user')?.username || 'anonymous',
+          '',
+          '[]',
+          '[]',
+          gifKey,
+          '',
+          '',
+          postId,
+          rootId,
+          depth,
+        )
+        .run();
+
+      if (!result.success) {
+        return c.json({ error: 'Failed to create pending reply' }, 500);
+      }
+
+      // Generate upload endpoint URL (our own API)
+      const gifUploadUrl = `${new URL(c.req.url).origin}/api/upload/${gifKey}`;
+
+      return c.json({
         replyId,
-        c.get('user')?.id || '',
-        c.get('user')?.username || 'anonymous',
-        '',
-        '[]',
-        '[]',
+        gifUploadUrl,
         gifKey,
-        '',
-        '',
-        postId,
-        rootId,
-        depth,
-      )
-      .run();
-
-    if (!result.success) {
-      return c.json({ error: 'Failed to create pending reply' }, 500);
+      });
+    } catch (error: unknown) {
+      console.error('Prepare reply error:', error);
+      return c.json({ error: 'Internal server error' }, 500);
     }
-
-    // Generate upload endpoint URL (our own API)
-    const gifUploadUrl = `${new URL(c.req.url).origin}/api/upload/${gifKey}`;
-
-    return c.json({
-      replyId,
-      gifUploadUrl,
-      gifKey,
-    });
-  } catch (error: unknown) {
-    console.error('Prepare reply error:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
+  },
+);
 
 // Step 3 — POST /api/posts/:id/replies/commit (protected)
-posts.post('/posts/:id/replies/commit', requireAuth, async (c) => {
-  const postId = c.req.param('id');
+posts.post(
+  '/posts/:id/replies/commit',
+  requireAuth,
+  rateLimitMiddleware({ maxRequests: 20, windowSeconds: 60 }),
+  async (c) => {
+    const postId = c.req.param('id');
 
-  try {
-    const { replyId, gifKey, text, hashtags } = await c.req.json();
+    try {
+      const { replyId, gifKey, text, hashtags } = await c.req.json();
 
-    // Validate text
-    if (!text || text.length < 1 || text.length > 200) {
-      return c.json({ error: 'Text must be 1-200 characters' }, 422);
-    }
-
-    // Validate hashtags
-    if (!Array.isArray(hashtags) || hashtags.length > 5) {
-      return c.json({ error: 'Maximum 5 hashtags allowed' }, 422);
-    }
-
-    for (const tag of hashtags) {
-      if (
-        typeof tag !== 'string' ||
-        tag.length > 20 ||
-        !/^[a-zA-Z0-9_\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}ー]+$/u.test(tag)
-      ) {
-        return c.json({ error: 'Hashtags must be alphanumeric, Japanese characters, and ≤20 chars' }, 422);
+      // Validate text
+      if (!text || text.length < 1 || text.length > 200) {
+        return c.json({ error: 'Text must be 1-200 characters' }, 422);
       }
-    }
 
-    // Extract mentions from text
-    const mentionRegex = /@([a-zA-Z0-9_]{1,20})/g;
-    const mentionSet = new Set<string>();
-    let mentionMatch: RegExpExecArray | null;
-    while ((mentionMatch = mentionRegex.exec(text)) !== null) {
-      mentionSet.add(mentionMatch[1]);
-    }
-    const mentionedUsernames = Array.from(mentionSet);
+      // Validate hashtags
+      if (!Array.isArray(hashtags) || hashtags.length > 5) {
+        return c.json({ error: 'Maximum 5 hashtags allowed' }, 422);
+      }
 
-    if (!c.env.DB) {
-      return c.json({ error: 'Database not available' }, 500);
-    }
+      for (const tag of hashtags) {
+        if (
+          typeof tag !== 'string' ||
+          tag.length > 20 ||
+          !/^[a-zA-Z0-9_\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}ー]+$/u.test(tag)
+        ) {
+          return c.json({ error: 'Hashtags must be alphanumeric, Japanese characters, and ≤20 chars' }, 422);
+        }
+      }
 
-    // Validate parent still exists and is published
-    const parentPost = (await c.env.DB.prepare(
-      "SELECT id, user_id, username, text, hashtags, mentions, gif_key, payload_key, swf_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, 'published') as status, created_at FROM posts WHERE id = ? AND status = 'published'",
-    )
-      .bind(postId)
-      .first()) as {
-      id: string;
-      user_id: string;
-      username: string;
-      text: string;
-      depth: number;
-      root_id: string | null;
-    } | null;
+      // Extract mentions from text
+      const mentionRegex = /@([a-zA-Z0-9_]{1,20})/g;
+      const mentionSet = new Set<string>();
+      let mentionMatch: RegExpExecArray | null;
+      while ((mentionMatch = mentionRegex.exec(text)) !== null) {
+        mentionSet.add(mentionMatch[1]);
+      }
+      const mentionedUsernames = Array.from(mentionSet);
 
-    if (!parentPost) {
-      return c.json({ error: 'Parent post no longer available' }, 422);
-    }
+      if (!c.env.DB) {
+        return c.json({ error: 'Database not available' }, 500);
+      }
 
-    let reply: Record<string, unknown> | undefined;
-    let mentionsJson: string | null = '[]';
+      // Validate parent still exists and is published
+      const parentPost = (await c.env.DB.prepare(
+        "SELECT id, user_id, username, text, hashtags, mentions, gif_key, payload_key, swf_key, fresh_count, COALESCE(reply_count, 0) as reply_count, parent_id, root_id, COALESCE(depth, 0) as depth, COALESCE(status, 'published') as status, created_at FROM posts WHERE id = ? AND status = 'published'",
+      )
+        .bind(postId)
+        .first()) as {
+        id: string;
+        user_id: string;
+        username: string;
+        text: string;
+        depth: number;
+        root_id: string | null;
+      } | null;
 
-    if (gifKey) {
-      // Resolve mentions
-      const replyUsername = c.get('user')?.username || 'anonymous';
-      mentionsJson = await resolveMentions(c.env.DB, mentionedUsernames, replyUsername);
+      if (!parentPost) {
+        return c.json({ error: 'Parent post no longer available' }, 422);
+      }
 
-      // Validate that this is a pending reply and gifKey matches
-      const pendingReply = await c.env.DB.prepare(`
+      let reply: Record<string, unknown> | undefined;
+      let mentionsJson: string | null = '[]';
+
+      if (gifKey) {
+        // Resolve mentions
+        const replyUsername = c.get('user')?.username || 'anonymous';
+        mentionsJson = await resolveMentions(c.env.DB, mentionedUsernames, replyUsername);
+
+        // Validate that this is a pending reply and gifKey matches
+        const pendingReply = await c.env.DB.prepare(`
         SELECT * FROM posts WHERE id = ? AND status = 'pending' AND gif_key = ? AND parent_id = ?
       `)
-        .bind(replyId, gifKey, postId)
-        .first();
+          .bind(replyId, gifKey, postId)
+          .first();
 
-      if (!pendingReply) {
-        return c.json({ error: 'Invalid or expired reply preparation' }, 422);
-      }
+        if (!pendingReply) {
+          return c.json({ error: 'Invalid or expired reply preparation' }, 422);
+        }
 
-      // Check if GIF exists in R2 (simplified check for now)
-      const gifExists = true; // Placeholder - implement actual R2 check
+        // Check if GIF exists in R2 (simplified check for now)
+        const gifExists = true; // Placeholder - implement actual R2 check
 
-      if (!gifExists) {
-        return c.json({ error: 'GIF not uploaded' }, 422);
-      }
+        if (!gifExists) {
+          return c.json({ error: 'GIF not uploaded' }, 422);
+        }
 
-      // Update reply to published status
-      const updateResult = await c.env.DB.prepare(`
+        // Update reply to published status
+        const updateResult = await c.env.DB.prepare(`
         UPDATE posts 
         SET text = ?, hashtags = ?, mentions = ?, status = 'published', created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
         WHERE id = ?
       `)
-        .bind(text, JSON.stringify(hashtags), mentionsJson, replyId)
-        .run();
+          .bind(text, JSON.stringify(hashtags), mentionsJson, replyId)
+          .run();
 
-      if (!updateResult.success) {
-        return c.json({ error: 'Failed to commit reply' }, 500);
-      }
+        if (!updateResult.success) {
+          return c.json({ error: 'Failed to commit reply' }, 500);
+        }
 
-      // Return the updated reply
-      reply =
-        (await c.env.DB.prepare(`
+        // Return the updated reply
+        reply =
+          (await c.env.DB.prepare(`
         SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, u.language as author_language, p.text, p.hashtags, p.mentions, p.gif_key, p.payload_key, p.swf_key, p.thumbnail_key, p.fresh_count, COALESCE(p.bookmark_count, 0) as bookmark_count, COALESCE(p.reply_count, 0) as reply_count, COALESCE(p.impressions, 0) as impressions, p.hidden, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.id = ?
       `)
-          .bind(replyId)
-          .first()) ?? undefined;
-    } else {
-      // Resolve mentions
-      const replyUsername = c.get('user')?.username || 'anonymous';
-      mentionsJson = await resolveMentions(c.env.DB, mentionedUsernames, replyUsername);
+            .bind(replyId)
+            .first()) ?? undefined;
+      } else {
+        // Resolve mentions
+        const replyUsername = c.get('user')?.username || 'anonymous';
+        mentionsJson = await resolveMentions(c.env.DB, mentionedUsernames, replyUsername);
 
-      // Create text-only reply directly
-      const depth = Math.min(Number(parentPost.depth || 0) + 1, 5);
-      const rootId = parentPost.root_id || parentPost.id;
+        // Create text-only reply directly
+        const depth = Math.min(Number(parentPost.depth || 0) + 1, 5);
+        const rootId = parentPost.root_id || parentPost.id;
 
-      try {
-        const result = await c.env.DB.prepare(`
+        try {
+          const result = await c.env.DB.prepare(`
           INSERT INTO posts (id, user_id, username, text, hashtags, mentions, gif_key, payload_key, swf_key, fresh_count, engagement_hotness, status, parent_id, root_id, depth, reply_count)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1.0, 'published', ?, ?, ?, 0)
         `)
-          .bind(
-            replyId,
-            c.get('user')?.id || '',
-            replyUsername,
-            text,
-            JSON.stringify(hashtags),
-            mentionsJson,
-            '',
-            '',
-            '',
-            postId,
-            rootId,
-            depth,
-          )
-          .run();
+            .bind(
+              replyId,
+              c.get('user')?.id || '',
+              replyUsername,
+              text,
+              JSON.stringify(hashtags),
+              mentionsJson,
+              '',
+              '',
+              '',
+              postId,
+              rootId,
+              depth,
+            )
+            .run();
 
-        if (!result.success) {
-          console.error('Failed to create reply:', result.error);
-          return c.json({ error: 'Failed to create reply' }, 500);
-        }
+          if (!result.success) {
+            console.error('Failed to create reply:', result.error);
+            return c.json({ error: 'Failed to create reply' }, 500);
+          }
 
-        // Return the created reply
-        reply =
-          (await c.env.DB.prepare(`
+          // Return the created reply
+          reply =
+            (await c.env.DB.prepare(`
           SELECT p.id, p.user_id, p.username, u.display_name, u.avatar_key, u.language as author_language, p.text, p.hashtags, p.mentions, p.gif_key, p.payload_key, p.swf_key, p.thumbnail_key, p.fresh_count, COALESCE(p.bookmark_count, 0) as bookmark_count, COALESCE(p.reply_count, 0) as reply_count, COALESCE(p.impressions, 0) as impressions, p.hidden, p.parent_id, p.root_id, COALESCE(p.depth, 0) as depth, COALESCE(p.status, 'published') as status, p.created_at FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.id = ?
         `)
-            .bind(replyId)
-            .first()) ?? undefined;
-      } catch (dbError: unknown) {
-        const err = dbError as { message?: string; stack?: string; cause?: unknown; name?: string };
-        console.error('Database error creating reply:', dbError);
-        console.error('Error details:', {
-          message: err.message,
-          stack: err.stack,
-          cause: err.cause,
-          name: err.name,
-        });
-        return c.json({ error: 'Database error', details: err.message || 'Unknown error' }, 500);
+              .bind(replyId)
+              .first()) ?? undefined;
+        } catch (dbError: unknown) {
+          const err = dbError as { message?: string; stack?: string; cause?: unknown; name?: string };
+          console.error('Database error creating reply:', dbError);
+          console.error('Error details:', {
+            message: err.message,
+            stack: err.stack,
+            cause: err.cause,
+            name: err.name,
+          });
+          return c.json({ error: 'Database error', details: err.message || 'Unknown error' }, 500);
+        }
       }
-    }
 
-    // Increment parent's reply count and engagement hotness
-    const incrementResult = await c.env.DB.prepare(`
+      // Increment parent's reply count and engagement hotness
+      const incrementResult = await c.env.DB.prepare(`
       UPDATE posts SET reply_count = COALESCE(reply_count, 0) + 1, engagement_hotness = COALESCE(engagement_hotness, 1.0) + 3.0 WHERE id = ?
     `)
-      .bind(postId)
-      .run();
+        .bind(postId)
+        .run();
 
-    if (!incrementResult.success) {
-      console.error('Failed to increment reply count for post:', postId);
-      // Don't fail the whole operation, just log the error
-    }
-
-    // Create notification for the parent post author (if not replying to own post)
-    const notifiedUserIds = new Set<string>();
-    const replyUserId = c.get('user')?.id || '';
-    if (parentPost.user_id !== replyUserId) {
-      try {
-        // Group reply notifications: check for existing reply notification for this post
-        const existingNotif = (await c.env.DB.prepare(
-          "SELECT id, actor_id, actor_data FROM notifications WHERE user_id = ? AND post_id = ? AND type = 'reply' ORDER BY created_at DESC LIMIT 1",
-        )
-          .bind(parentPost.user_id, postId)
-          .first()) as Record<string, unknown>;
-
-        if (existingNotif) {
-          const actorData = existingNotif.actor_data
-            ? JSON.parse(existingNotif.actor_data as string)
-            : existingNotif.actor_id
-              ? [existingNotif.actor_id as string]
-              : [];
-          if (!actorData.includes(replyUserId)) {
-            actorData.push(replyUserId);
-          }
-          await c.env.DB.prepare(
-            "UPDATE notifications SET actor_id = ?, actor_data = ?, created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), read = 0 WHERE id = ?",
-          )
-            .bind(actorData[0], JSON.stringify(actorData), existingNotif.id as string)
-            .run();
-        } else {
-          await c.env.DB.prepare(
-            'INSERT INTO notifications (id, user_id, type, post_id, actor_id) VALUES (?, ?, ?, ?, ?)',
-          )
-            .bind(nanoid(), parentPost.user_id, 'reply', postId, replyUserId)
-            .run();
-          // Send push notification to parent post author
-          {
-            const actor = c.get('user');
-
-            await sendPushToAll(c.env, parentPost.user_id, 'reply', actor?.username, actor?.display_name, text, postId);
-          }
-        }
-        notifiedUserIds.add(parentPost.user_id);
-      } catch (e) {
-        console.error('Failed to create reply notification:', e);
+      if (!incrementResult.success) {
+        console.error('Failed to increment reply count for post:', postId);
         // Don't fail the whole operation, just log the error
       }
-    }
 
-    // Create mention notifications for mentioned users in the reply (skip self-mentions)
-    if (mentionedUsernames.length > 0) {
-      try {
-        const mentionData = JSON.parse(mentionsJson) as Array<{ username: string; user_id: string }>;
-        const mentionStmts = mentionData
-          .filter((m) => m.user_id !== replyUserId)
-          .map((m) =>
-            c.env.DB.prepare(
-              'INSERT INTO notifications (id, user_id, type, post_id, actor_id) VALUES (?, ?, ?, ?, ?)',
-            ).bind(nanoid(), m.user_id, 'mention', replyId, replyUserId),
-          );
-        if (mentionStmts.length > 0) {
-          await c.env.DB.batch(mentionStmts);
-        }
-        for (const mention of mentionData) {
-          if (mention.user_id === replyUserId) continue;
-          const actor = c.get('user');
-          await sendPushToAll(c.env, mention.user_id, 'mention', actor?.username, actor?.display_name, text, postId);
-        }
-      } catch (e) {
-        // Don't fail the reply creation if mention notifications fail
-        console.error('Failed to create mention notifications:', e);
-      }
-    }
+      // Create notification for the parent post author (if not replying to own post)
+      const notifiedUserIds = new Set<string>();
+      const replyUserId = c.get('user')?.id || '';
+      if (parentPost.user_id !== replyUserId) {
+        try {
+          // Group reply notifications: check for existing reply notification for this post
+          const existingNotif = (await c.env.DB.prepare(
+            "SELECT id, actor_id, actor_data FROM notifications WHERE user_id = ? AND post_id = ? AND type = 'reply' ORDER BY created_at DESC LIMIT 1",
+          )
+            .bind(parentPost.user_id, postId)
+            .first()) as Record<string, unknown>;
 
-    // Create notifications for >>N post references in the reply
-    // Skip if the referenced post author was already notified (e.g., parent post author)
-    try {
-      const refRegex = />>(\d+)/g;
-      const referencedIndices = new Set<number>();
-      let refMatch: RegExpExecArray | null;
-      while ((refMatch = refRegex.exec(text)) !== null) {
-        const index = parseInt(refMatch[1], 10);
-        if (index > 0) referencedIndices.add(index);
-      }
-
-      if (referencedIndices.size > 0) {
-        const rootId = parentPost.root_id || parentPost.id;
-        const allRepliesResult = await c.env.DB.prepare(
-          "SELECT id, user_id, username FROM posts WHERE root_id = ? AND status = 'published' AND id != ? ORDER BY created_at ASC",
-        )
-          .bind(rootId, rootId)
-          .all();
-
-        const allReplies = allRepliesResult.results || [];
-
-        const refUpdateStmts: D1PreparedStatement[] = [];
-        const refNotifyStmts: D1PreparedStatement[] = [];
-        const refNotifyTargets: Array<{ userId: string; user_id: string }> = [];
-        for (const refIndex of referencedIndices) {
-          const arrayIndex = refIndex - 1;
-          if (arrayIndex >= 0 && arrayIndex < allReplies.length) {
-            const referencedPost = allReplies[arrayIndex] as Record<string, unknown>;
-            if (referencedPost.id !== postId) {
-              refUpdateStmts.push(
-                c.env.DB.prepare(
-                  'UPDATE posts SET reply_count = COALESCE(reply_count, 0) + 1, engagement_hotness = COALESCE(engagement_hotness, 1.0) + 3.0 WHERE id = ?',
-                ).bind(referencedPost.id as string),
-              );
+          if (existingNotif) {
+            const actorData = existingNotif.actor_data
+              ? JSON.parse(existingNotif.actor_data as string)
+              : existingNotif.actor_id
+                ? [existingNotif.actor_id as string]
+                : [];
+            if (!actorData.includes(replyUserId)) {
+              actorData.push(replyUserId);
             }
-            if (
-              referencedPost.user_id &&
-              (referencedPost.user_id as string) !== replyUserId &&
-              !notifiedUserIds.has(referencedPost.user_id as string)
-            ) {
-              refNotifyStmts.push(
-                c.env.DB.prepare(
-                  'INSERT INTO notifications (id, user_id, type, post_id, actor_id) VALUES (?, ?, ?, ?, ?)',
-                ).bind(nanoid(), referencedPost.user_id as string, 'reply', replyId, replyUserId),
+            await c.env.DB.prepare(
+              "UPDATE notifications SET actor_id = ?, actor_data = ?, created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), read = 0 WHERE id = ?",
+            )
+              .bind(actorData[0], JSON.stringify(actorData), existingNotif.id as string)
+              .run();
+          } else {
+            await c.env.DB.prepare(
+              'INSERT INTO notifications (id, user_id, type, post_id, actor_id) VALUES (?, ?, ?, ?, ?)',
+            )
+              .bind(nanoid(), parentPost.user_id, 'reply', postId, replyUserId)
+              .run();
+            // Send push notification to parent post author
+            {
+              const actor = c.get('user');
+
+              await sendPushToAll(
+                c.env,
+                parentPost.user_id,
+                'reply',
+                actor?.username,
+                actor?.display_name,
+                text,
+                postId,
               );
-              refNotifyTargets.push({
-                userId: referencedPost.user_id as string,
-                user_id: referencedPost.user_id as string,
-              });
             }
           }
-        }
-        const allRefStmts = [...refUpdateStmts, ...refNotifyStmts];
-        if (allRefStmts.length > 0) {
-          await c.env.DB.batch(allRefStmts);
-        }
-        for (const target of refNotifyTargets) {
-          const actor = c.get('user');
-          await sendPushToAll(c.env, target.userId, 'reply', actor?.username, actor?.display_name, text || '', replyId);
+          notifiedUserIds.add(parentPost.user_id);
+        } catch (e) {
+          console.error('Failed to create reply notification:', e);
+          // Don't fail the whole operation, just log the error
         }
       }
-    } catch (e) {
-      console.error('Failed to create >>N reference notifications:', e);
-    }
 
-    if (gifKey) {
-      submitDetectNsfw(c.env.DB, c.env.CROWD_ORCHESTRATOR_URL, c.env.CROWD_API_KEY, c.env.BASE_URL, replyId, gifKey);
-    }
+      // Create mention notifications for mentioned users in the reply (skip self-mentions)
+      if (mentionedUsernames.length > 0) {
+        try {
+          const mentionData = JSON.parse(mentionsJson) as Array<{ username: string; user_id: string }>;
+          const mentionStmts = mentionData
+            .filter((m) => m.user_id !== replyUserId)
+            .map((m) =>
+              c.env.DB.prepare(
+                'INSERT INTO notifications (id, user_id, type, post_id, actor_id) VALUES (?, ?, ?, ?, ?)',
+              ).bind(nanoid(), m.user_id, 'mention', replyId, replyUserId),
+            );
+          if (mentionStmts.length > 0) {
+            await c.env.DB.batch(mentionStmts);
+          }
+          for (const mention of mentionData) {
+            if (mention.user_id === replyUserId) continue;
+            const actor = c.get('user');
+            await sendPushToAll(c.env, mention.user_id, 'mention', actor?.username, actor?.display_name, text, postId);
+          }
+        } catch (e) {
+          // Don't fail the reply creation if mention notifications fail
+          console.error('Failed to create mention notifications:', e);
+        }
+      }
 
-    return c.json({ reply });
-  } catch (error: unknown) {
-    const err = error as { message?: string; stack?: string; cause?: unknown; name?: string; replyId?: string };
-    console.error('Commit reply error:', error);
-    console.error('Full error details:', {
-      message: err.message,
-      stack: err.stack,
-      cause: err.cause,
-      name: err.name,
-      postId: postId || 'unknown',
-      replyId: err.replyId || 'unknown',
-    });
-    return c.json({ error: 'Internal server error', details: err.message || 'Unknown error' }, 500);
-  }
-});
+      // Create notifications for >>N post references in the reply
+      // Skip if the referenced post author was already notified (e.g., parent post author)
+      try {
+        const refRegex = />>(\d+)/g;
+        const referencedIndices = new Set<number>();
+        let refMatch: RegExpExecArray | null;
+        while ((refMatch = refRegex.exec(text)) !== null) {
+          const index = parseInt(refMatch[1], 10);
+          if (index > 0) referencedIndices.add(index);
+        }
+
+        if (referencedIndices.size > 0) {
+          const rootId = parentPost.root_id || parentPost.id;
+          const allRepliesResult = await c.env.DB.prepare(
+            "SELECT id, user_id, username FROM posts WHERE root_id = ? AND status = 'published' AND id != ? ORDER BY created_at ASC",
+          )
+            .bind(rootId, rootId)
+            .all();
+
+          const allReplies = allRepliesResult.results || [];
+
+          const refUpdateStmts: D1PreparedStatement[] = [];
+          const refNotifyStmts: D1PreparedStatement[] = [];
+          const refNotifyTargets: Array<{ userId: string; user_id: string }> = [];
+          for (const refIndex of referencedIndices) {
+            const arrayIndex = refIndex - 1;
+            if (arrayIndex >= 0 && arrayIndex < allReplies.length) {
+              const referencedPost = allReplies[arrayIndex] as Record<string, unknown>;
+              if (referencedPost.id !== postId) {
+                refUpdateStmts.push(
+                  c.env.DB.prepare(
+                    'UPDATE posts SET reply_count = COALESCE(reply_count, 0) + 1, engagement_hotness = COALESCE(engagement_hotness, 1.0) + 3.0 WHERE id = ?',
+                  ).bind(referencedPost.id as string),
+                );
+              }
+              if (
+                referencedPost.user_id &&
+                (referencedPost.user_id as string) !== replyUserId &&
+                !notifiedUserIds.has(referencedPost.user_id as string)
+              ) {
+                refNotifyStmts.push(
+                  c.env.DB.prepare(
+                    'INSERT INTO notifications (id, user_id, type, post_id, actor_id) VALUES (?, ?, ?, ?, ?)',
+                  ).bind(nanoid(), referencedPost.user_id as string, 'reply', replyId, replyUserId),
+                );
+                refNotifyTargets.push({
+                  userId: referencedPost.user_id as string,
+                  user_id: referencedPost.user_id as string,
+                });
+              }
+            }
+          }
+          const allRefStmts = [...refUpdateStmts, ...refNotifyStmts];
+          if (allRefStmts.length > 0) {
+            await c.env.DB.batch(allRefStmts);
+          }
+          for (const target of refNotifyTargets) {
+            const actor = c.get('user');
+            await sendPushToAll(
+              c.env,
+              target.userId,
+              'reply',
+              actor?.username,
+              actor?.display_name,
+              text || '',
+              replyId,
+            );
+          }
+        }
+      } catch (e) {
+        console.error('Failed to create >>N reference notifications:', e);
+      }
+
+      if (gifKey) {
+        submitDetectNsfw(c.env.DB, c.env.CROWD_ORCHESTRATOR_URL, c.env.CROWD_API_KEY, c.env.BASE_URL, replyId, gifKey);
+      }
+
+      return c.json({ reply });
+    } catch (error: unknown) {
+      const err = error as { message?: string; stack?: string; cause?: unknown; name?: string; replyId?: string };
+      console.error('Commit reply error:', error);
+      console.error('Full error details:', {
+        message: err.message,
+        stack: err.stack,
+        cause: err.cause,
+        name: err.name,
+        postId: postId || 'unknown',
+        replyId: err.replyId || 'unknown',
+      });
+      return c.json({ error: 'Internal server error', details: err.message || 'Unknown error' }, 500);
+    }
+  },
+);
 
 // GET /api/search - search posts and users
 posts.get('/search', async (c) => {

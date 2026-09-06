@@ -12,13 +12,14 @@ import {
   verifySrpLogin,
   verifySrpPassword,
 } from '../../lib/auth';
+import { rateLimitMiddleware } from '../../lib/rate-limit';
 import { requireAuth } from '../helpers';
 import type { Bindings, Variables } from '../types';
 
 const auth = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
 // POST /api/auth/register
-auth.post('/register', async (c) => {
+auth.post('/register', rateLimitMiddleware({ maxRequests: 5, windowSeconds: 900 }), async (c) => {
   try {
     const { email, password, username, display_name, srp_salt, srp_verifier, srp_group } = await c.req.json();
 
@@ -75,7 +76,7 @@ auth.post('/register', async (c) => {
 });
 
 // POST /api/auth/login
-auth.post('/login', async (c) => {
+auth.post('/login', rateLimitMiddleware({ maxRequests: 10, windowSeconds: 900 }), async (c) => {
   try {
     const { email, password } = await c.req.json();
 
@@ -96,7 +97,7 @@ auth.post('/login', async (c) => {
 });
 
 // POST /api/auth/login/start
-auth.post('/login/start', async (c) => {
+auth.post('/login/start', rateLimitMiddleware({ maxRequests: 10, windowSeconds: 900 }), async (c) => {
   try {
     const { email } = await c.req.json();
     if (!email) return c.json({ error: 'Email required' }, 400);
@@ -112,7 +113,7 @@ auth.post('/login/start', async (c) => {
 });
 
 // POST /api/auth/login/verify
-auth.post('/login/verify', async (c) => {
+auth.post('/login/verify', rateLimitMiddleware({ maxRequests: 10, windowSeconds: 900 }), async (c) => {
   try {
     const { email, challenge_id, A, M1 } = await c.req.json();
     if (!email || !challenge_id || !A || !M1) {

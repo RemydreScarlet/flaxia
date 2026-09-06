@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { getSession, getSessionToken, User } from '../lib/auth';
+import { rateLimitMiddleware } from '../lib/rate-limit';
 import { authMiddleware, csrfProtection } from './helpers';
 import activitypubRouter from './routes/activitypub';
 import adminRouter from './routes/admin';
@@ -57,6 +58,7 @@ type Variables = {
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
+app.use('/api/*', rateLimitMiddleware({ maxRequests: 100, windowSeconds: 60 }));
 app.use('/api/*', authMiddleware);
 
 app.use(
