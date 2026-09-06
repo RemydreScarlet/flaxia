@@ -99,6 +99,10 @@ export class AudioVisualizer {
 
       this.bufferLength = this.analyser.frequencyBinCount;
       this.dataArray = new Uint8Array(this.bufferLength);
+
+      this.source = this.audioContext.createMediaElementSource(this.audioElement);
+      this.source.connect(this.analyser);
+      this.analyser.connect(this.audioContext.destination);
     } catch (error) {
       console.warn('Audio Visualizer: Web Audio API not supported', error);
     }
